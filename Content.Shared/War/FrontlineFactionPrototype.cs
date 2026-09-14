@@ -2,7 +2,7 @@ using Robust.Shared.Prototypes;
 
 namespace Content.Shared.War;
 
-[Prototype("frontlineFaction")]
+[Prototype]
 public sealed partial class FrontlineFactionPrototype : IPrototype
 {
     [IdDataField]

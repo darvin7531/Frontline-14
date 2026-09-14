@@ -12,35 +12,41 @@ namespace Content.Client.War;
 [UsedImplicitly]
 public sealed class FactionSelectionEui : BaseEui
 {
-    private readonly DefaultWindow _window = new() { Title = Loc.GetString("frontline-faction-select-title") };
-    private readonly BoxContainer _factions = new() { Orientation = LayoutOrientation.Vertical };
+    private readonly FactionSelectionWindow _window = new();
 
     public FactionSelectionEui()
     {
-        _window.ContentsContainer.AddChild(_factions);
         _window.OnClose += () => SendMessage(new CloseEuiMessage());
     }
 
-    public override void Opened()
-    {
-        _window.OpenCentered();
-    }
+    public override void Opened() => _window.OpenCentered();
 
-    public override void Closed()
-    {
-        _window.Close();
-    }
+    public override void Closed() => _window.Close();
 
     public override void HandleState(EuiStateBase state)
     {
-        if (state is not FactionSelectionEuiState selection)
-            return;
+        if (state is FactionSelectionEuiState selection)
+            _window.SetFactions(selection.Factions, faction => SendMessage(new ChooseFactionMessage(faction)));
+    }
+}
 
+public sealed class FactionSelectionWindow : DefaultWindow
+{
+    private readonly BoxContainer _factions = new() { Orientation = LayoutOrientation.Vertical };
+
+    public FactionSelectionWindow()
+    {
+        Title = Loc.GetString("frontline-faction-select-title");
+        ContentsContainer.AddChild(_factions);
+    }
+
+    public void SetFactions(IEnumerable<FactionSelectionOption> factions, Action<FactionId> choose)
+    {
         _factions.RemoveAllChildren();
-        foreach (var faction in selection.Factions)
+        foreach (var faction in factions)
         {
             var button = new Button { Text = faction.Name, ModulateSelfOverride = faction.Color };
-            button.OnPressed += _ => SendMessage(new ChooseFactionMessage(faction.Id));
+            button.OnPressed += _ => choose(faction.Id);
             _factions.AddChild(new Label { Text = faction.Description });
             _factions.AddChild(button);
         }
