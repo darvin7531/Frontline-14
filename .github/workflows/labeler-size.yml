@@ -1,5 +1,10 @@
 name: "Labels: Size"
 on: pull_request_target
+
+permissions:
+  issues: write
+  pull-requests: read
+
 jobs:
   size-label:
     runs-on: ubuntu-latest

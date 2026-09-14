@@ -1,6 +1,7 @@
 using Content.IntegrationTests.Fixtures;
 using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.GameTicking;
+using Content.Server.GameTicking.Presets;
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Ghost;
 using Content.Server.Mind;
@@ -43,6 +44,8 @@ public sealed class PersistentWarRuleTest : GameTest
         {
             Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
         });
+
+        ticker.SetGamePreset((GamePresetPrototype?) null);
     }
 
     [Test]
@@ -72,5 +75,7 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(roleSystem.MindHasRole<JobRoleComponent>(mindId), Is.False);
             Assert.That(ghostSystem.OnGhostAttempt(mindId, true, viaCommand: true, mind: mind), Is.False);
         });
+
+        ticker.SetGamePreset((GamePresetPrototype?) null);
     }
 }
