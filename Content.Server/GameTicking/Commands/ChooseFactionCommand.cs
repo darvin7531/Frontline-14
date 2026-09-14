@@ -7,7 +7,7 @@ namespace Content.Server.GameTicking.Commands;
 [AnyCommand]
 public sealed partial class ChooseFactionCommand : IConsoleCommand
 {
-    [Dependency] private WarFactionSystem _factions = default!;
+    [Dependency] private IEntityManager _entities = default!;
 
     public string Command => "choosefaction";
     public string Description => "Opens the current war faction selector.";
@@ -16,7 +16,7 @@ public sealed partial class ChooseFactionCommand : IConsoleCommand
     public void Execute(IConsoleShell shell, string argStr, string[] args)
     {
         if (args.Length == 0 && shell.Player != null)
-            _factions.OpenSelector(shell.Player);
+            _entities.System<WarFactionSystem>().OpenSelector(shell.Player);
     }
 
     public CompletionResult GetCompletion(IConsoleShell shell, string[] args) => CompletionResult.Empty;

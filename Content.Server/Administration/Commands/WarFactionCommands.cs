@@ -12,7 +12,7 @@ namespace Content.Server.Administration.Commands;
 public sealed partial class GetFactionCommand : IConsoleCommand
 {
     [Dependency] private IPlayerManager _players = default!;
-    [Dependency] private WarFactionSystem _factions = default!;
+    [Dependency] private IEntityManager _entities = default!;
 
     public string Command => "getfaction";
     public string Description => "Shows a connected player's faction in the current war.";
@@ -26,7 +26,8 @@ public sealed partial class GetFactionCommand : IConsoleCommand
             return;
         }
 
-        shell.WriteLine(_factions.TryGetFaction(player.UserId, out var faction) ? faction.Id : "unselected");
+        var factions = _entities.System<WarFactionSystem>();
+        shell.WriteLine(factions.TryGetFaction(player.UserId, out var faction) ? faction.Id : "unselected");
     }
 
     public CompletionResult GetCompletion(IConsoleShell shell, string[] args) => args.Length == 1
@@ -39,7 +40,7 @@ public sealed partial class SetFactionCommand : IConsoleCommand
 {
     [Dependency] private IPlayerManager _players = default!;
     [Dependency] private IPrototypeManager _prototypes = default!;
-    [Dependency] private WarFactionSystem _factions = default!;
+    [Dependency] private IEntityManager _entities = default!;
 
     public string Command => "setfaction";
     public string Description => "Overrides a connected player's faction for the current war.";
@@ -54,7 +55,8 @@ public sealed partial class SetFactionCommand : IConsoleCommand
         }
 
         var faction = new FactionId(args[1]);
-        if (!_prototypes.HasIndex<FrontlineFactionPrototype>(faction.Id) || !_factions.SetFaction(player.UserId, faction))
+        if (!_prototypes.HasIndex<FrontlineFactionPrototype>(faction.Id) ||
+            !_entities.System<WarFactionSystem>().SetFaction(player.UserId, faction))
         {
             shell.WriteError("Unknown faction or no active war.");
             return;
@@ -75,7 +77,7 @@ public sealed partial class SetFactionCommand : IConsoleCommand
 public sealed partial class ClearFactionCommand : IConsoleCommand
 {
     [Dependency] private IPlayerManager _players = default!;
-    [Dependency] private WarFactionSystem _factions = default!;
+    [Dependency] private IEntityManager _entities = default!;
 
     public string Command => "clearfaction";
     public string Description => "Clears a connected player's faction for the current war.";
@@ -89,7 +91,7 @@ public sealed partial class ClearFactionCommand : IConsoleCommand
             return;
         }
 
-        _factions.ClearFaction(player.UserId);
+        _entities.System<WarFactionSystem>().ClearFaction(player.UserId);
         shell.WriteLine($"{player.Name}: faction cleared");
     }
 
