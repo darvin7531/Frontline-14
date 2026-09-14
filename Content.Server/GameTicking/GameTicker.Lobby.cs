@@ -74,7 +74,7 @@ namespace Content.Server.GameTicking
 
             var gmTitle = (Decoy == null) ? Loc.GetString(preset.ModeTitle) : Loc.GetString(Decoy.ModeTitle);
             var desc = (Decoy == null) ? Loc.GetString(preset.Description) : Loc.GetString(Decoy.Description);
-            return Loc.GetString(
+            var info = Loc.GetString(
                 RunLevel == GameRunLevel.PreRoundLobby
                     ? "game-ticker-get-info-preround-text"
                     : "game-ticker-get-info-text",
@@ -84,6 +84,12 @@ namespace Content.Server.GameTicking
                 ("mapName", stationNames.ToString()),
                 ("gmTitle", gmTitle),
                 ("desc", desc));
+
+            if (!IsPersistentWar || _war.State is not { } war)
+                return info;
+
+            var elapsed = DateTimeOffset.UtcNow - war.StartedAt;
+            return $"{info}\n{Loc.GetString("persistent-war-lobby-status", ("warId", war.WarId), ("roundId", RoundId), ("hours", (int) elapsed.TotalHours), ("minutes", elapsed.Minutes), ("status", Loc.GetString($"persistent-war-status-{war.Status}")))}";
         }
 
         private TickerConnectionStatusEvent GetConnectionStatusMsg()

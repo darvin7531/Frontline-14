@@ -19,6 +19,6 @@ public sealed partial class EndRoundCommand : LocalizedEntityCommands
             return;
         }
 
-        _gameTicker.EndRound();
+        _gameTicker.EndRound(force: true);
     }
 }

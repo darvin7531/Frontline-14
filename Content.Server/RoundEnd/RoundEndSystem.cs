@@ -169,6 +169,9 @@ namespace Content.Server.RoundEnd
         /// <param name="cantRecall">if the station shouldn't be able to recall the shuttle</param>
         public void RequestRoundEnd(TimeSpan countdownTime, EntityUid? requester = null, EntityUid? machine = null, bool checkCooldown = true, string text = "round-end-system-shuttle-called-announcement", string name = "round-end-system-shuttle-sender-announcement", bool cantRecall = false)
         {
+            if (_gameTicker.IsPersistentWar)
+                return;
+
             if (_gameTicker.RunLevel != GameRunLevel.InRound)
                 return;
 
@@ -286,13 +289,16 @@ namespace Content.Server.RoundEnd
             }
         }
 
-        public void EndRound(TimeSpan? countdownTime = null)
+        public void EndRound(TimeSpan? countdownTime = null, bool force = false)
         {
+            if (_gameTicker.IsPersistentWar && !force)
+                return;
+
             if (_gameTicker.RunLevel != GameRunLevel.InRound) return;
             LastCountdownStart = null;
             ExpectedCountdownEnd = null;
             RaiseLocalEvent(RoundEndSystemChangedEvent.Default);
-            _gameTicker.EndRound();
+            _gameTicker.EndRound(force: force);
             _countdownTokenSource?.Cancel();
             _countdownTokenSource = new();
 
@@ -317,7 +323,7 @@ namespace Content.Server.RoundEnd
                     "round-end-system-round-restart-eta-announcement",
                     ("time", time),
                     ("units", Loc.GetString(unitsLocString, ("amount", time)))));
-            Timer.Spawn(countdownTime.Value, AfterEndRoundRestart, _countdownTokenSource.Token);
+            Timer.Spawn(countdownTime.Value, () => AfterEndRoundRestart(force), _countdownTokenSource.Token);
         }
 
         /// <summary>
@@ -356,11 +362,11 @@ namespace Content.Server.RoundEnd
             }
         }
 
-        private void AfterEndRoundRestart()
+        private void AfterEndRoundRestart(bool force)
         {
             if (_gameTicker.RunLevel != GameRunLevel.PostRound) return;
             Reset();
-            _gameTicker.RestartRound();
+            _gameTicker.RestartRound(force);
         }
 
         private void ActivateCooldown()

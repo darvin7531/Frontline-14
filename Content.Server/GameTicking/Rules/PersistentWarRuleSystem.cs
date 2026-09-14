@@ -3,6 +3,7 @@ using Content.Server.Ghost;
 using Content.Server.Mind;
 using Content.Server.Station.Components;
 using Content.Server.Station.Systems;
+using Content.Server.War;
 using Content.Shared.GameTicking;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Mind;
@@ -15,6 +16,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
 {
     [Dependency] private MindSystem _mind = default!;
     [Dependency] private StationSpawningSystem _stationSpawning = default!;
+    [Dependency] private WarStateSystem _war = default!;
 
     public override void Initialize()
     {
@@ -22,6 +24,12 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         SubscribeLocalEvent<RulePlayerSpawningEvent>(OnRulePlayerSpawning);
         SubscribeLocalEvent<PlayerBeforeSpawnEvent>(OnPlayerBeforeSpawn);
         SubscribeLocalEvent<GhostAttemptHandleEvent>(OnGhostAttempt);
+    }
+
+    protected override void Started(EntityUid uid, PersistentWarRuleComponent component, GameRuleComponent gameRule, GameRuleStartedEvent args)
+    {
+        base.Started(uid, component, gameRule, args);
+        _war.EnsureWar();
     }
 
     private void OnRulePlayerSpawning(RulePlayerSpawningEvent args)

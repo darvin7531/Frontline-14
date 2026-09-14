@@ -455,7 +455,7 @@ public sealed partial class ServerApi : IPostInjectInit
                 return;
             }
 
-            roundEndSystem.EndRound();
+            roundEndSystem.EndRound(force: true);
             _sawmill.Info($"Forced round end by {FormatLogActor(actor)}");
             await RespondOk(context);
         });
@@ -467,7 +467,7 @@ public sealed partial class ServerApi : IPostInjectInit
         {
             var ticker = _entitySystemManager.GetEntitySystem<GameTicker>();
 
-            ticker.RestartRound();
+            ticker.RestartRound(force: true);
             _sawmill.Info($"Forced instant round restart by {FormatLogActor(actor)}");
             await RespondOk(context);
         });

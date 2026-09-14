@@ -11,6 +11,7 @@ using Content.Server.Players.PlayTimeTracking;
 using Content.Server.Preferences.Managers;
 using Content.Server.ServerUpdates;
 using Content.Server.Station.Systems;
+using Content.Server.War;
 using Content.Shared.CCVar;
 using Content.Shared.Chat;
 using Content.Shared.GameTicking;
@@ -61,6 +62,7 @@ namespace Content.Server.GameTicking
         [Dependency] private StationSpawningSystem _stationSpawning = default!;
         [Dependency] private SharedTransformSystem _transform = default!;
         [Dependency] private UserDbDataManager _userDb = default!;
+        [Dependency] private WarStateSystem _war = default!;
         [Dependency] private MetaDataSystem _metaData = default!;
         [Dependency] private SharedRoleSystem _roles = default!;
         [Dependency] private ServerDbEntryManager _dbEntryManager = default!;
@@ -70,6 +72,8 @@ namespace Content.Server.GameTicking
         [ViewVariables] private bool _postInitialized;
 
         [ViewVariables] public MapId DefaultMap { get; private set; }
+
+        public bool IsPersistentWar => (CurrentPreset ?? Preset)?.ID == "PersistentWar";
 
         private ISawmill _sawmill = default!;
 
@@ -109,7 +113,7 @@ namespace Content.Server.GameTicking
 
             // We restart the round now that entities are initialized and prototypes have been loaded.
             if (!DummyTicker)
-                RestartRound();
+                RestartRound(force: true);
 
             _postInitialized = true;
         }
