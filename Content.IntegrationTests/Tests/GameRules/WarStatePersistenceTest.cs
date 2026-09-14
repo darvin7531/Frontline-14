@@ -39,4 +39,25 @@ public sealed class WarStatePersistenceTest : GameTest
             Assert.That(JsonSerializer.Deserialize<WarState>(stream), Is.EqualTo(expected));
         });
     }
+
+    [Test]
+    public async Task EndedWarIsReplacedOnlyByStartNewWar()
+    {
+        var server = Pair.Server;
+        var resources = server.ResolveDependency<IResourceManager>();
+        var war = server.System<WarStateSystem>();
+
+        await server.WaitAssertion(() =>
+        {
+            resources.UserData.Delete(WarStateSystem.SavePath);
+            var first = war.StartNewWar();
+
+            war.EndWar();
+            Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Ended));
+
+            var second = war.StartNewWar();
+            Assert.That(second.WarId, Is.EqualTo(first.WarId + 1));
+            Assert.That(second.Status, Is.EqualTo(WarStatus.Active));
+        });
+    }
 }

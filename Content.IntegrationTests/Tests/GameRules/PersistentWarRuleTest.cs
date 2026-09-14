@@ -78,4 +78,29 @@ public sealed class PersistentWarRuleTest : GameTest
 
         ticker.SetGamePreset((GamePresetPrototype) null);
     }
+
+    [Test]
+    public async Task NormalEndRoundDoesNotEndPersistentWar()
+    {
+        var ticker = Server.System<GameTicker>();
+
+        await Server.WaitPost(() =>
+        {
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+
+            ticker.EndRound();
+
+            Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+        });
+
+        ticker.SetGamePreset((GamePresetPrototype) null);
+    }
 }
