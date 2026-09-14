@@ -4,7 +4,7 @@ Copyright © 2026 darvin7531. All rights reserved.
 
 ## 1. Scope
 
-This license applies to original material created specifically for the **Frontline 14** project by the Frontline 14 copyright holder, including, where applicable:
+This license applies to original material created specifically for the **Frontline 14** project by or for the Frontline 14 copyright holder, including, where applicable:
 
 - original source code and game systems;
 - independently copyrightable modifications created for Frontline 14;
@@ -13,9 +13,10 @@ This license applies to original material created specifically for the **Frontli
 - user interfaces and original visual design;
 - lore, written material and documentation;
 - project-specific configuration, prototypes and data;
+- contributions assigned or licensed to the Frontline 14 copyright holder under the project Contributor License Agreement;
 - other original Frontline 14 content (collectively, **"Frontline 14 Content"**).
 
-This license does **not** relicense or restrict material that originates from Space Station 14, RobustToolbox, Corvax, Space Syndicate, Creative Commons contributors, or any other third party. Such material remains governed by its original license.
+This license does **not** relicense or restrict material that originates from Space Station 14, RobustToolbox, Corvax / Space Syndicate, RMC-14, another third-party project, Creative Commons contributors, or any other third party. Such material remains governed by its original license.
 
 ## 2. Permission Required
 
@@ -47,14 +48,27 @@ Permission requests should be directed to **darvin7531**, the owner of the offic
 
 Nothing in this license removes, limits or replaces rights granted by third-party licenses.
 
-In particular:
+Frontline 14 may incorporate code, systems, data, assets or other material from multiple upstream or third-party projects when their licenses permit such use.
 
-- upstream Space Station 14 / Corvax code remains available under the MIT License where applicable;
-- RobustToolbox remains governed by its own applicable licenses;
-- Creative Commons assets remain governed by the license specified in their metadata;
-- other third-party components remain governed by their respective licenses.
+Examples may include:
 
-Where a file contains both third-party material and original Frontline 14 additions, the underlying third-party material remains governed by its original license. Independently copyrightable Frontline 14 additions are covered by this license to the extent permitted by law.
+- Space Station 14 / Corvax / Space Syndicate code under MIT;
+- RMC-14 code under MIT;
+- other MIT, BSD, Apache or similarly permissively licensed code;
+- RobustToolbox under its applicable licenses;
+- assets under Creative Commons or other asset-specific licenses.
+
+All such material remains subject to the license under which it was obtained. Required copyright notices, attribution, license texts and source information must be preserved where applicable.
+
+The project maintains a separate third-party attribution record in [`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md). File-level metadata or notices take precedence when they provide more specific licensing information.
+
+Where a file contains both third-party material and original Frontline 14 additions:
+
+1. the underlying third-party material remains governed by its original license;
+2. required third-party notices and attribution must remain intact;
+3. independently copyrightable Frontline 14 additions are covered by this license to the extent permitted by law.
+
+A permissive license on imported code does not automatically make independently created Frontline 14 code available under that same license.
 
 ## 5. Official Builds and End-User Use
 
@@ -62,19 +76,27 @@ Players may use official Frontline 14 builds for their intended purpose of conne
 
 Possession of an official build does not grant permission to extract, republish, repurpose, redistribute or incorporate Frontline 14 Content into another project, except where such rights are independently granted by a third-party license or mandatory law.
 
-## 6. Project Name and Branding
+## 6. Contributions
+
+Contributions to Frontline 14 are accepted only under the project's current [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`CLA.md`](./CLA.md).
+
+A contribution does not change the license of pre-existing third-party material contained in the project.
+
+Contributors must identify third-party code or assets included in their contribution and must not submit material they do not have the legal right to contribute.
+
+## 7. Project Name and Branding
 
 No permission is granted to use the **Frontline 14** name, logo, visual identity, or other project branding in a way that implies an official affiliation, endorsement, continuation, or authorized fork.
 
 Any rights that may exist in project names, logos, trademarks or other brand identifiers are reserved by their respective owners.
 
-## 7. No Warranty
+## 8. No Warranty
 
 Frontline 14 Content is provided **"as is"**, without warranty of any kind, express or implied.
 
 To the maximum extent permitted by applicable law, the copyright holder shall not be liable for any claim, damages or other liability arising from the use of Frontline 14 Content.
 
-## 8. Summary
+## 9. Summary
 
 If a part of the project comes from an upstream or third-party source, follow that source's license.
 
