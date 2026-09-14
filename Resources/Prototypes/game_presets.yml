@@ -87,6 +87,16 @@
   - BasicRoundstartVariation
 
 - type: gamePreset
+  id: PersistentWar
+  alias:
+  - persistentwar
+  name: persistent-war-title
+  description: persistent-war-description
+  showInVote: false
+  rules:
+  - PersistentWarRule
+
+- type: gamePreset
   id: Greenshift
   alias:
   - greenshift

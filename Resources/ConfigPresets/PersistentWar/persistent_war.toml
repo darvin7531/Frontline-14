@@ -1,0 +1,23 @@
+# PersistentWar deliberately has no fixed map until its map prototype exists.
+# Supply game.map at deployment time to lock the eventual PersistentWar map.
+
+[game]
+defaultpreset = "PersistentWar"
+fallbackenabled = false
+lobbyduration = 0
+map_rotation = false
+
+[events]
+enabled = false
+
+[shuttle]
+arrivals = false
+emergency = false
+auto_call_time = 0
+auto_call_extension_time = 0
+emergency_early_launch_allowed = false
+
+[vote]
+restart_enabled = false
+preset_enabled = false
+map_enabled = false
