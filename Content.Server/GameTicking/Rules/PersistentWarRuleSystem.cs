@@ -1,9 +1,12 @@
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Ghost;
+using Content.Server.Station.Systems;
 using Content.Server.War;
 using Content.Shared.GameTicking;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Mind;
+using Content.Shared.Mobs;
+using Content.Shared.Mobs.Components;
 using Content.Shared.Preferences;
 using Content.Shared.War;
 using Robust.Shared.Player;
@@ -16,6 +19,8 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     [Dependency] private FactionSpawnSystem _factionSpawns = default!;
     [Dependency] private WarFactionSystem _factions = default!;
     [Dependency] private WarStateSystem _war = default!;
+    [Dependency] private SharedMindSystem _mind = default!;
+    [Dependency] private StationSpawningSystem _stationSpawning = default!;
 
     public override void Initialize()
     {
@@ -74,8 +79,15 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         if (spawns.Count == 0)
             return false;
 
-        // Spawn providers will own materializing the faction character when map entities exist.
-        return false;
+        var mind = _mind.GetOrCreateMind(player.UserId);
+        if (mind.Comp.OwnedEntity is { } current &&
+            !TerminatingOrDeleted(current) &&
+            (!TryComp<MobStateComponent>(current, out var state) || state.CurrentState != MobState.Dead))
+            return false;
+
+        var mob = _stationSpawning.SpawnPlayerMob(spawns[0], null, profile, null);
+        _mind.TransferTo(mind, mob, ghostCheckOverride: true);
+        return true;
     }
 
     private bool IsPersistentWarActive()
