@@ -297,6 +297,9 @@ namespace Content.Server.RoundEnd
             _countdownTokenSource = new();
 
             countdownTime ??= TimeSpan.FromSeconds(_cfg.GetCVar(CCVars.RoundRestartTime));
+            if (countdownTime <= TimeSpan.Zero)
+                return;
+
             int time;
             string unitsLocString;
             if (countdownTime.Value.TotalSeconds < 60)

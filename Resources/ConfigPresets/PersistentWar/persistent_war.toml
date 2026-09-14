@@ -6,6 +6,7 @@ defaultpreset = "PersistentWar"
 fallbackenabled = false
 lobbyduration = 0
 map_rotation = false
+round_restart_time = -1
 
 [events]
 enabled = false
