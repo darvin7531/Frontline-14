@@ -94,10 +94,7 @@ namespace Content.Server.GameTicking
                 return true;
 
             if (Preset?.ID == "PersistentWar" && string.IsNullOrWhiteSpace(_cfg.GetCVar(CCVars.GameMap)))
-            {
-                _sawmill.Warning("PersistentWar requires game.map before the round can start.");
                 return false;
-            }
 
             AddGamePresetRules();
 
