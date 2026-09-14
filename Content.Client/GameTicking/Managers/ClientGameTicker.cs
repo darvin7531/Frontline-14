@@ -13,6 +13,7 @@ using Robust.Shared.Prototypes;
 using Robust.Shared.Audio;
 using Robust.Shared.Timing;
 using Content.Shared.GameTicking.Prototypes;
+using Content.Shared.War;
 
 namespace Content.Client.GameTicking.Managers
 {
@@ -40,6 +41,7 @@ namespace Content.Client.GameTicking.Managers
         [ViewVariables] public int WarId { get; private set; }
         [ViewVariables] public TimeSpan WarDuration { get; private set; }
         [ViewVariables] public TimeSpan WarDurationReceivedAt { get; private set; }
+        [ViewVariables] public FactionId? Faction { get; private set; }
 
         public override IReadOnlyList<(TimeSpan, string)> AllPreviousGameRules => new List<(TimeSpan, string)>();
 
@@ -143,6 +145,7 @@ namespace Content.Client.GameTicking.Managers
             WarId = message.WarId;
             WarDuration = message.WarDuration;
             WarDurationReceivedAt = _gameTiming.CurTime;
+            Faction = message.Faction;
 
             LobbyStatusUpdated?.Invoke();
         }

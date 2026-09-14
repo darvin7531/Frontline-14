@@ -1,0 +1,11 @@
+- type: frontlineFaction
+  id: FrontlineFactionOne
+  name: frontline-faction-one-name
+  description: frontline-faction-one-description
+  color: "#A63131"
+
+- type: frontlineFaction
+  id: FrontlineFactionTwo
+  name: frontline-faction-two-name
+  description: frontline-faction-two-description
+  color: "#315FA6"

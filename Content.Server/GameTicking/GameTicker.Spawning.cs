@@ -400,6 +400,11 @@ namespace Content.Server.GameTicking
             if (!_playerGameStatuses.ContainsKey(player.UserId))
                 return;
 
+            if (IsPersistentWar &&
+                (!_warFactions.TryGetFaction(player.UserId, out var faction) ||
+                 _factionSpawns.GetAvailableSpawns(faction).Count == 0))
+                return;
+
             if (!_userDb.IsLoadComplete(player))
                 return;
 

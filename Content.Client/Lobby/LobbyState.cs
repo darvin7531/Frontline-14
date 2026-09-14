@@ -15,6 +15,7 @@ using Robust.Client.UserInterface.Controls;
 using Robust.Shared.Configuration;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Timing;
+using Content.Shared.War;
 
 namespace Content.Client.Lobby
 {
@@ -206,6 +207,12 @@ namespace Content.Client.Lobby
             {
                 Lobby!.ServerInfo.SetInfoBlob(_gameTicker.ServerInfoBlob);
             }
+
+            var factionName = _gameTicker.Faction is { } faction && _protoMan.TryIndex<FrontlineFactionPrototype>(faction.Id, out var prototype)
+                ? Loc.GetString(prototype.Name)
+                : Loc.GetString("frontline-faction-unselected");
+            Lobby!.FactionStatus.Text = Loc.GetString("frontline-faction-status", ("faction", factionName));
+            Lobby.ChooseFactionButton.Visible = _gameTicker.WarId > 0 && _gameTicker.Faction == null;
 
             var minutesToday = _playtimeTracking.PlaytimeMinutesToday;
             if (minutesToday > 60)

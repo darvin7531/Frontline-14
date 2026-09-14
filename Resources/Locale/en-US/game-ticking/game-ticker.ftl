@@ -29,6 +29,14 @@ persistent-war-lobby-status = [color=white]War #{$warId} • Round #{$roundId}[/
 persistent-war-lobby-duration = War active: {$hours}h {$minutes}m
 persistent-war-status-Active = active
 persistent-war-status-Ended = ended
+frontline-faction-one-name = Frontline Faction One
+frontline-faction-one-description = The first frontline faction.
+frontline-faction-two-name = Frontline Faction Two
+frontline-faction-two-description = The second frontline faction.
+frontline-faction-status = Faction: {$faction}
+frontline-faction-unselected = unselected
+frontline-faction-choose-button = Choose faction
+frontline-faction-select-title = Choose faction
 game-ticker-player-no-jobs-available-when-joining = When attempting to join to the game, no jobs were available.
 
 # Displayed in chat to admins when a player joins
