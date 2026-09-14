@@ -31,7 +31,7 @@ namespace Content.Server.GameTicking.Commands
 
             _configManager.SetCVar(CCVars.GameLobbyEnabled, true);
 
-            _gameTicker.RestartRound(force: true);
+            _gameTicker.RestartRound();
 
             if (preset != null)
                 _gameTicker.SetGamePreset(preset);

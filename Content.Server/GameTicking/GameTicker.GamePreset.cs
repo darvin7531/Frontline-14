@@ -51,7 +51,7 @@ public sealed partial class GameTicker
         {
             SendServerMessage(Loc.GetString("game-ticker-start-round-cannot-start-game-mode-restart",
                 ("failedGameMode", presetTitle)));
-            RestartRound(force: true);
+            RestartRound();
             DelayStart(TimeSpan.FromSeconds(PresetFailedCooldownIncrease));
         }
 

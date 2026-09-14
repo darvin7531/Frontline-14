@@ -651,13 +651,10 @@ namespace Content.Server.GameTicking
             }
         }
 
-        public void RestartRound(bool force = false)
+        public void RestartRound()
         {
             // If this game ticker is a dummy, do nothing!
             if (DummyTicker)
-                return;
-
-            if (IsPersistentWar && !force)
                 return;
 
             ReplayEndRound();

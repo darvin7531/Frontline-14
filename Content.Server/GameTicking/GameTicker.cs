@@ -113,7 +113,7 @@ namespace Content.Server.GameTicking
 
             // We restart the round now that entities are initialized and prototypes have been loaded.
             if (!DummyTicker)
-                RestartRound(force: true);
+                RestartRound();
 
             _postInitialized = true;
         }

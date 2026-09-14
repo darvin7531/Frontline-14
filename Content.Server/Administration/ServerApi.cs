@@ -467,7 +467,7 @@ public sealed partial class ServerApi : IPostInjectInit
         {
             var ticker = _entitySystemManager.GetEntitySystem<GameTicker>();
 
-            ticker.RestartRound(force: true);
+            ticker.RestartRound();
             _sawmill.Info($"Forced instant round restart by {FormatLogActor(actor)}");
             await RespondOk(context);
         });

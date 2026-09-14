@@ -57,6 +57,9 @@ public sealed partial class InactivityTimeRestartRuleSystem : GameRuleSystem<Ina
         if (!Resolve(uid, ref component))
             return;
 
+        if (GameTicker.IsPersistentWar)
+            return;
+
         GameTicker.EndRound(Loc.GetString("rule-time-has-run-out"));
 
         _chatManager.DispatchServerAnnouncement(Loc.GetString("rule-restarting-in-seconds", ("seconds",(int) component.RoundEndDelay.TotalSeconds)));

@@ -32,7 +32,7 @@ public sealed class WarStatePersistenceTest : GameTest
             resources.UserData.Delete(WarStateSystem.SavePath);
             var expected = war.StartNewWar();
 
-            ticker.RestartRound(force: true);
+            ticker.RestartRound();
 
             Assert.That(war.State, Is.EqualTo(expected));
             using var stream = resources.UserData.Open(WarStateSystem.SavePath, FileMode.Open);

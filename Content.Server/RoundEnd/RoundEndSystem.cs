@@ -323,7 +323,7 @@ namespace Content.Server.RoundEnd
                     "round-end-system-round-restart-eta-announcement",
                     ("time", time),
                     ("units", Loc.GetString(unitsLocString, ("amount", time)))));
-            Timer.Spawn(countdownTime.Value, () => AfterEndRoundRestart(force), _countdownTokenSource.Token);
+            Timer.Spawn(countdownTime.Value, AfterEndRoundRestart, _countdownTokenSource.Token);
         }
 
         /// <summary>
@@ -362,11 +362,11 @@ namespace Content.Server.RoundEnd
             }
         }
 
-        private void AfterEndRoundRestart(bool force)
+        private void AfterEndRoundRestart()
         {
             if (_gameTicker.RunLevel != GameRunLevel.PostRound) return;
             Reset();
-            _gameTicker.RestartRound(force);
+            _gameTicker.RestartRound();
         }
 
         private void ActivateCooldown()

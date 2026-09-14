@@ -18,7 +18,7 @@ public sealed partial class RestartRoundCommand : LocalizedEntityCommands
             return;
         }
 
-        _gameTicker.RestartRound(force: true);
+        _gameTicker.RestartRound();
     }
 }
 
@@ -31,6 +31,6 @@ public sealed partial class RestartRoundNowCommand : LocalizedEntityCommands
 
     public override void Execute(IConsoleShell shell, string argStr, string[] args)
     {
-        _gameTicker.RestartRound(force: true);
+        _gameTicker.RestartRound();
     }
 }
