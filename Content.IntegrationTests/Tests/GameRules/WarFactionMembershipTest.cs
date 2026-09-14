@@ -28,6 +28,7 @@ public sealed class WarFactionMembershipTest : GameTest
         var war = server.System<WarStateSystem>();
         var factions = server.System<WarFactionSystem>();
         var account = ServerSession!.UserId;
+        var accountName = ServerSession.Name;
         var first = new FactionId("FrontlineFactionOne");
         var second = new FactionId("FrontlineFactionTwo");
 
@@ -43,9 +44,11 @@ public sealed class WarFactionMembershipTest : GameTest
         var network = client.ResolveDependency<IClientNetManager>();
         await client.WaitPost(() => console.ExecuteCommand("disconnect"));
         await Pair.RunTicksSync(5);
+        await Task.WhenAll(client.WaitIdleAsync(), server.WaitIdleAsync());
         client.SetConnectTarget(server);
-        await client.WaitPost(() => network.ClientConnect(null, 0, null));
+        await client.WaitPost(() => network.ClientConnect(null, 0, accountName));
         await Pair.RunTicksSync(10);
+        await Task.WhenAll(client.WaitIdleAsync(), server.WaitIdleAsync());
 
         await server.WaitAssertion(() =>
         {
