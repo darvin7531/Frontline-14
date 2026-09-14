@@ -45,7 +45,7 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
         });
 
-        ticker.SetGamePreset((GamePresetPrototype?) null);
+        ticker.SetGamePreset((GamePresetPrototype) null);
     }
 
     [Test]
@@ -76,6 +76,6 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(ghostSystem.OnGhostAttempt(mindId, true, viaCommand: true, mind: mind), Is.False);
         });
 
-        ticker.SetGamePreset((GamePresetPrototype?) null);
+        ticker.SetGamePreset((GamePresetPrototype) null);
     }
 }
