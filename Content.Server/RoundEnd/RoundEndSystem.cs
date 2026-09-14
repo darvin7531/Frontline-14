@@ -169,6 +169,9 @@ namespace Content.Server.RoundEnd
         /// <param name="cantRecall">if the station shouldn't be able to recall the shuttle</param>
         public void RequestRoundEnd(TimeSpan countdownTime, EntityUid? requester = null, EntityUid? machine = null, bool checkCooldown = true, string text = "round-end-system-shuttle-called-announcement", string name = "round-end-system-shuttle-sender-announcement", bool cantRecall = false)
         {
+            if (_gameTicker.IsPersistentWar)
+                return;
+
             if (_gameTicker.RunLevel != GameRunLevel.InRound)
                 return;
 
@@ -286,13 +289,16 @@ namespace Content.Server.RoundEnd
             }
         }
 
-        public void EndRound(TimeSpan? countdownTime = null)
+        public void EndRound(TimeSpan? countdownTime = null, bool force = false)
         {
+            if (_gameTicker.IsPersistentWar && !force)
+                return;
+
             if (_gameTicker.RunLevel != GameRunLevel.InRound) return;
             LastCountdownStart = null;
             ExpectedCountdownEnd = null;
             RaiseLocalEvent(RoundEndSystemChangedEvent.Default);
-            _gameTicker.EndRound();
+            _gameTicker.EndRound(force: force);
             _countdownTokenSource?.Cancel();
             _countdownTokenSource = new();
 

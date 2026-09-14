@@ -485,10 +485,13 @@ namespace Content.Server.GameTicking
             DisallowLateJoin = refresh.DisallowLateJoin;
         }
 
-        public void EndRound(string text = "")
+        public void EndRound(string text = "", bool force = false)
         {
             // If this game ticker is a dummy, do nothing!
             if (DummyTicker)
+                return;
+
+            if (IsPersistentWar && !force)
                 return;
 
             DebugTools.Assert(RunLevel == GameRunLevel.InRound);

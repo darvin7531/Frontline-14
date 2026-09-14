@@ -102,8 +102,10 @@ namespace Content.Shared.GameTicking
         public TimeSpan StartTime { get; }
         public TimeSpan RoundStartTimeSpan { get; }
         public bool Paused { get; }
+        public int WarId { get; }
+        public TimeSpan WarDuration { get; }
 
-        public TickerLobbyStatusEvent(bool isRoundStarted, ProtoId<LobbyBackgroundPrototype>? lobbyBackground, bool youAreReady, TimeSpan startTime, TimeSpan preloadTime, TimeSpan roundStartTimeSpan, bool paused)
+        public TickerLobbyStatusEvent(bool isRoundStarted, ProtoId<LobbyBackgroundPrototype>? lobbyBackground, bool youAreReady, TimeSpan startTime, TimeSpan preloadTime, TimeSpan roundStartTimeSpan, bool paused, int warId, TimeSpan warDuration)
         {
             IsRoundStarted = isRoundStarted;
             LobbyBackground = lobbyBackground;
@@ -111,6 +113,8 @@ namespace Content.Shared.GameTicking
             StartTime = startTime;
             RoundStartTimeSpan = roundStartTimeSpan;
             Paused = paused;
+            WarId = warId;
+            WarDuration = warDuration;
         }
     }
 

@@ -74,7 +74,7 @@ namespace Content.Server.GameTicking
 
             var gmTitle = (Decoy == null) ? Loc.GetString(preset.ModeTitle) : Loc.GetString(Decoy.ModeTitle);
             var desc = (Decoy == null) ? Loc.GetString(preset.Description) : Loc.GetString(Decoy.Description);
-            return Loc.GetString(
+            var info = Loc.GetString(
                 RunLevel == GameRunLevel.PreRoundLobby
                     ? "game-ticker-get-info-preround-text"
                     : "game-ticker-get-info-text",
@@ -84,6 +84,11 @@ namespace Content.Server.GameTicking
                 ("mapName", stationNames.ToString()),
                 ("gmTitle", gmTitle),
                 ("desc", desc));
+
+            if (!IsPersistentWar || _war.State is not { } war)
+                return info;
+
+            return $"{info}\n{Loc.GetString("persistent-war-lobby-status", ("warId", war.WarId), ("roundId", RoundId), ("status", Loc.GetString($"persistent-war-status-{war.Status}")))}";
         }
 
         private TickerConnectionStatusEvent GetConnectionStatusMsg()
@@ -94,7 +99,9 @@ namespace Content.Server.GameTicking
         private TickerLobbyStatusEvent GetStatusMsg(ICommonSession session)
         {
             _playerGameStatuses.TryGetValue(session.UserId, out var status);
-            return new TickerLobbyStatusEvent(RunLevel != GameRunLevel.PreRoundLobby, LobbyBackground, status == PlayerGameStatus.ReadyToPlay, _roundStartTime, RoundPreloadTime, RoundStartTimeSpan, Paused);
+            var war = IsPersistentWar ? _war.State : null;
+            var warDuration = war == null ? TimeSpan.Zero : DateTimeOffset.UtcNow - war.StartedAt;
+            return new TickerLobbyStatusEvent(RunLevel != GameRunLevel.PreRoundLobby, LobbyBackground, status == PlayerGameStatus.ReadyToPlay, _roundStartTime, RoundPreloadTime, RoundStartTimeSpan, Paused, war?.WarId ?? 0, warDuration);
         }
 
         private void SendStatusToAll()

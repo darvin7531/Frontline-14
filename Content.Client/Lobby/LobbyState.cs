@@ -124,6 +124,13 @@ namespace Content.Client.Lobby
 
         public override void FrameUpdate(FrameEventArgs e)
         {
+            if (_gameTicker.WarId > 0)
+            {
+                var warTime = _gameTicker.WarDuration + _gameTiming.CurTime - _gameTicker.WarDurationReceivedAt;
+                Lobby!.StationTime.Text = Loc.GetString("persistent-war-lobby-duration", ("hours", (int) warTime.TotalHours), ("minutes", warTime.Minutes));
+                return;
+            }
+
             if (_gameTicker.IsGameStarted)
             {
                 Lobby!.StartTime.Text = string.Empty;
