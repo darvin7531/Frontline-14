@@ -8,6 +8,7 @@ using Robust.Shared.Serialization.Markdown.Value;
 using Robust.Shared.Timing;
 using Robust.Shared.Audio;
 using Content.Shared.GameTicking.Prototypes;
+using Content.Shared.War;
 
 namespace Content.Shared.GameTicking
 {
@@ -104,8 +105,9 @@ namespace Content.Shared.GameTicking
         public bool Paused { get; }
         public int WarId { get; }
         public TimeSpan WarDuration { get; }
+        public FactionId? Faction { get; }
 
-        public TickerLobbyStatusEvent(bool isRoundStarted, ProtoId<LobbyBackgroundPrototype>? lobbyBackground, bool youAreReady, TimeSpan startTime, TimeSpan preloadTime, TimeSpan roundStartTimeSpan, bool paused, int warId, TimeSpan warDuration)
+        public TickerLobbyStatusEvent(bool isRoundStarted, ProtoId<LobbyBackgroundPrototype>? lobbyBackground, bool youAreReady, TimeSpan startTime, TimeSpan preloadTime, TimeSpan roundStartTimeSpan, bool paused, int warId, TimeSpan warDuration, FactionId? faction)
         {
             IsRoundStarted = isRoundStarted;
             LobbyBackground = lobbyBackground;
@@ -115,6 +117,7 @@ namespace Content.Shared.GameTicking
             Paused = paused;
             WarId = warId;
             WarDuration = warDuration;
+            Faction = faction;
         }
     }
 

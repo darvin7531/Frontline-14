@@ -29,6 +29,14 @@ persistent-war-lobby-status = [color=white]Война #{$warId} • Раунд #
 persistent-war-lobby-duration = Война идёт: {$hours}ч {$minutes}м
 persistent-war-status-Active = идёт
 persistent-war-status-Ended = завершена
+frontline-faction-one-name = Первая фронтовая фракция
+frontline-faction-one-description = Первая фракция фронта.
+frontline-faction-two-name = Вторая фронтовая фракция
+frontline-faction-two-description = Вторая фракция фронта.
+frontline-faction-status = Фракция: {$faction}
+frontline-faction-unselected = не выбрана
+frontline-faction-choose-button = Выбрать сторону
+frontline-faction-select-title = Выберите сторону
 game-ticker-player-no-jobs-available-when-joining = При попытке присоединиться к игре ни одной роли не было доступно.
 
 # Displayed in chat to admins when a player joins

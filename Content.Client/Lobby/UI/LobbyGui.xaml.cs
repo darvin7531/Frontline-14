@@ -22,6 +22,7 @@ namespace Content.Client.Lobby.UI
             LobbySong.SetMarkup(Loc.GetString("lobby-state-song-no-song-text"));
 
             LeaveButton.OnPressed += _ => _consoleHost.ExecuteCommand("disconnect");
+            ChooseFactionButton.OnPressed += _ => _consoleHost.ExecuteCommand("choosefaction");
             OptionsButton.OnPressed += _ => UserInterfaceManager.GetUIController<OptionsUIController>().ToggleWindow();
 
             CollapseButton.OnPressed += _ => TogglePanel(false);

@@ -3,12 +3,10 @@ using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.GameTicking;
 using Content.Server.GameTicking.Presets;
 using Content.Server.GameTicking.Rules.Components;
-using Content.Server.Ghost;
 using Content.Server.Mind;
-using Content.Server.Roles;
 using Content.Shared.CCVar;
 using Content.Shared.GameTicking.Components;
-using Content.Shared.Roles.Components;
+
 using Robust.Shared.GameObjects;
 using Robust.Shared.Player;
 
@@ -49,12 +47,11 @@ public sealed class PersistentWarRuleTest : GameTest
     }
 
     [Test]
-    public async Task StartsWithoutJobRoleAndBlocksNormalGhosting()
+    public async Task StartsWithoutSpawningUnselectedPlayers()
     {
         var ticker = Server.System<GameTicker>();
         var mindSystem = Server.System<MindSystem>();
-        var roleSystem = Server.System<RoleSystem>();
-        var ghostSystem = Server.System<GhostSystem>();
+
 
         await Server.WaitPost(() =>
         {
@@ -71,9 +68,7 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(SEntMan.Count<ActiveGameRuleComponent>(), Is.EqualTo(1));
             Assert.That(SEntMan.Count<PersistentWarRuleComponent>(), Is.EqualTo(1));
 
-            Assert.That(mindSystem.TryGetMind(ServerSession!, out var mindId, out var mind));
-            Assert.That(roleSystem.MindHasRole<JobRoleComponent>(mindId), Is.False);
-            Assert.That(ghostSystem.OnGhostAttempt(mindId, true, viaCommand: true, mind: mind), Is.False);
+            Assert.That(mindSystem.TryGetMind(ServerSession!, out _, out _), Is.False);
         });
 
         ticker.SetGamePreset((GamePresetPrototype) null);

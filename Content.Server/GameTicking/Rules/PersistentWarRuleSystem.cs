@@ -1,21 +1,20 @@
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Ghost;
-using Content.Server.Mind;
-using Content.Server.Station.Components;
-using Content.Server.Station.Systems;
 using Content.Server.War;
 using Content.Shared.GameTicking;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Mind;
 using Content.Shared.Preferences;
+using Content.Shared.War;
 using Robust.Shared.Player;
 
 namespace Content.Server.GameTicking.Rules;
 
 public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentWarRuleComponent>
 {
-    [Dependency] private MindSystem _mind = default!;
-    [Dependency] private StationSpawningSystem _stationSpawning = default!;
+
+    [Dependency] private FactionSpawnSystem _factionSpawns = default!;
+    [Dependency] private WarFactionSystem _factions = default!;
     [Dependency] private WarStateSystem _war = default!;
 
     public override void Initialize()
@@ -40,17 +39,21 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         for (var i = args.PlayerPool.Count - 1; i >= 0; i--)
         {
             var player = args.PlayerPool[i];
-            if (!TrySpawnPlayer(player, args.Profiles[player.UserId]))
+            args.PlayerPool.RemoveAt(i);
+
+            if (!_factions.TryGetFaction(player.UserId, out var faction) ||
+                !TrySpawnPlayer(player, args.Profiles[player.UserId], faction))
                 continue;
 
-            args.PlayerPool.RemoveAt(i);
             GameTicker.PlayerJoinGame(player);
         }
     }
 
     private void OnPlayerBeforeSpawn(PlayerBeforeSpawnEvent args)
     {
-        if (!IsPersistentWarActive() || !TrySpawnPlayer(args.Player, args.Profile))
+        if (!IsPersistentWarActive() ||
+            !_factions.TryGetFaction(args.Player.UserId, out var faction) ||
+            !TrySpawnPlayer(args.Player, args.Profile, faction))
             return;
 
         args.Handled = true;
@@ -65,23 +68,14 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         args.Result = false;
     }
 
-    private bool TrySpawnPlayer(ICommonSession player, HumanoidCharacterProfile profile)
+    private bool TrySpawnPlayer(ICommonSession player, HumanoidCharacterProfile profile, FactionId faction)
     {
-        var stations = EntityQueryEnumerator<StationSpawningComponent>();
-        if (!stations.MoveNext(out var station, out _))
+        var spawns = _factionSpawns.GetAvailableSpawns(faction);
+        if (spawns.Count == 0)
             return false;
 
-        var mob = _stationSpawning.SpawnPlayerCharacterOnStation(station, null, profile);
-        if (mob == null)
-            return false;
-
-        if (_mind.TryGetMind(player, out _, out _))
-            _mind.WipeMind(player);
-
-        var mind = _mind.CreateMind(player.UserId, profile.Name);
-        _mind.SetUserId(mind, player.UserId);
-        _mind.TransferTo(mind, mob.Value);
-        return true;
+        // Spawn providers will own materializing the faction character when map entities exist.
+        return false;
     }
 
     private bool IsPersistentWarActive()
