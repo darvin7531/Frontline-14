@@ -156,5 +156,30 @@ namespace Content.IntegrationTests.Tests
                 ticker.RestartRound();
             });
         }
+
+        [Test]
+        public async Task NegativeRestartDelayKeepsRoundEnded()
+        {
+            var pair = Pair;
+            var server = pair.Server;
+            var config = server.ResolveDependency<IConfigurationManager>();
+            var ticker = server.ResolveDependency<IEntitySystemManager>().GetEntitySystem<GameTicker>();
+            var roundEndSystem = server.ResolveDependency<IEntitySystemManager>().GetEntitySystem<RoundEndSystem>();
+
+            await server.WaitAssertion(() =>
+            {
+                config.SetCVar(CCVars.RoundRestartTime, -1f);
+                roundEndSystem.EndRound();
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PostRound));
+            });
+            await pair.RunTicksSync(5);
+
+            await server.WaitAssertion(() =>
+            {
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PostRound));
+                config.SetCVar(CCVars.RoundRestartTime, CCVars.RoundRestartTime.DefaultValue);
+                ticker.RestartRound();
+            });
+        }
     }
 }
