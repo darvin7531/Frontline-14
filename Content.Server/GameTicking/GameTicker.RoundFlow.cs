@@ -88,10 +88,16 @@ namespace Content.Server.GameTicking
         /// <remarks>
         ///     Must be called before the runlevel is set to InRound.
         /// </remarks>
-        private void LoadMaps()
+        private bool LoadMaps()
         {
             if (_map.MapExists(DefaultMap))
-                return;
+                return true;
+
+            if (Preset?.ID == "PersistentWar" && string.IsNullOrWhiteSpace(_cfg.GetCVar(CCVars.GameMap)))
+            {
+                _sawmill.Warning("PersistentWar requires game.map before the round can start.");
+                return false;
+            }
 
             AddGamePresetRules();
 
@@ -136,7 +142,7 @@ namespace Content.Server.GameTicking
             {
                 _map.CreateMap(out var mapId, runMapInit: false);
                 DefaultMap = mapId;
-                return;
+                return true;
             }
 
             for (var i = 0; i < maps.Count; i++)
@@ -147,6 +153,8 @@ namespace Content.Server.GameTicking
                 if (i == 0)
                     DefaultMap = mapId;
             }
+
+            return true;
         }
 
         public PreGameMapLoad RaisePreLoad(
@@ -404,7 +412,11 @@ namespace Content.Server.GameTicking
             DebugTools.AssertEqual(readyPlayers.Count, ReadyPlayerCount());
 
             // Just in case it hasn't been loaded previously we'll try loading it.
-            LoadMaps();
+            if (!LoadMaps())
+            {
+                _startingRound = false;
+                return;
+            }
 
             // map has been selected so update the lobby info text
             // applies to players who didn't ready up

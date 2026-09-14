@@ -1,9 +1,11 @@
 using Content.IntegrationTests.Fixtures;
+using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.GameTicking;
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Ghost;
 using Content.Server.Mind;
 using Content.Server.Roles;
+using Content.Shared.CCVar;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Roles.Components;
 using Robust.Shared.GameObjects;
@@ -22,6 +24,26 @@ public sealed class PersistentWarRuleTest : GameTest
         DummyTicker = false,
         InLobby = true,
     };
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task DoesNotStartWithoutConfiguredMap()
+    {
+        var ticker = Server.System<GameTicker>();
+
+        await Server.WaitPost(() =>
+        {
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
+        });
+    }
 
     [Test]
     public async Task StartsWithoutJobRoleAndBlocksNormalGhosting()
