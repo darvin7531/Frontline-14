@@ -11,6 +11,7 @@ using Robust.Client.State;
 using Robust.Client.UserInterface;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Audio;
+using Robust.Shared.Timing;
 using Content.Shared.GameTicking.Prototypes;
 
 namespace Content.Client.GameTicking.Managers
@@ -22,6 +23,7 @@ namespace Content.Client.GameTicking.Managers
         [Dependency] private IClientAdminManager _admin = default!;
         [Dependency] private IClyde _clyde = default!;
         [Dependency] private IUserInterfaceManager _userInterfaceManager = default!;
+        [Dependency] private IGameTiming _gameTiming = default!;
 
         private Dictionary<NetEntity, Dictionary<ProtoId<JobPrototype>, int?>>  _jobsAvailable = new();
         private Dictionary<NetEntity, string> _stationNames = new();
@@ -35,6 +37,9 @@ namespace Content.Client.GameTicking.Managers
         [ViewVariables] public string? ServerInfoBlob { get; private set; }
         [ViewVariables] public TimeSpan StartTime { get; private set; }
         [ViewVariables] public new bool Paused { get; private set; }
+        [ViewVariables] public int WarId { get; private set; }
+        [ViewVariables] public TimeSpan WarDuration { get; private set; }
+        [ViewVariables] public TimeSpan WarDurationReceivedAt { get; private set; }
 
         public override IReadOnlyList<(TimeSpan, string)> AllPreviousGameRules => new List<(TimeSpan, string)>();
 
@@ -135,6 +140,9 @@ namespace Content.Client.GameTicking.Managers
             AreWeReady = message.YouAreReady;
             LobbyBackground = message.LobbyBackground;
             Paused = message.Paused;
+            WarId = message.WarId;
+            WarDuration = message.WarDuration;
+            WarDurationReceivedAt = _gameTiming.CurTime;
 
             LobbyStatusUpdated?.Invoke();
         }

@@ -25,7 +25,8 @@ game-ticker-get-info-preround-text = Hi and welcome to [color=white]Space Statio
                             >[color=yellow]{$desc}[/color]
 game-ticker-no-map-selected = [color=yellow]Map not yet selected![/color]
 persistent-war-lobby-status = [color=white]War #{$warId} • Round #{$roundId}[/color]
-    War {$status}: {$hours}h {$minutes}m
+    War {$status}
+persistent-war-lobby-duration = War active: {$hours}h {$minutes}m
 persistent-war-status-Active = active
 persistent-war-status-Ended = ended
 game-ticker-player-no-jobs-available-when-joining = When attempting to join to the game, no jobs were available.

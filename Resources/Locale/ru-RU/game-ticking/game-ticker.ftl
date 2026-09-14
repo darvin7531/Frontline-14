@@ -25,7 +25,8 @@ game-ticker-get-info-preround-text = Привет и добро пожалова
     >[color=yellow]{ $desc }[/color]
 game-ticker-no-map-selected = [color=red]Карта ещё не выбрана![/color]
 persistent-war-lobby-status = [color=white]Война #{$warId} • Раунд #{$roundId}[/color]
-    Война {$status}: {$hours}ч {$minutes}м
+    Война {$status}
+persistent-war-lobby-duration = Война идёт: {$hours}ч {$minutes}м
 persistent-war-status-Active = идёт
 persistent-war-status-Ended = завершена
 game-ticker-player-no-jobs-available-when-joining = При попытке присоединиться к игре ни одной роли не было доступно.
