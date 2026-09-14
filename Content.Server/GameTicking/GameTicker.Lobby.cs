@@ -1,5 +1,6 @@
 using System.Linq;
 using Content.Shared.GameTicking;
+using Content.Shared.War;
 using Content.Server.Station.Components;
 using Robust.Shared.Network;
 using Robust.Shared.Player;
@@ -101,7 +102,7 @@ namespace Content.Server.GameTicking
             _playerGameStatuses.TryGetValue(session.UserId, out var status);
             var war = IsPersistentWar ? _war.State : null;
             var warDuration = war == null ? TimeSpan.Zero : DateTimeOffset.UtcNow - war.StartedAt;
-            var faction = IsPersistentWar && _warFactions.TryGetFaction(session.UserId, out var selected) ? selected : null;
+            FactionId? faction = IsPersistentWar && _warFactions.TryGetFaction(session.UserId, out var selected) ? selected : null;
             return new TickerLobbyStatusEvent(RunLevel != GameRunLevel.PreRoundLobby, LobbyBackground, status == PlayerGameStatus.ReadyToPlay, _roundStartTime, RoundPreloadTime, RoundStartTimeSpan, Paused, war?.WarId ?? 0, warDuration, faction);
         }
 

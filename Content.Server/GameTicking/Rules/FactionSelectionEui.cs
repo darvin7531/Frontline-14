@@ -1,3 +1,4 @@
+using System.Linq;
 using Content.Server.EUI;
 using Content.Server.War;
 using Content.Shared.Eui;

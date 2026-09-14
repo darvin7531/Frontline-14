@@ -1,3 +1,4 @@
+using System.Linq;
 using Content.Server.War;
 using Content.Shared.Administration;
 using Content.Shared.War;
