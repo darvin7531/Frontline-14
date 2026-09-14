@@ -1,9 +1,14 @@
 # PersistentWar deliberately has no fixed map until its map prototype exists.
 # Supply game.map at deployment time to lock the eventual PersistentWar map.
 
+[config]
+presets = "PersistentWar/persistent_war"
+preset_development = false
+
 [game]
 defaultpreset = "PersistentWar"
 fallbackenabled = false
+lobbyenabled = true
 lobbyduration = 0
 map_rotation = false
 round_restart_time = -1
