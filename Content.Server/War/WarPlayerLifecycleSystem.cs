@@ -4,7 +4,6 @@ using Content.Server.GameTicking;
 using Content.Server.GameTicking.Rules;
 using Content.Server.Mind;
 using Content.Server.Station.Systems;
-using Content.Shared.Mind.Components;
 using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
 using Content.Shared.Players;
@@ -67,17 +66,16 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
     {
         if (!_waiting.TryGetValue(account, out _) ||
             !_players.TryGetSessionById(account, out var session) ||
-            !_mind.TryGetMind(account, out _, out var mind) ||
+            !_mind.TryGetMind(account, out var mindId, out var mind) ||
             mind.CurrentEntity is not { } body ||
             !TryComp<MobStateComponent>(body, out var state) ||
             state.CurrentState != MobState.Dead ||
-            !TryComp<MindContainerComponent>(body, out var container) ||
             _station.GetStations().FirstOrDefault() is not { Valid: true } station)
             return false;
 
         _waiting.Remove(account);
         CloseChoice(account);
-        container.GhostOnShutdown = false;
+        _mind.TransferTo(mindId, null, createGhost: false, mind: mind);
         Del(body);
         _ticker.MakeJoinGame(session, station, silent: true);
         return true;
