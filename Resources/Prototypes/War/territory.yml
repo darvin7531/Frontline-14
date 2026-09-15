@@ -9,7 +9,8 @@
     boundsMax: 5,5
 
 - type: entity
-  id: TownHall
+  id: TownHallBase
+  abstract: true
   parent: [BaseStructure, StructureHealthFurniture]
   name: town hall
   description: Controls its territory while it stands.
