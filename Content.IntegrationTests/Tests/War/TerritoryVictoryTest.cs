@@ -10,6 +10,8 @@ namespace Content.IntegrationTests.Tests.War;
 [TestFixture]
 public sealed class TerritoryVictoryTest : GameTest
 {
+    public override PoolSettings PoolSettings => new() { Dirty = true };
+
     [Test]
     public async Task FourOwnedTerritoriesEndWarForTheirFaction()
     {
