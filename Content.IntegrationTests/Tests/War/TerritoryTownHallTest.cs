@@ -32,7 +32,7 @@ public sealed class TerritoryTownHallTest : GameTest
             SEntMan.AddComponent<FactionSpawnPointComponent>(spawn).TerritoryId = territoryId.Id;
         });
 
-        await Server.WaitAssertion(() =>
+        await Server.WaitPost(() =>
         {
             Assert.That(territories.GetState(territoryId), Is.EqualTo(TerritoryState.Owned));
             Assert.That(spawns.GetAvailableSpawns(faction), Has.Count.EqualTo(1));
