@@ -10,6 +10,8 @@ namespace Content.IntegrationTests.Tests.War;
 [TestOf(typeof(TerritorySystem))]
 public sealed class TerritoryTownHallTest : GameTest
 {
+    public override PoolSettings PoolSettings => new() { Dirty = true };
+
     [Test]
     public async Task ActiveTownHallOwnsTerritoryAndEnablesFactionSpawn()
     {
