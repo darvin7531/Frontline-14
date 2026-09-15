@@ -10,6 +10,7 @@ using Content.Shared.War;
 using Robust.Server.Player;
 using Robust.Shared.Enums;
 using Robust.Shared.Network;
+using Robust.Shared.Player;
 
 namespace Content.Server.War;
 

@@ -11,7 +11,7 @@ namespace Content.Client.War;
 [UsedImplicitly]
 public sealed class RespawnChoiceEui : BaseEui
 {
-    private readonly DefaultWindow _window = new();
+    private readonly RespawnChoiceWindow _window = new();
 
     public RespawnChoiceEui()
     {
@@ -23,7 +23,7 @@ public sealed class RespawnChoiceEui : BaseEui
         var respawn = new Button { Text = Loc.GetString("frontline-respawn-choice-respawn") };
         respawn.OnPressed += _ => SendMessage(new RespawnNowMessage());
         contents.AddChild(respawn);
-        _window.ContentsContainer.AddChild(contents);
+        _window.SetContents(contents);
     }
 
     public override void Opened() => _window.OpenCentered();
@@ -32,5 +32,13 @@ public sealed class RespawnChoiceEui : BaseEui
 
     public override void HandleState(EuiStateBase state)
     {
+    }
+}
+
+public sealed class RespawnChoiceWindow : DefaultWindow
+{
+    public void SetContents(Control contents)
+    {
+        ContentsContainer.AddChild(contents);
     }
 }
