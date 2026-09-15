@@ -17,6 +17,7 @@ public sealed class TerritoryVictoryTest : GameTest
         var map = await Pair.CreateTestMap();
         var faction = new FactionId("FrontlineFactionOne");
         var war = server.System<WarStateSystem>();
+        _ = server.System<WarVictorySystem>();
 
         await server.WaitPost(() =>
         {
