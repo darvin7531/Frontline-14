@@ -5,6 +5,7 @@ using Content.Server.GameTicking.Rules;
 using Content.Server.Mind;
 using Content.Server.Station.Systems;
 using Content.Shared.Mobs;
+using Content.Shared.Mobs.Components;
 using Content.Shared.Players;
 using Content.Shared.War;
 using Robust.Server.Player;
@@ -69,7 +70,7 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
             mind.CurrentEntity is not { } body ||
             !TryComp<MobStateComponent>(body, out var state) ||
             state.CurrentState != MobState.Dead ||
-            _station.GetStations().FirstOrNull() is not { } station)
+            _station.GetStations().FirstOrDefault() is not { Valid: true } station)
             return false;
 
         _waiting.Remove(account);

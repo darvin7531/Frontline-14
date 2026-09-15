@@ -5,6 +5,7 @@ using Content.Shared.Interaction;
 using Content.Shared.Stacks;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Player;
 
 namespace Content.Server.War;
 
@@ -18,7 +19,7 @@ public sealed partial class TownHallSystem : EntitySystem
     public override void Initialize()
     {
         SubscribeLocalEvent<TownHallComponent, EntityTerminatingEvent>(OnTownHallTerminating);
-        SubscribeLocalEvent<TownHallRuinComponent, InteractUsingEvent>(OnRuinInteract);
+        SubscribeLocalEvent<TownHallRuinComponent, AfterInteractEvent>(OnRuinInteract);
         SubscribeLocalEvent<TownHallRuinComponent, TownHallRepairDoAfterEvent>(OnRepairComplete);
     }
 
@@ -28,7 +29,7 @@ public sealed partial class TownHallSystem : EntitySystem
         Comp<TownHallRuinComponent>(ruin).TerritoryId = hall.Comp.TerritoryId;
     }
 
-    private void OnRuinInteract(Entity<TownHallRuinComponent> ruin, ref InteractUsingEvent args)
+    private void OnRuinInteract(Entity<TownHallRuinComponent> ruin, ref AfterInteractEvent args)
     {
         if (args.Handled || !args.CanReach ||
             !TryComp<ActorComponent>(args.User, out var actor) ||
@@ -38,7 +39,7 @@ public sealed partial class TownHallSystem : EntitySystem
             return;
 
         args.Handled = _doAfter.TryStartDoAfter(new DoAfterArgs(EntityManager, args.User, TimeSpan.FromSeconds(2),
-            new TownHallRepairDoAfterEvent(faction.Id), ruin, target: ruin, used: args.Used, eventTarget: ruin));
+            new TownHallRepairDoAfterEvent(faction.Id), ruin, target: ruin, used: args.Used));
     }
 
     private void OnRepairComplete(Entity<TownHallRuinComponent> ruin, ref TownHallRepairDoAfterEvent args)
