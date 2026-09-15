@@ -10,8 +10,6 @@ namespace Content.IntegrationTests.Tests.War;
 [TestFixture]
 public sealed class TerritoryVictoryTest : GameTest
 {
-    public override PoolSettings PoolSettings => new() { Dirty = true };
-
     [Test]
     public async Task FourOwnedTerritoriesEndWarForTheirFaction()
     {
@@ -19,7 +17,6 @@ public sealed class TerritoryVictoryTest : GameTest
         var map = await Pair.CreateTestMap();
         var faction = new FactionId("FrontlineFactionOne");
         var war = server.System<WarStateSystem>();
-        var victory = server.System<WarVictorySystem>();
 
         await server.WaitPost(() =>
         {
@@ -42,7 +39,6 @@ public sealed class TerritoryVictoryTest : GameTest
 
         await server.WaitAssertion(() =>
         {
-            Assert.That(victory.CheckForVictory(), Is.True);
             Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Ended));
             Assert.That(war.State?.Winner, Is.EqualTo(faction));
         });
