@@ -90,7 +90,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         return true;
     }
 
-    private bool IsPersistentWarActive()
+    public bool IsPersistentWarActive()
     {
         var rules = EntityQueryEnumerator<PersistentWarRuleComponent, GameRuleComponent>();
         while (rules.MoveNext(out var uid, out _, out var gameRule))

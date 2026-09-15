@@ -37,6 +37,9 @@ frontline-faction-status = Фракция: {$faction}
 frontline-faction-unselected = не выбрана
 frontline-faction-choose-button = Выбрать сторону
 frontline-faction-select-title = Выберите сторону
+frontline-respawn-choice-title = Вы погибли
+frontline-respawn-choice-wait = Ждите воскрешения. Ваше тело ещё можно воскресить.
+frontline-respawn-choice-respawn = Возродиться
 game-ticker-player-no-jobs-available-when-joining = При попытке присоединиться к игре ни одной роли не было доступно.
 
 # Displayed in chat to admins when a player joins
