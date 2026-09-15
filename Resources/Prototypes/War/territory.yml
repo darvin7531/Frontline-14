@@ -20,6 +20,14 @@
     faction: FrontlineFactionOne
 
 - type: entity
+  id: TownHallRuin
+  parent: BaseStructure
+  name: destroyed town hall
+  components:
+  - type: TownHallRuin
+    territory: Unassigned
+
+- type: entity
   id: FactionSpawnPoint
   parent: MarkerBase
   name: faction spawn point
