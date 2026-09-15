@@ -37,6 +37,8 @@ public sealed class TerritoryVictoryTest : GameTest
             }
         });
 
+        await Pair.RunTicksSync(1);
+
         await server.WaitAssertion(() =>
         {
             Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Ended));
