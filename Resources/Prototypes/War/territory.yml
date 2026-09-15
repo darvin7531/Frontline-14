@@ -21,7 +21,7 @@
 
 - type: entity
   id: TownHallRuin
-  parent: BaseStructure
+  parent: [BaseStructure, StructureHealthFurniture]
   name: destroyed town hall
   components:
   - type: TownHallRuin

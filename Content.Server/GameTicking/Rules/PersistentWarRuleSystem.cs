@@ -5,8 +5,6 @@ using Content.Server.War;
 using Content.Shared.GameTicking;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Mind;
-using Content.Shared.Mobs;
-using Content.Shared.Mobs.Components;
 using Content.Shared.Preferences;
 using Content.Shared.War;
 using Robust.Shared.Player;
@@ -56,10 +54,11 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
 
     private void OnPlayerBeforeSpawn(PlayerBeforeSpawnEvent args)
     {
-        if (!IsPersistentWarActive() ||
-            !_factions.TryGetFaction(args.Player.UserId, out var faction) ||
-            !TrySpawnPlayer(args.Player, args.Profile, faction))
+        if (!IsPersistentWarActive())
             return;
+
+        if (_factions.TryGetFaction(args.Player.UserId, out var faction))
+            TrySpawnPlayer(args.Player, args.Profile, faction);
 
         args.Handled = true;
     }
@@ -81,8 +80,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
 
         var mind = _mind.GetOrCreateMind(player.UserId);
         if (mind.Comp.OwnedEntity is { } current &&
-            !TerminatingOrDeleted(current) &&
-            (!TryComp<MobStateComponent>(current, out var state) || state.CurrentState != MobState.Dead))
+            !TerminatingOrDeleted(current))
             return false;
 
         var mob = _stationSpawning.SpawnPlayerMob(spawns[0], null, profile, null);

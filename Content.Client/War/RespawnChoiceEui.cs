@@ -17,6 +17,7 @@ public sealed class RespawnChoiceEui : BaseEui
     public RespawnChoiceEui()
     {
         _window.Title = Loc.GetString("frontline-respawn-choice-title");
+        _window.OnClose += () => SendMessage(new CloseEuiMessage());
         var contents = new BoxContainer { Orientation = LayoutOrientation.Vertical };
         var wait = new Button { Text = Loc.GetString("frontline-respawn-choice-wait") };
         wait.OnPressed += _ => SendMessage(new CloseEuiMessage());
