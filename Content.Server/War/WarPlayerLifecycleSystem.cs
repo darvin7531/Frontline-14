@@ -67,6 +67,7 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
         if (!_waiting.TryGetValue(account, out _) ||
             !_players.TryGetSessionById(account, out var session) ||
             !_mind.TryGetMind(account, out var mindId, out var mind) ||
+            mindId is not { } mindEntity ||
             mind.CurrentEntity is not { } body ||
             !TryComp<MobStateComponent>(body, out var state) ||
             state.CurrentState != MobState.Dead ||
@@ -75,7 +76,7 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
 
         _waiting.Remove(account);
         CloseChoice(account);
-        _mind.TransferTo(mindId, null, createGhost: false, mind: mind);
+        _mind.TransferTo(mindEntity, null, createGhost: false, mind: mind);
         Del(body);
         _ticker.MakeJoinGame(session, station, silent: true);
         return true;
