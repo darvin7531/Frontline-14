@@ -25,7 +25,11 @@ public sealed partial class TownHallSystem : EntitySystem
 
     private void OnTownHallTerminating(Entity<TownHallComponent> hall, ref EntityTerminatingEvent args)
     {
-        var ruin = Spawn("TownHallRuin", Transform(hall).Coordinates);
+        var coordinates = Transform(hall).Coordinates;
+        if (TerminatingOrDeleted(coordinates.EntityId))
+            return;
+
+        var ruin = Spawn("TownHallRuin", coordinates);
         Comp<TownHallRuinComponent>(ruin).TerritoryId = hall.Comp.TerritoryId;
     }
 
