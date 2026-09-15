@@ -3,6 +3,7 @@ using Content.IntegrationTests.Fixtures;
 using Content.Server.War;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Map;
 
 namespace Content.IntegrationTests.Tests.War;
 
@@ -24,7 +25,7 @@ public sealed class TerritoryVictoryTest : GameTest
 
             for (var i = 0; i < 5; i++)
             {
-                var coordinates = new EntityCoordinates(map.GridUid, new Vector2(i * 2, 0));
+                var coordinates = new EntityCoordinates(map.Grid.Owner, map.GridCoords.Position + new Vector2(i * 2, 0));
                 var territory = SEntMan.SpawnEntity(null, coordinates);
                 SEntMan.AddComponent<TerritoryComponent>(territory)
                     .Configure(new TerritoryId($"territory-{i}"), coordinates.Position - new Vector2(0.5f), coordinates.Position + new Vector2(0.5f));

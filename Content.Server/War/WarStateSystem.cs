@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using Content.Server.GameTicking;
 using Content.Shared.GameTicking;
+using Content.Shared.War;
 using Robust.Shared.ContentPack;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Utility;
@@ -15,7 +16,7 @@ public enum WarStatus : byte
     Ended,
 }
 
-public sealed record WarState(int WarId, WarStatus Status, DateTimeOffset StartedAt);
+public sealed record WarState(int WarId, WarStatus Status, DateTimeOffset StartedAt, FactionId? Winner = null);
 
 public sealed partial class WarStateSystem : EntitySystem
 {
@@ -44,12 +45,12 @@ public sealed partial class WarStateSystem : EntitySystem
         return state;
     }
 
-    public void EndWar()
+    public void EndWar(FactionId? winner = null)
     {
         if (State is not { } state || state.Status == WarStatus.Ended)
             return;
 
-        Save(state with { Status = WarStatus.Ended });
+        Save(state with { Status = WarStatus.Ended, Winner = winner });
     }
 
     private void Load()
