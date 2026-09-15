@@ -75,11 +75,15 @@ public sealed partial class RespawnRuleSystem : GameRuleSystem<RespawnDeadRuleCo
 
     private void OnMobStateChanged(MobStateChangedEvent args)
     {
-        if (args.NewMobState != MobState.Dead)
-            return;
-
         if (!TryComp<ActorComponent>(args.Target, out var actor))
             return;
+
+        if (args.NewMobState != MobState.Dead)
+        {
+            foreach (var tracker in EntityQuery<RespawnTrackerComponent>())
+                tracker.RespawnQueue.Remove(actor.PlayerSession.UserId);
+            return;
+        }
 
         var query = EntityQueryEnumerator<RespawnDeadRuleComponent, RespawnTrackerComponent, GameRuleComponent>();
         while (query.MoveNext(out var uid, out var respawnRule, out  var tracker, out var rule))

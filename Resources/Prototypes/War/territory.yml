@@ -1,0 +1,28 @@
+- type: entity
+  id: TerritoryMarker
+  parent: MarkerBase
+  name: territory marker
+  components:
+  - type: Territory
+    territory: Unassigned
+    boundsMin: -5,-5
+    boundsMax: 5,5
+
+- type: entity
+  id: TownHallBase
+  abstract: true
+  parent: [BaseStructure, StructureHealthFurniture]
+  name: town hall
+  description: Controls its territory while it stands.
+  components:
+  - type: TownHall
+    territory: Unassigned
+    faction: FrontlineFactionOne
+
+- type: entity
+  id: FactionSpawnPoint
+  parent: MarkerBase
+  name: faction spawn point
+  components:
+  - type: FactionSpawnPoint
+    territory: Unassigned

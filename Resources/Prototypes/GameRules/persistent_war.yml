@@ -3,3 +3,8 @@
   parent: BaseGameRule
   components:
   - type: PersistentWarRule
+  - type: RespawnDeadRule
+    alwaysRespawnDead: true
+  - type: RespawnTracker
+    respawnDelay: 30
+    deleteBody: true
