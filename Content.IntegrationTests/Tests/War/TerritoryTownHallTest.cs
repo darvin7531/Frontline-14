@@ -29,7 +29,7 @@ public sealed class TerritoryTownHallTest : GameTest
             SEntMan.AddComponent<TownHallComponent>(hall).Configure(territoryId, faction);
 
             var spawn = SEntMan.SpawnEntity(null, new EntityCoordinates(TestMap.Grid, 1, 1));
-            SEntMan.AddComponent<FactionSpawnPointComponent>(spawn).Territory = territoryId;
+            SEntMan.AddComponent<FactionSpawnPointComponent>(spawn).TerritoryId = territoryId.Id;
 
             Assert.That(territories.GetState(territoryId), Is.EqualTo(TerritoryState.Owned));
             Assert.That(spawns.GetAvailableSpawns(faction), Has.Count.EqualTo(1));

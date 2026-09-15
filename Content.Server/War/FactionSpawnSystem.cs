@@ -14,8 +14,8 @@ public sealed partial class FactionSpawnSystem : EntitySystem
         while (points.MoveNext(out var uid, out var point, out var xform))
         {
             if (TerminatingOrDeleted(uid) ||
-                !_territories.Contains(point.Territory, xform.Coordinates) ||
-                !_territories.TryGetOwner(point.Territory, out var owner) ||
+                !_territories.Contains(new TerritoryId(point.TerritoryId), xform.Coordinates) ||
+                !_territories.TryGetOwner(new TerritoryId(point.TerritoryId), out var owner) ||
                 owner != faction)
                 continue;
 

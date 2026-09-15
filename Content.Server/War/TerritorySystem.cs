@@ -11,10 +11,10 @@ public sealed partial class TerritorySystem : EntitySystem
         var halls = EntityQueryEnumerator<TownHallComponent, TransformComponent>();
         while (halls.MoveNext(out var uid, out var hall, out var xform))
         {
-            if (TerminatingOrDeleted(uid) || hall.Territory != territory || !Contains(territory, xform.Coordinates))
+            if (TerminatingOrDeleted(uid) || hall.TerritoryId != territory.Id || !Contains(territory, xform.Coordinates))
                 continue;
 
-            owners.Add(hall.Faction);
+            owners.Add(new FactionId(hall.FactionId));
             if (owners.Count > 1)
                 return TerritoryState.Contested;
         }
@@ -28,13 +28,14 @@ public sealed partial class TerritorySystem : EntitySystem
         var halls = EntityQueryEnumerator<TownHallComponent, TransformComponent>();
         while (halls.MoveNext(out var uid, out var hall, out var xform))
         {
-            if (TerminatingOrDeleted(uid) || hall.Territory != territory || !Contains(territory, xform.Coordinates))
+            if (TerminatingOrDeleted(uid) || hall.TerritoryId != territory.Id || !Contains(territory, xform.Coordinates))
                 continue;
 
-            if (faction != default && faction != hall.Faction)
+            var owner = new FactionId(hall.FactionId);
+            if (faction != default && faction != owner)
                 return false;
 
-            faction = hall.Faction;
+            faction = owner;
         }
 
         return faction != default;
@@ -45,7 +46,7 @@ public sealed partial class TerritorySystem : EntitySystem
         var territories = EntityQueryEnumerator<TerritoryComponent, TransformComponent>();
         while (territories.MoveNext(out var uid, out var definition, out var xform))
         {
-            if (TerminatingOrDeleted(uid) || definition.Territory != territory || xform.GridUid != coordinates.EntityId)
+            if (TerminatingOrDeleted(uid) || definition.TerritoryId != territory.Id || xform.GridUid != coordinates.EntityId)
                 continue;
 
             return definition.Contains(coordinates.Position);

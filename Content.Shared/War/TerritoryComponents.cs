@@ -6,8 +6,8 @@ namespace Content.Shared.War;
 [RegisterComponent]
 public sealed partial class TerritoryComponent : Component
 {
-    [DataField(required: true)]
-    public TerritoryId Territory;
+    [DataField("territory", required: true)]
+    public string TerritoryId = string.Empty;
 
     [DataField(required: true)]
     public Vector2 BoundsMin;
@@ -17,7 +17,7 @@ public sealed partial class TerritoryComponent : Component
 
     public void Configure(TerritoryId territory, Vector2 boundsMin, Vector2 boundsMax)
     {
-        Territory = territory;
+        TerritoryId = territory.Id;
         BoundsMin = boundsMin;
         BoundsMax = boundsMax;
     }
@@ -30,22 +30,22 @@ public sealed partial class TerritoryComponent : Component
 [RegisterComponent]
 public sealed partial class TownHallComponent : Component
 {
-    [DataField(required: true)]
-    public TerritoryId Territory;
+    [DataField("territory", required: true)]
+    public string TerritoryId = string.Empty;
 
-    [DataField(required: true)]
-    public FactionId Faction;
+    [DataField("faction", required: true)]
+    public string FactionId = string.Empty;
 
     public void Configure(TerritoryId territory, FactionId faction)
     {
-        Territory = territory;
-        Faction = faction;
+        TerritoryId = territory.Id;
+        FactionId = faction.Id;
     }
 }
 
 [RegisterComponent]
 public sealed partial class FactionSpawnPointComponent : Component
 {
-    [DataField(required: true)]
-    public TerritoryId Territory;
+    [DataField("territory", required: true)]
+    public string TerritoryId = string.Empty;
 }
