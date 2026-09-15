@@ -37,6 +37,9 @@ frontline-faction-status = Faction: {$faction}
 frontline-faction-unselected = unselected
 frontline-faction-choose-button = Choose faction
 frontline-faction-select-title = Choose faction
+frontline-respawn-choice-title = You died
+frontline-respawn-choice-wait = Wait for revival. Your body can still be revived.
+frontline-respawn-choice-respawn = Respawn
 game-ticker-player-no-jobs-available-when-joining = When attempting to join to the game, no jobs were available.
 
 # Displayed in chat to admins when a player joins
