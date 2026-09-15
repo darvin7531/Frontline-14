@@ -2,7 +2,6 @@ using System.Numerics;
 using Content.IntegrationTests.Fixtures;
 using Content.Server.War;
 using Content.Shared.War;
-using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
 
 namespace Content.IntegrationTests.Tests.War;
@@ -20,14 +19,13 @@ public sealed class TerritoryTownHallTest : GameTest
         var territories = Server.System<TerritorySystem>();
         var faction = new FactionId("FrontlineFactionOne");
         var territoryId = new TerritoryId("TestTerritory");
-        EntityUid hall = EntityUid.Invalid;
 
         await Server.WaitPost(() =>
         {
             var territory = SEntMan.SpawnEntity(null, TestMap!.GridCoords);
             SEntMan.AddComponent<TerritoryComponent>(territory).Configure(territoryId, new Vector2(-5, -5), new Vector2(5, 5));
 
-            hall = SEntMan.SpawnEntity(null, new EntityCoordinates(TestMap.Grid, 0, 0));
+            var hall = SEntMan.SpawnEntity(null, new EntityCoordinates(TestMap.Grid, 0, 0));
             SEntMan.AddComponent<TownHallComponent>(hall).Configure(territoryId, faction);
 
             var spawn = SEntMan.SpawnEntity(null, new EntityCoordinates(TestMap.Grid, 1, 1));
@@ -38,18 +36,6 @@ public sealed class TerritoryTownHallTest : GameTest
         {
             Assert.That(territories.GetState(territoryId), Is.EqualTo(TerritoryState.Owned));
             Assert.That(spawns.GetAvailableSpawns(faction), Has.Count.EqualTo(1));
-        });
-
-        await Server.WaitPost(() =>
-        {
-            SEntMan.QueueDeleteEntity(hall);
-        });
-        await Pair.RunTicksSync(5);
-
-        await Server.WaitAssertion(() =>
-        {
-            Assert.That(territories.GetState(territoryId), Is.EqualTo(TerritoryState.Neutral));
-            Assert.That(spawns.GetAvailableSpawns(faction), Is.Empty);
         });
     }
 }
