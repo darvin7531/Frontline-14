@@ -198,9 +198,10 @@ public sealed class PersistentWarRuleTest : GameTest
                         hall => hall.FactionId == "FrontlineFactionOne")).FactionId = "FrontlineFactionTwo";
                     break;
                 case InvalidMapCase.ObjectiveOutsideBounds:
-                    Server.System<SharedTransformSystem>().SetLocalPosition(
-                        FindMapEntity<TownHallComponent>(mapId, hall => hall.TerritoryId == "frontline-one"),
-                        new Vector2(-10f, -10f));
+                    var territory = SComp<TerritoryComponent>(FindMapEntity<TerritoryComponent>(mapId,
+                        marker => marker.TerritoryId == "frontline-one"));
+                    territory.BoundsMin = Vector2.One;
+                    territory.BoundsMax = new Vector2(2f, 2f);
                     break;
                 case InvalidMapCase.DuplicateObjective:
                     var original = FindMapEntity<TownHallComponent>(mapId,
