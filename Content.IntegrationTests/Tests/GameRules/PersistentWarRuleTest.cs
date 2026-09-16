@@ -9,6 +9,7 @@ using Content.Server.GameTicking.Presets;
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Mind;
 using Content.Server.War;
+using Content.Shared.Atmos;
 using Content.Shared.Atmos.Components;
 using Content.Shared.CCVar;
 using Content.Shared.GameTicking.Components;
@@ -94,6 +95,13 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(clientCycle.Offset, Is.EqualTo(cycle.Offset));
         });
 
+        await Server.WaitPost(() => atmosphere.SetMapGasMixture(map, GasMixture.SpaceGas, atmos));
+        await Server.WaitAssertion(() =>
+        {
+            var error = Assert.Throws<InvalidOperationException>(() => Server.System<PersistentWarMapValidatorSystem>().Validate(map));
+            Assert.That(error!.Message, Is.EqualTo("PersistentWar map MapAtmosphere must provide safe pressure and temperature."));
+        });
+
         ticker.SetGamePreset((GamePresetPrototype) null);
     }
 
@@ -118,6 +126,56 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(error.Message, Does.Contain("PersistentWar map must include a starting town hall for FrontlineFactionTwo."));
             });
         });
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartRestoresPersistentDayNightPhase()
+    {
+        var ticker = Server.System<GameTicker>();
+        var resources = Server.ResolveDependency<IResourceManager>();
+        var war = Server.System<WarStateSystem>();
+        var startedAt = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(7);
+        TimeSpan beforeRestart = default;
+
+        await Server.WaitPost(() =>
+        {
+            resources.UserData.Delete(WarStateSystem.SavePath);
+            using (var stream = resources.UserData.OpenWrite(WarStateSystem.SavePath))
+                JsonSerializer.Serialize(stream, new WarState(1, WarStatus.Active, startedAt));
+
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+
+        await Server.WaitAssertion(() =>
+        {
+            var map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+            beforeRestart = SEntMan.GetComponent<LightCycleComponent>(map).Offset;
+            Assert.That(war.State?.StartedAt, Is.EqualTo(startedAt));
+        });
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+
+        await Server.WaitAssertion(() =>
+        {
+            var map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+            var restored = SEntMan.GetComponent<LightCycleComponent>(map).Offset;
+            Assert.That(war.State?.StartedAt, Is.EqualTo(startedAt));
+            Assert.That(restored, Is.InRange(beforeRestart, beforeRestart + TimeSpan.FromMinutes(1)));
+        });
+
+        ticker.SetGamePreset((GamePresetPrototype) null);
     }
 
     [Test]

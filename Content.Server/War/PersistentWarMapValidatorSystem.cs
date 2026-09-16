@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using Content.Server.Atmos.EntitySystems;
 using Content.Shared.Atmos.Components;
 using Content.Shared.Light.Components;
+using Content.Shared.War;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map.Components;
 
@@ -8,21 +11,129 @@ namespace Content.Server.War;
 
 public sealed class PersistentWarMapValidatorSystem : EntitySystem
 {
+    [Dependency] private AtmosphereSystem _atmosphere = default!;
+
     public void Validate(EntityUid map)
     {
-        if (!TryComp(map, out MapAtmosphereComponent? atmosphere))
-            throw new InvalidOperationException("PersistentWar map must include MapAtmosphere.");
+        var errors = new List<string>();
+        ValidateEnvironment(map, errors);
+        ValidateTerritories(map, errors);
 
-        if (atmosphere.Space)
-            throw new InvalidOperationException("PersistentWar map must set MapAtmosphere.space to false.");
+        if (errors.Count != 0)
+            throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
+    }
+
+    private void ValidateEnvironment(EntityUid map, List<string> errors)
+    {
+        if (!TryComp(map, out MapAtmosphereComponent? atmosphere))
+            errors.Add("PersistentWar map must include MapAtmosphere.");
+        else if (atmosphere.Space)
+            errors.Add("PersistentWar map must set MapAtmosphere.space to false.");
+        else if (!_atmosphere.IsMixtureProbablySafe(_atmosphere.GetTileMixture(null, (map, atmosphere), default)))
+            errors.Add("PersistentWar map MapAtmosphere must provide safe pressure and temperature.");
 
         if (!HasComp<MapLightComponent>(map))
-            throw new InvalidOperationException("PersistentWar map must include MapLight.");
+            errors.Add("PersistentWar map must include MapLight.");
 
         if (!TryComp(map, out LightCycleComponent? cycle))
-            throw new InvalidOperationException("PersistentWar map must include LightCycle.");
+            errors.Add("PersistentWar map must include LightCycle.");
+        else if (!cycle.Enabled || cycle.Duration <= TimeSpan.Zero)
+            errors.Add("PersistentWar map LightCycle must be enabled with a positive duration.");
+    }
 
-        if (!cycle.Enabled || cycle.Duration <= TimeSpan.Zero)
-            throw new InvalidOperationException("PersistentWar map LightCycle must be enabled with a positive duration.");
+    private void ValidateTerritories(EntityUid map, List<string> errors)
+    {
+        var territories = new Dictionary<string, Entity<TerritoryComponent, TransformComponent>>();
+        var markers = EntityQueryEnumerator<TerritoryComponent, TransformComponent>();
+        while (markers.MoveNext(out var uid, out var territory, out var xform))
+        {
+            if (TerminatingOrDeleted(uid) || xform.MapUid != map)
+                continue;
+
+            if (territory.TerritoryId == "Unassigned")
+            {
+                errors.Add("PersistentWar map territory markers must not use Unassigned.");
+                continue;
+            }
+
+            if (!territories.TryAdd(territory.TerritoryId, (uid, territory, xform)))
+                errors.Add($"PersistentWar map territory '{territory.TerritoryId}' is duplicated.");
+        }
+
+        if (territories.Count != 5)
+            errors.Add($"PersistentWar map must define exactly five territories (found {territories.Count}).");
+
+        var halls = GetMapEntities<TownHallComponent>(map);
+        var ruins = GetMapEntities<TownHallRuinComponent>(map);
+        var spawns = GetMapEntities<FactionSpawnPointComponent>(map);
+        foreach (var (id, territory) in territories)
+        {
+            if (!Contains(territory, halls, id) && !Contains(territory, ruins, id))
+                errors.Add($"PersistentWar map territory '{id}' must include a town hall or ruin within its bounds.");
+
+            if (!Contains(territory, spawns, id))
+                errors.Add($"PersistentWar map territory '{id}' must include a faction spawn point within its bounds.");
+        }
+
+        if (territories.Count == 0)
+        {
+            errors.Add("PersistentWar map must include a town hall or ruin for each territory.");
+            errors.Add("PersistentWar map must include a faction spawn point for each territory.");
+        }
+
+        ValidateStartingHall(territories, halls, "FrontlineFactionOne", errors);
+        ValidateStartingHall(territories, halls, "FrontlineFactionTwo", errors);
+    }
+
+    private List<Entity<T, TransformComponent>> GetMapEntities<T>(EntityUid map) where T : IComponent
+    {
+        var result = new List<Entity<T, TransformComponent>>();
+        var entities = EntityQueryEnumerator<T, TransformComponent>();
+        while (entities.MoveNext(out var uid, out var component, out var xform))
+        {
+            if (!TerminatingOrDeleted(uid) && xform.MapUid == map)
+                result.Add((uid, component, xform));
+        }
+
+        return result;
+    }
+
+    private static bool Contains<T>(
+        Entity<TerritoryComponent, TransformComponent> territory,
+        List<Entity<T, TransformComponent>> entities,
+        string id)
+        where T : IComponent
+    {
+        foreach (var entity in entities)
+        {
+            var entityId = entity.Comp switch
+            {
+                TownHallComponent hall => hall.TerritoryId,
+                TownHallRuinComponent ruin => ruin.TerritoryId,
+                FactionSpawnPointComponent spawn => spawn.TerritoryId,
+                _ => string.Empty,
+            };
+
+            if (entityId == id && territory.Comp.Contains(entity.Comp2.Coordinates.Position - territory.Comp2.Coordinates.Position))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void ValidateStartingHall(
+        Dictionary<string, Entity<TerritoryComponent, TransformComponent>> territories,
+        List<Entity<TownHallComponent, TransformComponent>> halls,
+        string faction,
+        List<string> errors)
+    {
+        foreach (var hall in halls)
+        {
+            if (hall.Comp.FactionId == faction && territories.TryGetValue(hall.Comp.TerritoryId, out var territory) &&
+                territory.Comp.Contains(hall.Comp2.Coordinates.Position - territory.Comp2.Coordinates.Position))
+                return;
+        }
+
+        errors.Add($"PersistentWar map must include a starting town hall for {faction}.");
     }
 }
