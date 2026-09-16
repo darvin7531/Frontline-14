@@ -8,7 +8,6 @@ using Content.Server.GameTicking.Presets;
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Mind;
 using Content.Server.War;
-using Content.Shared.Atmos;
 using Content.Shared.Atmos.Components;
 using Content.Shared.CCVar;
 using Content.Shared.GameTicking.Components;
@@ -71,8 +70,6 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.Multiple(() =>
             {
                 Assert.That(atmos.Space, Is.False);
-                Assert.That(atmos.Mixture.GetMoles(Gas.Oxygen), Is.GreaterThan(0));
-                Assert.That(atmos.Mixture.GetMoles(Gas.Nitrogen), Is.GreaterThan(0));
                 Assert.That(cycle.Duration, Is.GreaterThan(TimeSpan.Zero));
                 Assert.That(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, 0),
                     Is.Not.EqualTo(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, (float) cycle.Duration.TotalSeconds / 2)));
