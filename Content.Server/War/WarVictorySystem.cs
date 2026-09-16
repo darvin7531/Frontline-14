@@ -1,4 +1,6 @@
+using Content.Server.EUI;
 using Content.Shared.War;
+using Robust.Server.Player;
 using Robust.Shared.GameObjects;
 
 namespace Content.Server.War;
@@ -10,6 +12,8 @@ public sealed partial class WarVictorySystem : EntitySystem
 
     [Dependency] private TerritorySystem _territories = default!;
     [Dependency] private WarStateSystem _war = default!;
+    [Dependency] private EuiManager _eui = default!;
+    [Dependency] private IPlayerManager _players = default!;
 
     public override void Update(float frameTime)
     {
@@ -42,6 +46,12 @@ public sealed partial class WarVictorySystem : EntitySystem
             if (owned[faction] >= RequiredOwnedTerritories)
             {
                 _war.EndWar(faction);
+                var duration = DateTimeOffset.UtcNow - _war.State!.StartedAt;
+                foreach (var player in _players.Sessions)
+                {
+                    _eui.OpenEui(new WarVictoryEui(_war.State.WarId, faction, owned[faction], duration), player);
+                }
+
                 return true;
             }
         }

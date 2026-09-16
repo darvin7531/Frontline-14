@@ -5,6 +5,19 @@ namespace Content.Server.War;
 
 public sealed partial class TerritorySystem : EntitySystem
 {
+    public int CountOwned(FactionId faction)
+    {
+        var territoryIds = new HashSet<TerritoryId>();
+        var territories = EntityQueryEnumerator<TerritoryComponent>();
+        while (territories.MoveNext(out var uid, out var territory))
+        {
+            if (!TerminatingOrDeleted(uid))
+                territoryIds.Add(new TerritoryId(territory.TerritoryId));
+        }
+
+        return territoryIds.Count(territory => TryGetOwner(territory, out var owner) && owner == faction);
+    }
+
     public TerritoryState GetState(TerritoryId territory)
     {
         var owners = new HashSet<FactionId>();

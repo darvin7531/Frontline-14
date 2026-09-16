@@ -17,6 +17,7 @@ public sealed class TerritoryVictoryTest : GameTest
         var map = await Pair.CreateTestMap();
         var faction = new FactionId("FrontlineFactionOne");
         var war = server.System<WarStateSystem>();
+        var territories = server.System<TerritorySystem>();
         _ = server.System<WarVictorySystem>();
 
         await server.WaitPost(() =>
@@ -44,6 +45,7 @@ public sealed class TerritoryVictoryTest : GameTest
         {
             Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Ended));
             Assert.That(war.State?.Winner, Is.EqualTo(faction));
+            Assert.That(territories.CountOwned(faction), Is.EqualTo(4));
         });
     }
 }

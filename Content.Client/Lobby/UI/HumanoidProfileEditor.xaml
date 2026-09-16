@@ -107,7 +107,7 @@
                                     <Button Name="ShowClothes" Pressed="True" ToggleMode="True" Text="{Loc 'humanoid-profile-editor-clothing-show'}" HorizontalAlignment="Right" />
                                 </BoxContainer>
                                 <!-- Spawn Priority -->
-                                <BoxContainer HorizontalExpand="True">
+                                <BoxContainer Name="SpawnPriorityContainer" HorizontalExpand="True">
                                     <Label Text="{Loc 'humanoid-profile-editor-spawn-priority-label'}" />
                                     <Control HorizontalExpand="True"/>
                                     <OptionButton Name="SpawnPriorityButton" HorizontalAlignment="Right" />
@@ -127,14 +127,14 @@
                         </BoxContainer>
                     </ScrollContainer>
                 </BoxContainer>
-                <BoxContainer Orientation="Vertical">
+                <BoxContainer Name="JobsTab" Orientation="Vertical">
                     <!-- Jobs -->
                     <OptionButton Name="PreferenceUnavailableButton" />
                     <ScrollContainer VerticalExpand="True">
                         <BoxContainer Name="JobList" Orientation="Vertical" />
                     </ScrollContainer>
                 </BoxContainer>
-                <BoxContainer Orientation="Vertical" Margin="10">
+                <BoxContainer Name="AntagsTab" Orientation="Vertical" Margin="10">
                     <!-- Antags -->
                     <ScrollContainer VerticalExpand="True">
                         <BoxContainer Name="AntagList" Orientation="Vertical" />

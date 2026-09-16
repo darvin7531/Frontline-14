@@ -65,6 +65,7 @@ namespace Content.Server.GameTicking
         [Dependency] private WarStateSystem _war = default!;
         [Dependency] private WarFactionSystem _warFactions = default!;
         [Dependency] private FactionSpawnSystem _factionSpawns = default!;
+        [Dependency] private TerritorySystem _territories = default!;
         [Dependency] private MetaDataSystem _metaData = default!;
         [Dependency] private SharedRoleSystem _roles = default!;
         [Dependency] private ServerDbEntryManager _dbEntryManager = default!;

@@ -1,6 +1,6 @@
 using Content.Client.Audio;
 using Content.Client.GameTicking.Managers;
-using Content.Client.LateJoin;
+
 using Content.Client.Lobby.UI;
 using Content.Client.Message;
 using Content.Client.Playtime;
@@ -110,6 +110,12 @@ namespace Content.Client.Lobby
 
         private void OnReadyPressed(BaseButton.ButtonEventArgs args)
         {
+            if (_gameTicker.IsPersistentWar)
+            {
+                _consoleHost.ExecuteCommand("deploy");
+                return;
+            }
+
             if (!_gameTicker.IsGameStarted)
             {
                 return;
@@ -120,15 +126,19 @@ namespace Content.Client.Lobby
 
         private void OnReadyToggled(BaseButton.ButtonToggledEventArgs args)
         {
+            if (_gameTicker.IsPersistentWar)
+                return;
+
             SetReady(args.Pressed);
         }
 
         public override void FrameUpdate(FrameEventArgs e)
         {
+            var stationTime = _gameTicker.IsPersistentWar ? Lobby!.StationTime : Lobby!.StandardStationTime;
             if (_gameTicker.WarId > 0)
             {
                 var warTime = _gameTicker.WarDuration + _gameTiming.CurTime - _gameTicker.WarDurationReceivedAt;
-                Lobby!.StationTime.Text = Loc.GetString("persistent-war-lobby-duration", ("hours", (int) warTime.TotalHours), ("minutes", warTime.Minutes));
+                stationTime.Text = Loc.GetString("persistent-war-lobby-duration", ("hours", (int) warTime.TotalHours), ("minutes", warTime.Minutes));
                 return;
             }
 
@@ -136,11 +146,11 @@ namespace Content.Client.Lobby
             {
                 Lobby!.StartTime.Text = string.Empty;
                 var roundTime = _gameTiming.CurTime.Subtract(_gameTicker.RoundStartTimeSpan);
-                Lobby!.StationTime.Text = Loc.GetString("lobby-state-player-status-round-time", ("hours", roundTime.Hours), ("minutes", roundTime.Minutes));
+                stationTime.Text = Loc.GetString("lobby-state-player-status-round-time", ("hours", roundTime.Hours), ("minutes", roundTime.Minutes));
                 return;
             }
 
-            Lobby!.StationTime.Text = Loc.GetString("lobby-state-player-status-round-not-started");
+            stationTime.Text = Loc.GetString("lobby-state-player-status-round-not-started");
             string text;
 
             if (_gameTicker.Paused)
@@ -181,13 +191,31 @@ namespace Content.Client.Lobby
 
         private void LobbyLateJoinStatusUpdated()
         {
-            Lobby!.ReadyButton.Disabled = _gameTicker.DisallowedLateJoin;
+            if (!_gameTicker.IsPersistentWar)
+                Lobby!.ReadyButton.Disabled = _gameTicker.DisallowedLateJoin;
         }
 
         private void UpdateLobbyUi()
         {
-            if (_gameTicker.IsGameStarted)
+            var frontline = _gameTicker.IsPersistentWar;
+            Lobby!.FrontlineWarPanel.Visible = frontline;
+            Lobby.StandardStationTime.Visible = !frontline;
+            Lobby.ObserveButton.Visible = !frontline;
+            Lobby.VoteContainer.Visible = !frontline;
+            Lobby.CallVoteButton.Visible = !frontline;
+
+            if (frontline)
             {
+                Lobby.ServerName.Text = Loc.GetString("frontline-lobby-title");
+                Lobby.StartTime.Visible = false;
+                Lobby.ReadyButton.Text = Loc.GetString("frontline-deploy-button");
+                Lobby!.ReadyButton.ToggleMode = false;
+                Lobby!.ReadyButton.Pressed = false;
+                Lobby.ReadyButton.Disabled = _gameTicker.Faction == null || _gameTicker.WarEnded;
+            }
+            else if (_gameTicker.IsGameStarted)
+            {
+                Lobby.StartTime.Visible = true;
                 Lobby!.ReadyButton.Text = Loc.GetString("lobby-state-ready-button-join-state");
                 Lobby!.ReadyButton.ToggleMode = false;
                 Lobby!.ReadyButton.Pressed = false;
@@ -195,6 +223,7 @@ namespace Content.Client.Lobby
             }
             else
             {
+                Lobby.StartTime.Visible = true;
                 Lobby!.StartTime.Text = string.Empty;
                 Lobby!.ReadyButton.Pressed = _gameTicker.AreWeReady;
                 Lobby!.ReadyButton.Text = Loc.GetString(Lobby!.ReadyButton.Pressed ? "lobby-state-player-status-ready": "lobby-state-player-status-not-ready");
@@ -212,7 +241,12 @@ namespace Content.Client.Lobby
                 ? Loc.GetString(prototype.Name)
                 : Loc.GetString("frontline-faction-unselected");
             Lobby!.FactionStatus.Text = Loc.GetString("frontline-faction-status", ("faction", factionName));
-            Lobby.ChooseFactionButton.Visible = _gameTicker.WarId > 0 && _gameTicker.Faction == null;
+            Lobby.WarStatus.Text = Loc.GetString("frontline-war-status", ("warId", _gameTicker.WarId), ("status", Loc.GetString(_gameTicker.WarEnded ? "frontline-war-ended" : "frontline-war-active")));
+            Lobby.TerritoryStatus.Text = Loc.GetString("frontline-territory-status", ("owned", _gameTicker.FactionTerritories), ("total", 5));
+            Lobby.VictoryStatus.Text = Loc.GetString("frontline-victory-status", ("required", 4), ("total", 5));
+            Lobby.ChooseFactionButton.Visible = frontline && !_gameTicker.WarEnded && _gameTicker.Faction == null;
+            Lobby.DeployUnavailable.Visible = frontline && _gameTicker.Faction == null;
+            Lobby.DeployUnavailable.Text = Loc.GetString("frontline-deploy-unavailable");
 
             var minutesToday = _playtimeTracking.PlaytimeMinutesToday;
             if (minutesToday > 60)

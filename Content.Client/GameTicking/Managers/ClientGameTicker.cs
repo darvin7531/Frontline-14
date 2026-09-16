@@ -42,6 +42,10 @@ namespace Content.Client.GameTicking.Managers
         [ViewVariables] public TimeSpan WarDuration { get; private set; }
         [ViewVariables] public TimeSpan WarDurationReceivedAt { get; private set; }
         [ViewVariables] public FactionId? Faction { get; private set; }
+        [ViewVariables] public bool IsPersistentWar { get; private set; }
+        [ViewVariables] public bool WarEnded { get; private set; }
+        [ViewVariables] public FactionId? WarWinner { get; private set; }
+        [ViewVariables] public int FactionTerritories { get; private set; }
 
         public override IReadOnlyList<(TimeSpan, string)> AllPreviousGameRules => new List<(TimeSpan, string)>();
 
@@ -102,6 +106,9 @@ namespace Content.Client.GameTicking.Managers
 
         private void UpdateJobsAvailable(TickerJobsAvailableEvent message)
         {
+            if (IsPersistentWar)
+                return;
+
             _jobsAvailable.Clear();
 
             foreach (var (job, data) in message.JobsAvailableByStation)
@@ -146,6 +153,10 @@ namespace Content.Client.GameTicking.Managers
             WarDuration = message.WarDuration;
             WarDurationReceivedAt = _gameTiming.CurTime;
             Faction = message.Faction;
+            IsPersistentWar = message.IsPersistentWar;
+            WarEnded = message.WarEnded;
+            WarWinner = message.WarWinner;
+            FactionTerritories = message.FactionTerritories;
 
             LobbyStatusUpdated?.Invoke();
         }
