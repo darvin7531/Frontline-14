@@ -33,7 +33,6 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     {
         base.Initialize();
         SubscribeLocalEvent<LoadingMapsEvent>(OnLoadingMaps);
-        SubscribeLocalEvent<PostGameMapLoad>(OnMapLoaded);
         SubscribeLocalEvent<RulePlayerSpawningEvent>(OnRulePlayerSpawning);
         SubscribeLocalEvent<PlayerBeforeSpawnEvent>(OnPlayerBeforeSpawn);
         SubscribeLocalEvent<GhostAttemptHandleEvent>(OnGhostAttempt);
@@ -54,20 +53,6 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         }
     }
 
-    private void OnMapLoaded(PostGameMapLoad args)
-    {
-        if (GameTicker.CurrentPreset is not { ID: "PersistentWar", MapPool: { } poolId } ||
-            !ProtoMan.TryIndex<GameMapPoolPrototype>(poolId, out var pool) ||
-            !pool.Maps.Contains(args.GameMap.ID))
-            return;
-
-        var map = _map.GetMap(args.Map);
-        var war = _war.EnsureWar();
-        _mapValidator.Validate(map);
-        var cycle = Comp<LightCycleComponent>(map);
-        _lightCycle.SetOffset((map, cycle), GetCycleOffset(war.StartedAt, cycle.Duration));
-    }
-
     private static TimeSpan GetCycleOffset(DateTimeOffset startedAt, TimeSpan duration)
     {
         var elapsed = DateTimeOffset.UtcNow - startedAt;
@@ -80,6 +65,12 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     {
         if (!IsPersistentWarActive())
             return;
+
+        var map = _map.GetMap(GameTicker.DefaultMap);
+        var war = _war.EnsureWar();
+        _mapValidator.Validate(map);
+        var cycle = Comp<LightCycleComponent>(map);
+        _lightCycle.SetOffset((map, cycle), GetCycleOffset(war.StartedAt, cycle.Duration));
 
         for (var i = args.PlayerPool.Count - 1; i >= 0; i--)
         {
