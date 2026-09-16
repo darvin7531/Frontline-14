@@ -106,7 +106,7 @@ public sealed class PersistentWarMapValidatorSystem : EntitySystem
     {
         foreach (var entity in entities)
         {
-            var entityId = entity.Comp switch
+            var entityId = entity.Comp1 switch
             {
                 TownHallComponent hall => hall.TerritoryId,
                 TownHallRuinComponent ruin => ruin.TerritoryId,
@@ -114,7 +114,7 @@ public sealed class PersistentWarMapValidatorSystem : EntitySystem
                 _ => string.Empty,
             };
 
-            if (entityId == id && territory.Comp.Contains(entity.Comp2.Coordinates.Position - territory.Comp2.Coordinates.Position))
+            if (entityId == id && territory.Comp1.Contains(entity.Comp2.Coordinates.Position - territory.Comp2.Coordinates.Position))
                 return true;
         }
 
@@ -129,8 +129,8 @@ public sealed class PersistentWarMapValidatorSystem : EntitySystem
     {
         foreach (var hall in halls)
         {
-            if (hall.Comp.FactionId == faction && territories.TryGetValue(hall.Comp.TerritoryId, out var territory) &&
-                territory.Comp.Contains(hall.Comp2.Coordinates.Position - territory.Comp2.Coordinates.Position))
+            if (hall.Comp1.FactionId == faction && territories.TryGetValue(hall.Comp1.TerritoryId, out var territory) &&
+                territory.Comp1.Contains(hall.Comp2.Coordinates.Position - territory.Comp2.Coordinates.Position))
                 return;
         }
 
