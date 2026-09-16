@@ -1,4 +1,5 @@
 using System.Linq;
+using Content.Server.War;
 using Content.Shared.GameTicking;
 using Content.Shared.War;
 using Content.Server.Station.Components;
@@ -103,7 +104,8 @@ namespace Content.Server.GameTicking
             var war = IsPersistentWar ? _war.State : null;
             var warDuration = war == null ? TimeSpan.Zero : DateTimeOffset.UtcNow - war.StartedAt;
             FactionId? faction = IsPersistentWar && _warFactions.TryGetFaction(session.UserId, out var selected) ? selected : null;
-            return new TickerLobbyStatusEvent(RunLevel != GameRunLevel.PreRoundLobby, LobbyBackground, status == PlayerGameStatus.ReadyToPlay, _roundStartTime, RoundPreloadTime, RoundStartTimeSpan, Paused, war?.WarId ?? 0, warDuration, faction);
+            var territoryCount = faction is { } selectedFaction ? _territories.CountOwned(selectedFaction) : 0;
+            return new TickerLobbyStatusEvent(RunLevel != GameRunLevel.PreRoundLobby, LobbyBackground, status == PlayerGameStatus.ReadyToPlay, _roundStartTime, RoundPreloadTime, RoundStartTimeSpan, Paused, war?.WarId ?? 0, warDuration, faction, IsPersistentWar, war?.Status == WarStatus.Ended, war?.Winner, territoryCount);
         }
 
         public void SendStatusToAll()
@@ -159,6 +161,9 @@ namespace Content.Server.GameTicking
 
         public void ToggleReadyAll(bool ready)
         {
+            if (IsPersistentWar)
+                return;
+
             var status = ready ? PlayerGameStatus.ReadyToPlay : PlayerGameStatus.NotReadyToPlay;
             foreach (var playerUserId in _playerGameStatuses.Keys)
             {
@@ -171,6 +176,9 @@ namespace Content.Server.GameTicking
 
         public void ToggleReady(ICommonSession player, bool ready)
         {
+            if (IsPersistentWar)
+                return;
+
             if (!_playerGameStatuses.ContainsKey(player.UserId))
                 return;
 

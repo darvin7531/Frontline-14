@@ -44,6 +44,33 @@ public sealed partial class TownHallComponent : Component
 }
 
 [RegisterComponent]
+public sealed partial class TownHallRuinComponent : Component
+{
+    [DataField("territory", required: true)]
+    public string TerritoryId = string.Empty;
+
+    [DataField]
+    public int RequiredSteel = 20;
+
+    public int DepositedSteel;
+}
+
+[RegisterComponent]
+public sealed partial class PropertyComponent : Component
+{
+    [DataField("property", required: true)]
+    public string PropertyId = string.Empty;
+
+    public Guid? OwnerAccountId;
+
+    public void Claim(PropertyId property, Guid owner)
+    {
+        PropertyId = property.Id;
+        OwnerAccountId = owner;
+    }
+}
+
+[RegisterComponent]
 public sealed partial class FactionSpawnPointComponent : Component
 {
     [DataField("territory", required: true)]

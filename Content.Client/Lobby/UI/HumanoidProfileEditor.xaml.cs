@@ -76,6 +76,7 @@ namespace Content.Client.Lobby.UI
         private ISawmill _sawmill;
 
         private MarkingsViewModel _markingsModel = new();
+        private bool _persistentWarMode;
 
         public HumanoidProfileEditor(
             IClientPreferencesManager preferencesManager,
@@ -327,6 +328,17 @@ namespace Content.Client.Lobby.UI
 
             UpdateSpeciesGuidebookIcon();
             IsDirty = false;
+        }
+
+        public void SetPersistentWarMode(bool enabled)
+        {
+            if (!enabled || _persistentWarMode)
+                return;
+
+            _persistentWarMode = true;
+            SpawnPriorityContainer.Visible = false;
+            TabContainer.RemoveChild(JobsTab);
+            TabContainer.RemoveChild(AntagsTab);
         }
 
         private void SetDirty()

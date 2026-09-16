@@ -7,7 +7,7 @@
     xmlns:vote="clr-namespace:Content.Client.Voting.UI"
     xmlns:style="clr-namespace:Content.Client.Stylesheets"
     xmlns:lobbyUi="clr-namespace:Content.Client.Lobby.UI"
-    xmlns:corvaxLobby="clr-namespace:Content.Client.Corvax.Lobby.UI"
+
     xmlns:info="clr-namespace:Content.Client.Info"
     xmlns:widgets="clr-namespace:Content.Client.UserInterface.Systems.Chat.Widgets">
     <!-- Background -->
@@ -48,8 +48,7 @@
                         <!-- Voting Popups -->
                         <BoxContainer Orientation="Vertical" SeparationOverride="4" Name="VoteContainer"
                                       Access="Public" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0 8" />
-                        <!-- Corvax lobby server hub. Kept on the wide left side so names and online fit. -->
-                        <corvaxLobby:LobbyServerHub />
+
                     </BoxContainer>
                     <!-- Vertical Padding-->
                     <Control VerticalExpand="True" />
@@ -85,7 +84,7 @@
                     <BoxContainer Orientation="Horizontal" MinSize="0 40" HorizontalAlignment="Right">
                         <Button Name="AHelpButton" Access="Public" Text="{Loc 'ui-lobby-ahelp-button'}"
                                 StyleClasses="ButtonBig" />
-                        <vote:VoteCallMenuButton Name="CallVoteButton" StyleClasses="ButtonBig" />
+                        <vote:VoteCallMenuButton Name="CallVoteButton" Access="Public" StyleClasses="ButtonBig" />
                         <Button Name="OptionsButton" Access="Public" StyleClasses="ButtonBig"
                                 Text="{Loc 'ui-lobby-options-button'}" />
                         <Button Name="LeaveButton" Access="Public" StyleClasses="ButtonBig"
@@ -96,10 +95,17 @@
                     <controls:NanoHeading Text="{Loc 'ui-lobby-server-info-block'}" />
                     <info:ServerInfo Name="ServerInfo" Access="Public" MinSize="0 30" VerticalExpand="false"
                                      Margin="3 3 3 3" MaxWidth="400" HorizontalAlignment="Left" />
-                    <Label Name="StationTime" Access="Public" FontColorOverride="{x:Static maths:Color.LightGray}"
+                    <BoxContainer Name="FrontlineWarPanel" Access="Public" Visible="False" Orientation="Vertical" Margin="3 3 3 3">
+                        <Label Name="WarStatus" Access="Public" StyleClasses="LabelHeading" />
+                        <Label Name="StationTime" Access="Public" FontColorOverride="{x:Static maths:Color.LightGray}" />
+                        <Label Name="FactionStatus" Access="Public" />
+                        <Label Name="TerritoryStatus" Access="Public" />
+                        <Label Name="VictoryStatus" Access="Public" />
+                        <Button Name="ChooseFactionButton" Access="Public" Text="{Loc 'frontline-faction-choose-button'}" />
+                        <Label Name="DeployUnavailable" Access="Public" Visible="False" />
+                    </BoxContainer>
+                    <Label Name="StandardStationTime" Access="Public" FontColorOverride="{x:Static maths:Color.LightGray}"
                            Margin="3 3 3 3" HorizontalAlignment="Left" />
-                    <Label Name="FactionStatus" Access="Public" Margin="3 3 3 3" HorizontalAlignment="Left" />
-                    <Button Name="ChooseFactionButton" Access="Public" Text="{Loc 'frontline-faction-choose-button'}" />
                     <controls:HSpacer Spacing="5" />
                     <lobbyUi:LobbyCharacterPreviewPanel Name="CharacterPreview" Access="Public" />
                     <controls:HSpacer Spacing="5" />

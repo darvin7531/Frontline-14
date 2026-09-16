@@ -341,7 +341,7 @@ namespace Content.Server.GameTicking
             var total = 0;
             foreach (var (userId, status) in _playerGameStatuses)
             {
-                if (LobbyEnabled && status == PlayerGameStatus.NotReadyToPlay)
+                if (LobbyEnabled && !IsPersistentWar && status == PlayerGameStatus.NotReadyToPlay)
                     continue;
 
                 if (!_playerManager.TryGetSessionById(userId, out _))
@@ -380,7 +380,7 @@ namespace Content.Server.GameTicking
             var autoDeAdmin = _cfg.GetCVar(CCVars.AdminDeadminOnJoin);
             foreach (var (userId, status) in _playerGameStatuses)
             {
-                if (LobbyEnabled && status != PlayerGameStatus.ReadyToPlay) continue;
+                if (LobbyEnabled && !IsPersistentWar && status != PlayerGameStatus.ReadyToPlay) continue;
                 if (!_playerManager.TryGetSessionById(userId, out var session)) continue;
 
                 if (autoDeAdmin && _adminManager.IsAdmin(session))
@@ -406,7 +406,8 @@ namespace Content.Server.GameTicking
                 readyPlayerProfiles.Add(userId, profile);
             }
 
-            DebugTools.AssertEqual(readyPlayers.Count, ReadyPlayerCount());
+            if (!IsPersistentWar)
+                DebugTools.AssertEqual(readyPlayers.Count, ReadyPlayerCount());
 
             // Just in case it hasn't been loaded previously we'll try loading it.
             if (!LoadMaps())

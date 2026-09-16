@@ -1,3 +1,4 @@
+using Content.Client.GameTicking.Managers;
 using Content.Client.Guidebook;
 using Content.Client.Corvax.TTS;
 using Content.Client.Humanoid;
@@ -37,6 +38,7 @@ public sealed partial class LobbyUIController : UIController, IOnStateEntered<Lo
 
     private CharacterSetupGui? _characterSetup;
     private HumanoidProfileEditor? _profileEditor;
+    [UISystemDependency] private readonly ClientGameTicker _ticker = default!;
     private CharacterSetupGuiSavePanel? _savePanel;
 
     /// <summary>
@@ -155,6 +157,7 @@ public sealed partial class LobbyUIController : UIController, IOnStateEntered<Lo
     {
         RefreshLobbyPreview();
         var (characterGui, profileEditor) = EnsureGui();
+        profileEditor.SetPersistentWarMode(_ticker.IsPersistentWar);
         characterGui.ReloadCharacterPickers();
         profileEditor.SetProfile(
             _preferencesManager.Preferences?.SelectedCharacter,

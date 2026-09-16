@@ -106,8 +106,12 @@ namespace Content.Shared.GameTicking
         public int WarId { get; }
         public TimeSpan WarDuration { get; }
         public FactionId? Faction { get; }
+        public bool IsPersistentWar { get; }
+        public bool WarEnded { get; }
+        public FactionId? WarWinner { get; }
+        public int FactionTerritories { get; }
 
-        public TickerLobbyStatusEvent(bool isRoundStarted, ProtoId<LobbyBackgroundPrototype>? lobbyBackground, bool youAreReady, TimeSpan startTime, TimeSpan preloadTime, TimeSpan roundStartTimeSpan, bool paused, int warId, TimeSpan warDuration, FactionId? faction)
+        public TickerLobbyStatusEvent(bool isRoundStarted, ProtoId<LobbyBackgroundPrototype>? lobbyBackground, bool youAreReady, TimeSpan startTime, TimeSpan preloadTime, TimeSpan roundStartTimeSpan, bool paused, int warId, TimeSpan warDuration, FactionId? faction, bool isPersistentWar, bool warEnded, FactionId? warWinner, int factionTerritories)
         {
             IsRoundStarted = isRoundStarted;
             LobbyBackground = lobbyBackground;
@@ -118,6 +122,10 @@ namespace Content.Shared.GameTicking
             WarId = warId;
             WarDuration = warDuration;
             Faction = faction;
+            IsPersistentWar = isPersistentWar;
+            WarEnded = warEnded;
+            WarWinner = warWinner;
+            FactionTerritories = factionTerritories;
         }
     }
 
