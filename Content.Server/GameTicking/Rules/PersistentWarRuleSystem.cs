@@ -30,20 +30,19 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     public override void Initialize()
     {
         base.Initialize();
+        SubscribeLocalEvent<GameTicker.PostGameMapLoad>(OnMapLoaded);
         SubscribeLocalEvent<RulePlayerSpawningEvent>(OnRulePlayerSpawning);
         SubscribeLocalEvent<PlayerBeforeSpawnEvent>(OnPlayerBeforeSpawn);
         SubscribeLocalEvent<GhostAttemptHandleEvent>(OnGhostAttempt);
     }
 
-    protected override void Started(EntityUid uid, PersistentWarRuleComponent component, GameRuleComponent gameRule, GameRuleStartedEvent args)
+    private void OnMapLoaded(GameTicker.PostGameMapLoad args)
     {
-        base.Started(uid, component, gameRule, args);
-
         if (GameTicker.CurrentPreset?.ID != "PersistentWar")
             return;
 
         var war = _war.EnsureWar();
-        var map = _map.GetMapOrInvalid(GameTicker.DefaultMap);
+        var map = _map.GetMapOrInvalid(args.Map);
         _mapValidator.Validate(map);
         var cycle = Comp<LightCycleComponent>(map);
         _lightCycle.SetOffset((map, cycle), GetCycleOffset(war.StartedAt, cycle.Duration));
