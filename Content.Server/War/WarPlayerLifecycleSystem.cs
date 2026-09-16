@@ -1,9 +1,7 @@
-using System.Linq;
 using Content.Server.EUI;
 using Content.Server.GameTicking;
 using Content.Server.GameTicking.Rules;
 using Content.Server.Mind;
-using Content.Server.Station.Systems;
 using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
 using Content.Shared.Players;
@@ -22,7 +20,6 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
     [Dependency] private MindSystem _mind = default!;
     [Dependency] private IPlayerManager _players = default!;
     [Dependency] private PersistentWarRuleSystem _persistentWar = default!;
-    [Dependency] private StationSystem _station = default!;
 
     private readonly Dictionary<NetUserId, EntityUid> _waiting = new();
     private readonly Dictionary<NetUserId, RespawnChoiceEui> _choices = new();
@@ -70,15 +67,14 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
             mindId is not { } mindEntity ||
             mind.CurrentEntity is not { } body ||
             !TryComp<MobStateComponent>(body, out var state) ||
-            state.CurrentState != MobState.Dead ||
-            _station.GetStations().FirstOrDefault() is not { Valid: true } station)
+            state.CurrentState != MobState.Dead)
             return false;
 
         _waiting.Remove(account);
         CloseChoice(account);
         _mind.TransferTo(mindEntity, null, createGhost: false, mind: mind);
         Del(body);
-        _ticker.MakeJoinGame(session, station, silent: true);
+        _ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
         return true;
     }
 

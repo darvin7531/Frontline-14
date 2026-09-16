@@ -48,4 +48,26 @@ public sealed class TerritoryVictoryTest : GameTest
             Assert.That(territories.CountOwned(faction), Is.EqualTo(4));
         });
     }
+
+    [Test]
+    public async Task TerritoryBoundsAreRelativeToMarker()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var territorySystem = server.System<TerritorySystem>();
+        var markerCoordinates = new EntityCoordinates(map.Grid.Owner, map.GridCoords.Position + new Vector2(10, 0));
+
+        await server.WaitPost(() =>
+        {
+            var marker = SEntMan.SpawnEntity(null, markerCoordinates);
+            SEntMan.AddComponent<TerritoryComponent>(marker)
+                .Configure(new TerritoryId("relative"), new Vector2(-1, -1), new Vector2(1, 1));
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(territorySystem.Contains(new TerritoryId("relative"), markerCoordinates), Is.True);
+            Assert.That(territorySystem.Contains(new TerritoryId("relative"), map.GridCoords), Is.False);
+        });
+    }
 }

@@ -6,6 +6,7 @@ using Content.Shared.Stacks;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Player;
+using Robust.Shared.Prototypes;
 
 namespace Content.Server.War;
 
@@ -15,6 +16,7 @@ public sealed partial class TownHallSystem : EntitySystem
     [Dependency] private StackSystem _stack = default!;
     [Dependency] private TerritorySystem _territories = default!;
     [Dependency] private WarFactionSystem _factions = default!;
+    [Dependency] private IPrototypeManager _prototypes = default!;
 
     public override void Initialize()
     {
@@ -48,7 +50,12 @@ public sealed partial class TownHallSystem : EntitySystem
 
     private void OnRepairComplete(Entity<TownHallRuinComponent> ruin, ref TownHallRepairDoAfterEvent args)
     {
+        var territory = new TerritoryId(ruin.Comp.TerritoryId);
         if (args.Cancelled || args.Used is not { } used ||
+            !TryComp<ActorComponent>(args.User, out var actor) ||
+            !_factions.TryGetFaction(actor.PlayerSession.UserId, out var faction) || faction.Id != args.FactionId ||
+            !_prototypes.TryIndex<FrontlineFactionPrototype>(faction.Id, out var factionPrototype) ||
+            _territories.GetState(territory) != TerritoryState.Neutral ||
             !TryComp<StackComponent>(used, out var stack) || stack.StackTypeId != "Steel" ||
             !_stack.TryUse((used, stack), 1))
             return;
@@ -60,8 +67,8 @@ public sealed partial class TownHallSystem : EntitySystem
             return;
         }
 
-        var territory = new TerritoryId(ruin.Comp.TerritoryId);
-        RemComp<TownHallRuinComponent>(ruin);
-        AddComp<TownHallComponent>(ruin).Configure(territory, new FactionId(args.FactionId));
+        var hall = Spawn(factionPrototype.TownHallPrototype, Transform(ruin).Coordinates);
+        Comp<TownHallComponent>(hall).Configure(territory, faction);
+        Del(ruin);
     }
 }

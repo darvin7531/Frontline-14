@@ -11,19 +11,55 @@
 - type: entity
   id: TownHallBase
   abstract: true
-  parent: [BaseStructure, StructureHealthFurniture]
+  parent: [BaseStructure, StructureHealthMachineWeak]
   name: town hall
   description: Controls its territory while it stands.
   components:
+  - type: Anchorable
+  - type: Transform
+    anchored: true
   - type: TownHall
     territory: Unassigned
     faction: FrontlineFactionOne
+
+- type: entity
+  parent: TownHallBase
+  id: TownHallCoreFactionOne
+  name: faction one town hall
+  components:
+  - type: Sprite
+    sprite: Structures/Furniture/Altars/Gods/nanotrasen.rsi
+    state: nanotrasen
+  - type: Icon
+    sprite: Structures/Furniture/Altars/Gods/nanotrasen.rsi
+    state: nanotrasen
+
+- type: entity
+  parent: TownHallBase
+  id: TownHallCoreFactionTwo
+  name: faction two town hall
+  components:
+  - type: Sprite
+    sprite: Structures/Furniture/Altars/Gods/nanotrasen.rsi
+    state: chaos
+  - type: Icon
+    sprite: Structures/Furniture/Altars/Gods/nanotrasen.rsi
+    state: chaos
 
 - type: entity
   id: TownHallRuin
   parent: [BaseStructure, StructureHealthFurniture]
   name: destroyed town hall
   components:
+  - type: Anchorable
+  - type: Transform
+    anchored: true
+  - type: Sprite
+    sprite: Objects/Materials/Scrap/generic.rsi
+    state: metal-1
+  - type: Icon
+    sprite: Objects/Materials/Scrap/generic.rsi
+    state: metal-1
   - type: TownHallRuin
     territory: Unassigned
 

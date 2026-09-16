@@ -63,7 +63,7 @@ public sealed partial class TerritorySystem : EntitySystem
             if (TerminatingOrDeleted(uid) || definition.TerritoryId != territory.Id || xform.GridUid != coordinates.EntityId)
                 continue;
 
-            return definition.Contains(coordinates.Position);
+            return definition.Contains(coordinates.Position - xform.Coordinates.Position);
         }
 
         return false;

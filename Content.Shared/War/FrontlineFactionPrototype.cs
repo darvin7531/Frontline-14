@@ -16,4 +16,7 @@ public sealed partial class FrontlineFactionPrototype : IPrototype
 
     [DataField(required: true)]
     public Color Color;
+
+    [DataField(required: true)]
+    public EntProtoId TownHallPrototype = string.Empty;
 }
