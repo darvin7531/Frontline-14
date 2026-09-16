@@ -12,7 +12,6 @@ using Content.Shared.Mind;
 using Content.Shared.Preferences;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
-using Robust.Shared.GameObjects.Systems;
 using Robust.Shared.Player;
 using Robust.Shared.Random;
 
@@ -34,7 +33,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     {
         base.Initialize();
         SubscribeLocalEvent<LoadingMapsEvent>(OnLoadingMaps);
-        SubscribeLocalEvent<GameTicker.PostGameMapLoad>(OnMapLoaded);
+        SubscribeLocalEvent<Content.Server.GameTicking.GameTicker.PostGameMapLoad>(OnMapLoaded);
         SubscribeLocalEvent<RulePlayerSpawningEvent>(OnRulePlayerSpawning);
         SubscribeLocalEvent<PlayerBeforeSpawnEvent>(OnPlayerBeforeSpawn);
         SubscribeLocalEvent<GhostAttemptHandleEvent>(OnGhostAttempt);
@@ -55,7 +54,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         }
     }
 
-    private void OnMapLoaded(GameTicker.PostGameMapLoad args)
+    private void OnMapLoaded(Content.Server.GameTicking.GameTicker.PostGameMapLoad args)
     {
         if (GameTicker.CurrentPreset?.ID != "PersistentWar" || args.Map != GameTicker.DefaultMap)
             return;
