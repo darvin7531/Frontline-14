@@ -4,9 +4,6 @@ using Robust.Shared.GameStates;
 namespace Content.Shared.War;
 
 [RegisterComponent]
-public sealed partial class PersistentWarMapComponent : Component;
-
-[RegisterComponent]
 public sealed partial class TerritoryComponent : Component
 {
     [DataField("territory", required: true)]
