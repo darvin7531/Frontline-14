@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using Content.IntegrationTests.Fixtures;
 using Content.IntegrationTests.Fixtures.Attributes;
+using Content.Server.Atmos.EntitySystems;
 using Content.Server.GameTicking;
 using Content.Server.GameTicking.Presets;
 using Content.Server.GameTicking.Rules.Components;
@@ -38,6 +39,7 @@ public sealed class PersistentWarRuleTest : GameTest
     public async Task StartsGroundMapWithPersistentDayNight()
     {
         var ticker = Server.System<GameTicker>();
+        var atmosphere = Server.System<AtmosphereSystem>();
         var resources = Server.ResolveDependency<IResourceManager>();
         var war = Server.System<WarStateSystem>();
         var startedAt = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(7);
@@ -80,10 +82,10 @@ public sealed class PersistentWarRuleTest : GameTest
 
             var validator = Server.System<PersistentWarMapValidatorSystem>();
             Assert.DoesNotThrow(() => validator.Validate(map));
-            atmos.Space = true;
+            atmosphere.SetMapSpace(map, true, atmos);
             var error = Assert.Throws<InvalidOperationException>(() => validator.Validate(map));
             Assert.That(error!.Message, Is.EqualTo("PersistentWar map must set MapAtmosphere.space to false."));
-            atmos.Space = false;
+            atmosphere.SetMapSpace(map, false, atmos);
         });
 
         await Pair.RunUntilSynced();
