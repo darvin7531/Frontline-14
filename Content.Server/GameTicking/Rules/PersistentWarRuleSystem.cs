@@ -1,11 +1,13 @@
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Ghost;
 using Content.Server.Light.EntitySystems;
+using Content.Server.Maps;
 using Content.Server.Station.Systems;
 using Content.Server.War;
 using Content.Shared.GameTicking;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Light.Components;
+using Content.Shared.Maps;
 using Content.Shared.Mind;
 using Content.Shared.Preferences;
 using Content.Shared.War;
@@ -30,10 +32,26 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     public override void Initialize()
     {
         base.Initialize();
+        SubscribeLocalEvent<LoadingMapsEvent>(OnLoadingMaps);
         SubscribeLocalEvent<PostGameMapLoad>(OnMapLoaded);
         SubscribeLocalEvent<RulePlayerSpawningEvent>(OnRulePlayerSpawning);
         SubscribeLocalEvent<PlayerBeforeSpawnEvent>(OnPlayerBeforeSpawn);
         SubscribeLocalEvent<GhostAttemptHandleEvent>(OnGhostAttempt);
+    }
+
+    private void OnLoadingMaps(LoadingMapsEvent args)
+    {
+        if (GameTicker.CurrentPreset?.ID != "PersistentWar" ||
+            GameTicker.CurrentPreset.MapPool is not { } poolId ||
+            !ProtoMan.TryIndex<GameMapPoolPrototype>(poolId, out var pool))
+            return;
+
+        foreach (var mapId in pool.Maps)
+        {
+            args.Maps.Clear();
+            args.Maps.Add(ProtoMan.Index<GameMapPrototype>(mapId));
+            return;
+        }
     }
 
     private void OnMapLoaded(PostGameMapLoad args)
