@@ -12,6 +12,7 @@ using Content.Shared.Mind;
 using Content.Shared.Preferences;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Map.Components;
 using Robust.Shared.Player;
 using Robust.Shared.Random;
 
@@ -25,7 +26,6 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     [Dependency] private WarStateSystem _war = default!;
     [Dependency] private SharedMindSystem _mind = default!;
     [Dependency] private StationSpawningSystem _stationSpawning = default!;
-    [Dependency] private SharedMapSystem _map = default!;
     [Dependency] private LightCycleSystem _lightCycle = default!;
     [Dependency] private PersistentWarMapValidatorSystem _mapValidator = default!;
 
@@ -33,7 +33,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     {
         base.Initialize();
         SubscribeLocalEvent<LoadingMapsEvent>(OnLoadingMaps);
-        SubscribeLocalEvent<PostGameMapLoad>(OnMapLoaded);
+        SubscribeLocalEvent<MapComponent, MapInitEvent>(OnMapInitialized);
         SubscribeLocalEvent<RulePlayerSpawningEvent>(OnRulePlayerSpawning);
         SubscribeLocalEvent<PlayerBeforeSpawnEvent>(OnPlayerBeforeSpawn);
         SubscribeLocalEvent<GhostAttemptHandleEvent>(OnGhostAttempt);
@@ -54,13 +54,12 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         }
     }
 
-    private void OnMapLoaded(PostGameMapLoad args)
+    private void OnMapInitialized(Entity<MapComponent> map, ref MapInitEvent args)
     {
-        if (GameTicker.CurrentPreset?.ID != "PersistentWar")
+        if (GameTicker.CurrentPreset?.ID != "PersistentWar" || map.Comp.MapId != GameTicker.DefaultMap)
             return;
 
         var war = _war.EnsureWar();
-        var map = _map.GetMapOrInvalid(args.Map);
         _mapValidator.Validate(map);
         var cycle = Comp<LightCycleComponent>(map);
         _lightCycle.SetOffset((map, cycle), GetCycleOffset(war.StartedAt, cycle.Duration));
