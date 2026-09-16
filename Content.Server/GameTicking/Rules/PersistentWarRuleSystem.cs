@@ -30,13 +30,13 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     public override void Initialize()
     {
         base.Initialize();
-        SubscribeLocalEvent<global::Content.Server.GameTicking.GameTicker.PostGameMapLoad>(OnMapLoaded);
+        SubscribeLocalEvent<PostGameMapLoad>(OnMapLoaded);
         SubscribeLocalEvent<RulePlayerSpawningEvent>(OnRulePlayerSpawning);
         SubscribeLocalEvent<PlayerBeforeSpawnEvent>(OnPlayerBeforeSpawn);
         SubscribeLocalEvent<GhostAttemptHandleEvent>(OnGhostAttempt);
     }
 
-    private void OnMapLoaded(global::Content.Server.GameTicking.GameTicker.PostGameMapLoad args)
+    private void OnMapLoaded(PostGameMapLoad args)
     {
         if (GameTicker.CurrentPreset?.ID != "PersistentWar")
             return;
