@@ -33,7 +33,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     {
         base.Initialize();
         SubscribeLocalEvent<LoadingMapsEvent>(OnLoadingMaps);
-        SubscribeLocalEvent<MapComponent, MapInitEvent>(OnMapInitialized);
+        SubscribeLocalEvent<PersistentWarMapComponent, MapInitEvent>(OnMapInitialized);
         SubscribeLocalEvent<RulePlayerSpawningEvent>(OnRulePlayerSpawning);
         SubscribeLocalEvent<PlayerBeforeSpawnEvent>(OnPlayerBeforeSpawn);
         SubscribeLocalEvent<GhostAttemptHandleEvent>(OnGhostAttempt);
@@ -54,9 +54,9 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         }
     }
 
-    private void OnMapInitialized(Entity<MapComponent> map, ref MapInitEvent args)
+    private void OnMapInitialized(Entity<PersistentWarMapComponent> map, ref MapInitEvent args)
     {
-        if (GameTicker.CurrentPreset?.ID != "PersistentWar" || map.Comp.MapId != GameTicker.DefaultMap)
+        if (GameTicker.CurrentPreset?.ID != "PersistentWar" || Comp<MapComponent>(map).MapId != GameTicker.DefaultMap)
             return;
 
         var war = _war.EnsureWar();
