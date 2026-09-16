@@ -131,6 +131,9 @@ public sealed partial class StationSystem : SharedStationSystem
 
         if (!dict.Any())
         {
+            if (ev.GameMap.Stations.Count == 0)
+                return;
+
             // Oh jeez, no stations got loaded.
             // We'll yell about it, but the thing this used to do with creating a dummy is kinda pointless now.
             _sawmill.Error($"There were no station grids for {ev.GameMap.ID}!");

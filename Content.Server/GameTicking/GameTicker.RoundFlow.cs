@@ -93,9 +93,6 @@ namespace Content.Server.GameTicking
             if (_map.MapExists(DefaultMap))
                 return true;
 
-            if (Preset?.ID == "PersistentWar" && string.IsNullOrWhiteSpace(_cfg.GetCVar(CCVars.GameMap)))
-                return false;
-
             AddGamePresetRules();
 
             var maps = new List<GameMapPrototype>();

@@ -1,0 +1,228 @@
+meta:
+  format: 7
+  category: Map
+  engineVersion: 266.0.0
+  forkId: ""
+  forkVersion: ""
+  time: 08/31/2025 14:22:33
+  entityCount: 17
+maps:
+- 3
+grids:
+- 2
+orphans: []
+nullspace: []
+tilemap:
+  0: Space
+  89: FloorSteel
+entities:
+- proto: ""
+  entities:
+  - uid: 2
+    components:
+    - type: MetaData
+    - type: Transform
+      parent: 3
+    - type: MapGrid
+      chunks:
+        -1,-1:
+          ind: -1,-1
+          tiles: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWQAAAAAAAA==
+          version: 7
+    - type: Broadphase
+    - type: Physics
+      bodyStatus: InAir
+      angularDamping: 0.05
+      linearDamping: 0.05
+      fixedRotation: False
+      bodyType: Dynamic
+    - type: Fixtures
+      fixtures: {}
+
+    - type: OccluderTree
+    - type: Shuttle
+      dampingModifier: 0.25
+    - type: GridPathfinding
+    - type: Gravity
+      gravityShakeSound: !type:SoundPathSpecifier
+        path: /Audio/Effects/alert.ogg
+    - type: DecalGrid
+      chunkCollection:
+        version: 2
+        nodes: []
+    - type: SpreaderGrid
+    - type: ImplicitRoof
+  - uid: 3
+    components:
+    - type: MetaData
+      name: "Frontline Ground Test"
+    - type: Transform
+    - type: Map
+      mapPaused: True
+    - type: GridTree
+    - type: Broadphase
+    - type: OccluderTree
+    - type: MapAtmosphere
+      space: false
+      mixture:
+        temperature: 293.15
+        volume: 2500
+        moles:
+          Oxygen: 21.824879
+          Nitrogen: 82.10312
+        immutable: true
+    - type: MapLight
+      ambientLightColor: '#D8B059FF'
+    - type: LightCycle
+      initialOffset: false
+      duration: 2400
+    - type: ChunkContainer
+      chunkEntities: []
+- proto: TerritoryMarker
+  entities:
+  - uid: 4
+    components:
+    - type: Transform
+      pos: -0.9,-0.8
+      parent: 2
+    - type: Territory
+      territory: frontline-one
+      boundsMin: -0.08,-0.08
+      boundsMax: 0.08,0.08
+- proto: TerritoryMarker
+  entities:
+  - uid: 5
+    components:
+    - type: Transform
+      pos: -0.7,-0.8
+      parent: 2
+    - type: Territory
+      territory: frontline-two
+      boundsMin: -0.08,-0.08
+      boundsMax: 0.08,0.08
+- proto: TerritoryMarker
+  entities:
+  - uid: 6
+    components:
+    - type: Transform
+      pos: -0.5,-0.8
+      parent: 2
+    - type: Territory
+      territory: frontline-three
+      boundsMin: -0.08,-0.08
+      boundsMax: 0.08,0.08
+- proto: TerritoryMarker
+  entities:
+  - uid: 7
+    components:
+    - type: Transform
+      pos: -0.8,-0.5
+      parent: 2
+    - type: Territory
+      territory: frontline-four
+      boundsMin: -0.08,-0.08
+      boundsMax: 0.08,0.08
+- proto: TerritoryMarker
+  entities:
+  - uid: 8
+    components:
+    - type: Transform
+      pos: -0.4,-0.5
+      parent: 2
+    - type: Territory
+      territory: frontline-five
+      boundsMin: -0.08,-0.08
+      boundsMax: 0.08,0.08
+- proto: TownHallCoreFactionOne
+  entities:
+  - uid: 9
+    components:
+    - type: Transform
+      pos: -0.9,-0.8
+      parent: 2
+    - type: TownHall
+      territory: frontline-one
+      faction: FrontlineFactionOne
+- proto: TownHallCoreFactionTwo
+  entities:
+  - uid: 10
+    components:
+    - type: Transform
+      pos: -0.7,-0.8
+      parent: 2
+    - type: TownHall
+      territory: frontline-two
+      faction: FrontlineFactionTwo
+- proto: TownHallRuin
+  entities:
+  - uid: 11
+    components:
+    - type: Transform
+      pos: -0.5,-0.8
+      parent: 2
+    - type: TownHallRuin
+      territory: frontline-three
+- proto: TownHallRuin
+  entities:
+  - uid: 12
+    components:
+    - type: Transform
+      pos: -0.8,-0.5
+      parent: 2
+    - type: TownHallRuin
+      territory: frontline-four
+- proto: TownHallRuin
+  entities:
+  - uid: 13
+    components:
+    - type: Transform
+      pos: -0.4,-0.5
+      parent: 2
+    - type: TownHallRuin
+      territory: frontline-five
+- proto: FactionSpawnPoint
+  entities:
+  - uid: 14
+    components:
+    - type: Transform
+      pos: -0.9,-0.8
+      parent: 2
+    - type: FactionSpawnPoint
+      territory: frontline-one
+- proto: FactionSpawnPoint
+  entities:
+  - uid: 15
+    components:
+    - type: Transform
+      pos: -0.7,-0.8
+      parent: 2
+    - type: FactionSpawnPoint
+      territory: frontline-two
+- proto: FactionSpawnPoint
+  entities:
+  - uid: 16
+    components:
+    - type: Transform
+      pos: -0.5,-0.8
+      parent: 2
+    - type: FactionSpawnPoint
+      territory: frontline-three
+- proto: FactionSpawnPoint
+  entities:
+  - uid: 17
+    components:
+    - type: Transform
+      pos: -0.8,-0.5
+      parent: 2
+    - type: FactionSpawnPoint
+      territory: frontline-four
+- proto: FactionSpawnPoint
+  entities:
+  - uid: 18
+    components:
+    - type: Transform
+      pos: -0.4,-0.5
+      parent: 2
+    - type: FactionSpawnPoint
+      territory: frontline-five
+...

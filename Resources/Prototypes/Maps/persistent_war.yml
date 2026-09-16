@@ -1,0 +1,8 @@
+- type: gameMap
+  id: PersistentWarGround
+  mapName: Frontline Ground Test
+  mapPath: /Maps/Frontline/frontline_ground_test.yml
+  minPlayers: 0
+  stations: {}
+  maxRandomOffset: 0
+  randomRotation: false
