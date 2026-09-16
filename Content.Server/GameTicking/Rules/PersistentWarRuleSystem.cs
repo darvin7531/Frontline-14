@@ -8,7 +8,7 @@ using Content.Shared.Mind;
 using Content.Shared.Preferences;
 using Content.Shared.War;
 using Robust.Shared.Player;
-using Robust.Shared.Random.Helpers;
+using Robust.Shared.Random;
 
 namespace Content.Server.GameTicking.Rules;
 
