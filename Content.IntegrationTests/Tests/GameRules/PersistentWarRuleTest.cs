@@ -45,6 +45,7 @@ public sealed class PersistentWarRuleTest : GameTest
         var war = Server.System<WarStateSystem>();
         var startedAt = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(7);
         EntityUid map = default;
+        MapAtmosphereComponent atmos = default!;
         LightCycleComponent cycle = default!;
 
         await Server.WaitPost(() =>
@@ -66,7 +67,7 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(war.State, Is.EqualTo(new WarState(1, WarStatus.Active, startedAt)));
 
             map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
-            var atmos = SEntMan.GetComponent<MapAtmosphereComponent>(map);
+            atmos = SEntMan.GetComponent<MapAtmosphereComponent>(map);
             var light = SEntMan.GetComponent<MapLightComponent>(map);
             cycle = SEntMan.GetComponent<LightCycleComponent>(map);
 

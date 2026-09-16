@@ -9,7 +9,7 @@ using Robust.Shared.Map.Components;
 
 namespace Content.Server.War;
 
-public sealed class PersistentWarMapValidatorSystem : EntitySystem
+public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
 {
     [Dependency] private AtmosphereSystem _atmosphere = default!;
 
