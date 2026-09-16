@@ -76,10 +76,15 @@ public sealed class TerritoryVictoryTest : GameTest
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
+        EntityUid hall = default;
 
         await server.WaitPost(() =>
         {
-            var hall = SEntMan.SpawnEntity("TownHallCoreFactionTwo", map.GridCoords);
+            hall = SEntMan.SpawnEntity("TownHallCoreFactionTwo", map.GridCoords);
+        });
+
+        await server.WaitAssertion(() =>
+        {
             Assert.That(SEntMan.GetComponent<TownHallComponent>(hall).FactionId,
                 Is.EqualTo("FrontlineFactionTwo"));
         });

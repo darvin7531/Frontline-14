@@ -83,7 +83,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
             !TerminatingOrDeleted(current))
             return false;
 
-        var mob = _stationSpawning.SpawnPlayerMob(spawns[0], null, profile, null);
+        var mob = _stationSpawning.SpawnPlayerMob(RobustRandom.Pick(spawns), null, profile, null);
         _mind.TransferTo(mind, mob, ghostCheckOverride: true);
         return true;
     }

@@ -27,6 +27,8 @@
   id: TownHallCoreFactionOne
   name: faction one town hall
   components:
+  - type: TownHall
+    faction: FrontlineFactionOne
   - type: Sprite
     sprite: Structures/Furniture/Altars/Gods/nanotrasen.rsi
     state: nanotrasen
@@ -39,6 +41,8 @@
   id: TownHallCoreFactionTwo
   name: faction two town hall
   components:
+  - type: TownHall
+    faction: FrontlineFactionTwo
   - type: Sprite
     sprite: Structures/Furniture/Altars/Gods/nanotrasen.rsi
     state: chaos

@@ -27,6 +27,9 @@ public sealed partial class TownHallSystem : EntitySystem
 
     private void OnTownHallTerminating(Entity<TownHallComponent> hall, ref EntityTerminatingEvent args)
     {
+        if (hall.Comp.TerritoryId == "Unassigned")
+            return;
+
         var coordinates = Transform(hall).Coordinates;
         if (TerminatingOrDeleted(coordinates.EntityId))
             return;
