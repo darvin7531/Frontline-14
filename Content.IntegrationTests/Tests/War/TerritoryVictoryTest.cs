@@ -70,4 +70,18 @@ public sealed class TerritoryVictoryTest : GameTest
             Assert.That(territorySystem.Contains(new TerritoryId("relative"), map.GridCoords), Is.False);
         });
     }
+
+    [Test]
+    public async Task FactionTwoTownHallCoreBelongsToFactionTwo()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+
+        await server.WaitPost(() =>
+        {
+            var hall = SEntMan.SpawnEntity("TownHallCoreFactionTwo", map.GridCoords);
+            Assert.That(SEntMan.GetComponent<TownHallComponent>(hall).FactionId,
+                Is.EqualTo("FrontlineFactionTwo"));
+        });
+    }
 }
