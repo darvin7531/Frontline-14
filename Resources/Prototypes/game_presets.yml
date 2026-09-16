@@ -93,6 +93,7 @@
   name: persistent-war-title
   description: persistent-war-description
   showInVote: false
+  supportedMaps: PersistentWarMapPool
   rules:
   - PersistentWarRule
 

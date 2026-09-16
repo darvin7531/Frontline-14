@@ -1,0 +1,16 @@
+- type: gameMap
+  id: PersistentWarGround
+  mapName: Frontline Ground Test
+  mapPath: /Maps/Corvax/corvax_silly.yml
+  minPlayers: 0
+  maxRandomOffset: 0
+  randomRotation: false
+  stations:
+    Silly:
+      stationProto: StandardNanotrasenStation
+      components:
+        - type: StationNameSetup
+          mapNameTemplate: "Frontline Ground Test"
+        - type: StationJobs
+          availableJobs:
+            Passenger: [ -1, -1 ]
