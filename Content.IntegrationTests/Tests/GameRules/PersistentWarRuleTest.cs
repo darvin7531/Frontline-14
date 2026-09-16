@@ -98,6 +98,29 @@ public sealed class PersistentWarRuleTest : GameTest
     }
 
     [Test]
+    public async Task ValidatorReportsAllMissingMapRequirements()
+    {
+        var map = await Pair.CreateTestMap();
+        var validator = Server.System<PersistentWarMapValidatorSystem>();
+
+        await Server.WaitAssertion(() =>
+        {
+            var error = Assert.Throws<InvalidOperationException>(() => validator.Validate(map.MapUid));
+            Assert.Multiple(() =>
+            {
+                Assert.That(error!.Message, Does.Contain("PersistentWar map must include MapAtmosphere."));
+                Assert.That(error.Message, Does.Contain("PersistentWar map must include MapLight."));
+                Assert.That(error.Message, Does.Contain("PersistentWar map must include LightCycle."));
+                Assert.That(error.Message, Does.Contain("PersistentWar map must define exactly five territories (found 0)."));
+                Assert.That(error.Message, Does.Contain("PersistentWar map must include a town hall or ruin for each territory."));
+                Assert.That(error.Message, Does.Contain("PersistentWar map must include a faction spawn point for each territory."));
+                Assert.That(error.Message, Does.Contain("PersistentWar map must include a starting town hall for FrontlineFactionOne."));
+                Assert.That(error.Message, Does.Contain("PersistentWar map must include a starting town hall for FrontlineFactionTwo."));
+            });
+        });
+    }
+
+    [Test]
     public async Task StartsWithoutSpawningUnselectedPlayers()
     {
         var ticker = Server.System<GameTicker>();
