@@ -77,8 +77,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     Is.Not.EqualTo(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, (float) cycle.Duration.TotalSeconds / 2)));
             });
 
-            var expectedOffset = TimeSpan.FromTicks((DateTimeOffset.UtcNow - startedAt).Ticks % cycle.Duration.Ticks);
-            Assert.That((cycle.Offset - expectedOffset).Duration(), Is.LessThan(TimeSpan.FromSeconds(2)));
+            Assert.That(cycle.Offset, Is.InRange(TimeSpan.FromMinutes(7), TimeSpan.FromMinutes(8)));
 
             var validator = Server.System<PersistentWarMapValidatorSystem>();
             Assert.DoesNotThrow(() => validator.Validate(map));

@@ -38,6 +38,10 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     protected override void Started(EntityUid uid, PersistentWarRuleComponent component, GameRuleComponent gameRule, GameRuleStartedEvent args)
     {
         base.Started(uid, component, gameRule, args);
+
+        if (GameTicker.CurrentPreset?.ID != "PersistentWar")
+            return;
+
         var war = _war.EnsureWar();
         var map = _map.GetMapOrInvalid(GameTicker.DefaultMap);
         _mapValidator.Validate(map);
