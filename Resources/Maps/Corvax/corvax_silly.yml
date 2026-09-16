@@ -179,6 +179,7 @@ entities:
     - type: LightCycle
       originalColor: '#E0A0C0FF'
       offset: 720
+      initialOffset: false
       minLightLevel: 0.2
       minLevel: '#506050FF'
       maxLightLevel: 2

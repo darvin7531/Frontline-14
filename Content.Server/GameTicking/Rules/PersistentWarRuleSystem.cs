@@ -1,12 +1,15 @@
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Ghost;
+using Content.Server.Light.EntitySystems;
 using Content.Server.Station.Systems;
 using Content.Server.War;
 using Content.Shared.GameTicking;
 using Content.Shared.GameTicking.Components;
+using Content.Shared.Light.Components;
 using Content.Shared.Mind;
 using Content.Shared.Preferences;
 using Content.Shared.War;
+using Robust.Shared.GameObjects;
 using Robust.Shared.Player;
 using Robust.Shared.Random;
 
@@ -20,6 +23,9 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     [Dependency] private WarStateSystem _war = default!;
     [Dependency] private SharedMindSystem _mind = default!;
     [Dependency] private StationSpawningSystem _stationSpawning = default!;
+    [Dependency] private SharedMapSystem _map = default!;
+    [Dependency] private LightCycleSystem _lightCycle = default!;
+    [Dependency] private PersistentWarMapValidatorSystem _mapValidator = default!;
 
     public override void Initialize()
     {
@@ -32,7 +38,19 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     protected override void Started(EntityUid uid, PersistentWarRuleComponent component, GameRuleComponent gameRule, GameRuleStartedEvent args)
     {
         base.Started(uid, component, gameRule, args);
-        _war.EnsureWar();
+        var war = _war.EnsureWar();
+        var map = _map.GetMapOrInvalid(GameTicker.DefaultMap);
+        _mapValidator.Validate(map);
+        var cycle = Comp<LightCycleComponent>(map);
+        _lightCycle.SetOffset((map, cycle), GetCycleOffset(war.StartedAt, cycle.Duration));
+    }
+
+    private static TimeSpan GetCycleOffset(DateTimeOffset startedAt, TimeSpan duration)
+    {
+        var elapsed = DateTimeOffset.UtcNow - startedAt;
+        return elapsed <= TimeSpan.Zero
+            ? TimeSpan.Zero
+            : TimeSpan.FromTicks(elapsed.Ticks % duration.Ticks);
     }
 
     private void OnRulePlayerSpawning(RulePlayerSpawningEvent args)
