@@ -342,14 +342,22 @@ namespace Content.IntegrationTests.Tests
             await server.WaitPost(() =>
             {
                 MapId mapId;
+                GameMapPrototype gameMap;
                 try
                 {
                     var opts = DeserializationOptions.Default with { InitializeMaps = true };
-                    ticker.LoadGameMap(protoManager.Index<GameMapPrototype>(mapProto), out mapId, opts);
+                    gameMap = protoManager.Index<GameMapPrototype>(mapProto);
+                    ticker.LoadGameMap(gameMap, out mapId, opts);
                 }
                 catch (Exception ex)
                 {
                     throw new Exception($"Failed to load map {mapProto}", ex);
+                }
+
+                if (gameMap.Stations.Count == 0)
+                {
+                    mapSystem.DeleteMap(mapId);
+                    return;
                 }
 
                 mapSystem.CreateMap(out var shuttleMap);

@@ -5,6 +5,7 @@ using Content.Shared.Atmos.Components;
 using Content.Shared.Light.Components;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
 
 namespace Content.Server.War;
@@ -43,11 +44,12 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
 
     private void ValidateTerritories(EntityUid map, List<string> errors)
     {
+        var mapId = Comp<MapComponent>(map).MapId;
         var territories = new Dictionary<string, Entity<TerritoryComponent, TransformComponent>>();
         var markers = EntityQueryEnumerator<TerritoryComponent, TransformComponent>();
         while (markers.MoveNext(out var uid, out var territory, out var xform))
         {
-            if (TerminatingOrDeleted(uid) || xform.MapUid != map)
+            if (TerminatingOrDeleted(uid) || xform.MapID != mapId)
                 continue;
 
             if (territory.TerritoryId == "Unassigned")
@@ -63,9 +65,9 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         if (territories.Count != 5)
             errors.Add($"PersistentWar map must define exactly five territories (found {territories.Count}).");
 
-        var halls = GetMapEntities<TownHallComponent>(map);
-        var ruins = GetMapEntities<TownHallRuinComponent>(map);
-        var spawns = GetMapEntities<FactionSpawnPointComponent>(map);
+        var halls = GetMapEntities<TownHallComponent>(mapId);
+        var ruins = GetMapEntities<TownHallRuinComponent>(mapId);
+        var spawns = GetMapEntities<FactionSpawnPointComponent>(mapId);
         foreach (var (id, territory) in territories)
         {
             if (!Contains(territory, halls, id) && !Contains(territory, ruins, id))
@@ -85,13 +87,13 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         ValidateStartingHall(territories, halls, "FrontlineFactionTwo", errors);
     }
 
-    private List<Entity<T, TransformComponent>> GetMapEntities<T>(EntityUid map) where T : IComponent
+    private List<Entity<T, TransformComponent>> GetMapEntities<T>(MapId mapId) where T : IComponent
     {
         var result = new List<Entity<T, TransformComponent>>();
         var entities = EntityQueryEnumerator<T, TransformComponent>();
         while (entities.MoveNext(out var uid, out var component, out var xform))
         {
-            if (!TerminatingOrDeleted(uid) && xform.MapUid == map)
+            if (!TerminatingOrDeleted(uid) && xform.MapID == mapId)
                 result.Add((uid, component, xform));
         }
 
