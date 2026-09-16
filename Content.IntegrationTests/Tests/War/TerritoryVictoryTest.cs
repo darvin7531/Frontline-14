@@ -29,7 +29,7 @@ public sealed class TerritoryVictoryTest : GameTest
                 var coordinates = new EntityCoordinates(map.Grid.Owner, map.GridCoords.Position + new Vector2(i * 0.2f, 0));
                 var territory = SEntMan.SpawnEntity(null, coordinates);
                 SEntMan.AddComponent<TerritoryComponent>(territory)
-                    .Configure(new TerritoryId($"territory-{i}"), coordinates.Position - new Vector2(0.5f), coordinates.Position + new Vector2(0.5f));
+                    .Configure(new TerritoryId($"territory-{i}"), new Vector2(-0.5f), new Vector2(0.5f));
 
                 if (i == 4)
                     continue;
@@ -55,13 +55,13 @@ public sealed class TerritoryVictoryTest : GameTest
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
         var territorySystem = server.System<TerritorySystem>();
-        var markerCoordinates = new EntityCoordinates(map.Grid.Owner, map.GridCoords.Position + new Vector2(10, 0));
+        var markerCoordinates = new EntityCoordinates(map.Grid.Owner, map.GridCoords.Position + new Vector2(0.5f, 0));
 
         await server.WaitPost(() =>
         {
             var marker = SEntMan.SpawnEntity(null, markerCoordinates);
             SEntMan.AddComponent<TerritoryComponent>(marker)
-                .Configure(new TerritoryId("relative"), new Vector2(-1, -1), new Vector2(1, 1));
+                .Configure(new TerritoryId("relative"), new Vector2(-0.1f, -0.1f), new Vector2(0.1f, 0.1f));
         });
 
         await server.WaitAssertion(() =>
