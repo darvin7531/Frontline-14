@@ -11,7 +11,7 @@ using static Robust.Client.UserInterface.Controls.BoxContainer;
 namespace Content.Client.War;
 
 [UsedImplicitly]
-public sealed class WarVictoryEui : BaseEui
+public sealed partial class WarVictoryEui : BaseEui
 {
     [Dependency] private IPrototypeManager _prototypes = default!;
     private readonly WarVictoryWindow _window = new();
