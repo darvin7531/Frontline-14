@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Numerics;
 using System.Text.Json;
 using Content.IntegrationTests.Fixtures;
 using Content.IntegrationTests.Fixtures.Attributes;
@@ -15,9 +16,11 @@ using Content.Shared.CCVar;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Light.Components;
 using Content.Shared.Light.EntitySystems;
+using Content.Shared.War;
 
 using Robust.Shared.ContentPack;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Player;
 
@@ -27,6 +30,17 @@ namespace Content.IntegrationTests.Tests.GameRules;
 [TestOf(typeof(PersistentWarRuleComponent))]
 public sealed class PersistentWarRuleTest : GameTest
 {
+    public enum InvalidMapCase
+    {
+        UnassignedTerritory,
+        FourTerritories,
+        MissingSpawn,
+        WrongHallFaction,
+        ObjectiveOutsideBounds,
+        DuplicateObjective,
+        WrongObjectiveComposition,
+    }
+
     public override PoolSettings PoolSettings => new()
     {
         Connected = true,
@@ -129,6 +143,86 @@ public sealed class PersistentWarRuleTest : GameTest
         });
     }
 
+    [TestCase(InvalidMapCase.UnassignedTerritory,
+        "PersistentWar map territory markers must not use Unassigned.")]
+    [TestCase(InvalidMapCase.FourTerritories,
+        "PersistentWar map must define exactly five territories (found 4).")]
+    [TestCase(InvalidMapCase.MissingSpawn,
+        "PersistentWar map territory 'frontline-one' must include a faction spawn point within its bounds.")]
+    [TestCase(InvalidMapCase.WrongHallFaction,
+        "PersistentWar map must include exactly one starting town hall for FrontlineFactionOne")]
+    [TestCase(InvalidMapCase.ObjectiveOutsideBounds,
+        "PersistentWar map territory 'frontline-one' must include exactly one objective within its bounds")]
+    [TestCase(InvalidMapCase.DuplicateObjective,
+        "PersistentWar map territory 'frontline-one' must include exactly one objective within its bounds")]
+    [TestCase(InvalidMapCase.WrongObjectiveComposition,
+        "PersistentWar map must include exactly two town halls and three ruins")]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task ValidatorRejectsInvalidGroundMap(InvalidMapCase invalidCase, string expectedError)
+    {
+        var ticker = Server.System<GameTicker>();
+        var validator = Server.System<PersistentWarMapValidatorSystem>();
+        EntityUid map = default;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+            map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+
+            var mapId = SComp<MapComponent>(map).MapId;
+            switch (invalidCase)
+            {
+                case InvalidMapCase.UnassignedTerritory:
+                    SComp<TerritoryComponent>(FindMapEntity<TerritoryComponent>(mapId,
+                        territory => territory.TerritoryId == "frontline-five")).TerritoryId = "Unassigned";
+                    break;
+                case InvalidMapCase.FourTerritories:
+                    SEntMan.DeleteEntity(FindMapEntity<TerritoryComponent>(mapId,
+                        territory => territory.TerritoryId == "frontline-five"));
+                    break;
+                case InvalidMapCase.MissingSpawn:
+                    SEntMan.DeleteEntity(FindMapEntity<FactionSpawnPointComponent>(mapId,
+                        spawn => spawn.TerritoryId == "frontline-one"));
+                    break;
+                case InvalidMapCase.WrongHallFaction:
+                    SComp<TownHallComponent>(FindMapEntity<TownHallComponent>(mapId,
+                        hall => hall.FactionId == "FrontlineFactionOne")).FactionId = "FrontlineFactionTwo";
+                    break;
+                case InvalidMapCase.ObjectiveOutsideBounds:
+                    Server.System<SharedTransformSystem>().SetLocalPosition(
+                        FindMapEntity<TownHallComponent>(mapId, hall => hall.TerritoryId == "frontline-one"),
+                        new Vector2(-10f, -10f));
+                    break;
+                case InvalidMapCase.DuplicateObjective:
+                    var original = FindMapEntity<TownHallComponent>(mapId,
+                        hall => hall.TerritoryId == "frontline-one");
+                    var duplicate = SSpawnAtPosition(null, SComp<TransformComponent>(original).Coordinates);
+                    SEntMan.AddComponent<TownHallRuinComponent>(duplicate).TerritoryId = "frontline-one";
+                    break;
+                case InvalidMapCase.WrongObjectiveComposition:
+                    var ruin = FindMapEntity<TownHallRuinComponent>(mapId,
+                        objective => objective.TerritoryId == "frontline-three");
+                    SEntMan.RemoveComponent<TownHallRuinComponent>(ruin);
+                    SEntMan.AddComponent<TownHallComponent>(ruin)
+                        .Configure(new TerritoryId("frontline-three"), new FactionId("FrontlineFactionOne"));
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(invalidCase), invalidCase, null);
+            }
+        });
+
+        await Server.WaitAssertion(() =>
+        {
+            var error = Assert.Throws<InvalidOperationException>(() => validator.Validate(map));
+            Assert.That(error!.Message, Does.Contain(expectedError));
+        });
+
+        ticker.SetGamePreset((GamePresetPrototype) null);
+    }
+
     [Test]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
     public async Task TechnicalRestartRestoresPersistentDayNightPhase()
@@ -174,6 +268,54 @@ public sealed class PersistentWarRuleTest : GameTest
             var restored = SEntMan.GetComponent<LightCycleComponent>(map).Offset;
             Assert.That(war.State?.StartedAt, Is.EqualTo(startedAt));
             Assert.That(restored, Is.InRange(beforeRestart, beforeRestart + TimeSpan.FromMinutes(1)));
+        });
+
+        ticker.SetGamePreset((GamePresetPrototype) null);
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task NewWarStartsNewPersistentDayNightPhase()
+    {
+        var ticker = Server.System<GameTicker>();
+        var resources = Server.ResolveDependency<IResourceManager>();
+        var war = Server.System<WarStateSystem>();
+        var oldStartedAt = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(7);
+        WarState newWar = default!;
+
+        await Server.WaitPost(() =>
+        {
+            resources.UserData.Delete(WarStateSystem.SavePath);
+            using (var stream = resources.UserData.OpenWrite(WarStateSystem.SavePath))
+                JsonSerializer.Serialize(stream, new WarState(41, WarStatus.Active, oldStartedAt));
+
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+
+            var oldMap = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+            Assert.That(SComp<LightCycleComponent>(oldMap).Offset, Is.GreaterThan(TimeSpan.FromMinutes(6)));
+            newWar = war.StartNewWar();
+
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+
+        await Server.WaitAssertion(() =>
+        {
+            Assert.Multiple(() =>
+            {
+                Assert.That(newWar.WarId, Is.EqualTo(42));
+                Assert.That(newWar.StartedAt, Is.GreaterThan(oldStartedAt));
+                Assert.That(war.State, Is.EqualTo(newWar));
+            });
+
+            var map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+            Assert.That(SComp<LightCycleComponent>(map).Offset, Is.LessThan(TimeSpan.FromMinutes(1)));
         });
 
         ticker.SetGamePreset((GamePresetPrototype) null);
@@ -230,5 +372,18 @@ public sealed class PersistentWarRuleTest : GameTest
         });
 
         ticker.SetGamePreset((GamePresetPrototype) null);
+    }
+
+    private EntityUid FindMapEntity<T>(MapId mapId, Func<T, bool> predicate)
+        where T : IComponent
+    {
+        var query = SEntMan.EntityQueryEnumerator<T, TransformComponent>();
+        while (query.MoveNext(out var uid, out var component, out var transform))
+        {
+            if (transform.MapID == mapId && predicate(component))
+                return uid;
+        }
+
+        throw new InvalidOperationException($"No matching {typeof(T).Name} found on map {mapId}.");
     }
 }
