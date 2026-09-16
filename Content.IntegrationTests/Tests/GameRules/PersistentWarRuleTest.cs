@@ -49,6 +49,12 @@ public sealed class PersistentWarRuleTest : GameTest
         InLobby = true,
     };
 
+    public override async Task DoTeardown()
+    {
+        await Server.WaitPost(() => Server.ResolveDependency<IResourceManager>().UserData.Delete(WarStateSystem.SavePath));
+        await base.DoTeardown();
+    }
+
     [Test]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
     public async Task StartsGroundMapWithPersistentDayNight()
@@ -137,8 +143,8 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(error.Message, Does.Contain("PersistentWar map must define exactly five territories (found 0)."));
                 Assert.That(error.Message, Does.Contain("PersistentWar map must include a town hall or ruin for each territory."));
                 Assert.That(error.Message, Does.Contain("PersistentWar map must include a faction spawn point for each territory."));
-                Assert.That(error.Message, Does.Contain("PersistentWar map must include a starting town hall for FrontlineFactionOne."));
-                Assert.That(error.Message, Does.Contain("PersistentWar map must include a starting town hall for FrontlineFactionTwo."));
+                Assert.That(error.Message, Does.Contain("PersistentWar map must include exactly one starting town hall for FrontlineFactionOne"));
+                Assert.That(error.Message, Does.Contain("PersistentWar map must include exactly one starting town hall for FrontlineFactionTwo"));
             });
         });
     }

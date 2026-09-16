@@ -71,12 +71,16 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         var spawns = GetMapEntities<FactionSpawnPointComponent>(mapId);
         foreach (var id in territories.Keys)
         {
-            if (!Contains(halls, id) && !Contains(ruins, id))
-                errors.Add($"PersistentWar map territory '{id}' must include a town hall or ruin within its bounds.");
+            var objectives = CountContained(halls, id) + CountContained(ruins, id);
+            if (objectives != 1)
+                errors.Add($"PersistentWar map territory '{id}' must include exactly one objective within its bounds (found {objectives}).");
 
-            if (!Contains(spawns, id))
+            if (CountContained(spawns, id) == 0)
                 errors.Add($"PersistentWar map territory '{id}' must include a faction spawn point within its bounds.");
         }
+
+        if (halls.Count != 2 || ruins.Count != 3)
+            errors.Add($"PersistentWar map must include exactly two town halls and three ruins (found {halls.Count} halls and {ruins.Count} ruins).");
 
         if (territories.Count == 0)
         {
@@ -101,11 +105,12 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         return result;
     }
 
-    private bool Contains<T>(
+    private int CountContained<T>(
         List<Entity<T, TransformComponent>> entities,
         string id)
         where T : IComponent
     {
+        var count = 0;
         foreach (var entity in entities)
         {
             var entityId = entity.Comp1 switch
@@ -117,10 +122,10 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
             };
 
             if (entityId == id && _territories.Contains(new TerritoryId(id), entity.Comp2.Coordinates))
-                return true;
+                count++;
         }
 
-        return false;
+        return count;
     }
 
     private void ValidateStartingHall(
@@ -129,13 +134,15 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         string faction,
         List<string> errors)
     {
+        var count = 0;
         foreach (var hall in halls)
         {
             if (hall.Comp1.FactionId == faction && territories.TryGetValue(hall.Comp1.TerritoryId, out var territory) &&
                 _territories.Contains(new TerritoryId(territory.Comp1.TerritoryId), hall.Comp2.Coordinates))
-                return;
+                count++;
         }
 
-        errors.Add($"PersistentWar map must include a starting town hall for {faction}.");
+        if (count != 1)
+            errors.Add($"PersistentWar map must include exactly one starting town hall for {faction} (found {count}).");
     }
 }
