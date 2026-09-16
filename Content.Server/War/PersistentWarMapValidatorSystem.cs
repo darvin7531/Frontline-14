@@ -13,6 +13,7 @@ namespace Content.Server.War;
 public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
 {
     [Dependency] private AtmosphereSystem _atmosphere = default!;
+    [Dependency] private TerritorySystem _territories = default!;
 
     public void Validate(EntityUid map)
     {
@@ -68,12 +69,12 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         var halls = GetMapEntities<TownHallComponent>(mapId);
         var ruins = GetMapEntities<TownHallRuinComponent>(mapId);
         var spawns = GetMapEntities<FactionSpawnPointComponent>(mapId);
-        foreach (var (id, territory) in territories)
+        foreach (var id in territories.Keys)
         {
-            if (!Contains(territory, halls, id) && !Contains(territory, ruins, id))
+            if (!Contains(halls, id) && !Contains(ruins, id))
                 errors.Add($"PersistentWar map territory '{id}' must include a town hall or ruin within its bounds.");
 
-            if (!Contains(territory, spawns, id))
+            if (!Contains(spawns, id))
                 errors.Add($"PersistentWar map territory '{id}' must include a faction spawn point within its bounds.");
         }
 
@@ -100,8 +101,7 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         return result;
     }
 
-    private static bool Contains<T>(
-        Entity<TerritoryComponent, TransformComponent> territory,
+    private bool Contains<T>(
         List<Entity<T, TransformComponent>> entities,
         string id)
         where T : IComponent
@@ -116,14 +116,14 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
                 _ => string.Empty,
             };
 
-            if (entityId == id && territory.Comp1.Contains(entity.Comp2.Coordinates.Position - territory.Comp2.Coordinates.Position))
+            if (entityId == id && _territories.Contains(new TerritoryId(id), entity.Comp2.Coordinates))
                 return true;
         }
 
         return false;
     }
 
-    private static void ValidateStartingHall(
+    private void ValidateStartingHall(
         Dictionary<string, Entity<TerritoryComponent, TransformComponent>> territories,
         List<Entity<TownHallComponent, TransformComponent>> halls,
         string faction,
@@ -132,7 +132,7 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         foreach (var hall in halls)
         {
             if (hall.Comp1.FactionId == faction && territories.TryGetValue(hall.Comp1.TerritoryId, out var territory) &&
-                territory.Comp1.Contains(hall.Comp2.Coordinates.Position - territory.Comp2.Coordinates.Position))
+                _territories.Contains(new TerritoryId(territory.Comp1.TerritoryId), hall.Comp2.Coordinates))
                 return;
         }
 

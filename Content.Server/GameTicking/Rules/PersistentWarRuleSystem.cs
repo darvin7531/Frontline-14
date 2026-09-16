@@ -56,7 +56,9 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
 
     private void OnMapLoaded(PostGameMapLoad args)
     {
-        if (GameTicker.CurrentPreset?.ID != "PersistentWar" || args.Map != GameTicker.DefaultMap)
+        if (GameTicker.CurrentPreset is not { ID: "PersistentWar", MapPool: { } poolId } ||
+            !ProtoMan.TryIndex<GameMapPoolPrototype>(poolId, out var pool) ||
+            !pool.Maps.Contains(args.GameMap.ID))
             return;
 
         var map = _map.GetMap(args.Map);
