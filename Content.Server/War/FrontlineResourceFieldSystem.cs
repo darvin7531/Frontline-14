@@ -1,4 +1,5 @@
 using Content.Shared.War;
+using Robust.Shared.Map;
 
 namespace Content.Server.War;
 
