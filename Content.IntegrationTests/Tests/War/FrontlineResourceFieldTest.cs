@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Content.IntegrationTests.Fixtures;
 using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.War;
@@ -67,6 +68,48 @@ public sealed class FrontlineResourceFieldTest : GameTest
             }
 
             Assert.That(nodes, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task DeletedNodeIsReplacedAndDebitsReserve()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        _ = server.System<FrontlineResourceFieldSystem>();
+        EntityUid field = default;
+
+        await server.WaitPost(() =>
+        {
+            field = SEntMan.SpawnEntity(null, map.GridCoords);
+            var fieldComp = SEntMan.AddComponent<FrontlineResourceFieldComponent>(field);
+            fieldComp.FieldId = "replacement-field";
+            fieldComp.PrimaryNodePrototype = new EntProtoId("TestFrontlineIronNode");
+            fieldComp.MaxReserveNodes = 3;
+            fieldComp.MaxActiveNodes = 1;
+
+            var slot = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(slot).FieldId = "replacement-field";
+        });
+
+        await Pair.RunTicksSync(1);
+        EntityUid original = default;
+        await server.WaitPost(() =>
+        {
+            var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
+            original = fieldComp.ActiveNodes.Single();
+            SEntMan.QueueDeleteEntity(original);
+        });
+
+        await Pair.RunTicksSync(1);
+
+        await server.WaitAssertion(() =>
+        {
+            var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
+            Assert.That(SEntMan.EntityExists(original), Is.False);
+            Assert.That(fieldComp.RemainingReserveNodes, Is.EqualTo(1));
+            Assert.That(fieldComp.ActiveNodes.Count, Is.EqualTo(1));
+            Assert.That(fieldComp.ActiveNodes.Single(), Is.Not.EqualTo(original));
         });
     }
 }
