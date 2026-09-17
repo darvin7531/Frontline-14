@@ -1,10 +1,13 @@
 using Content.Shared.War;
 using Robust.Shared.Map;
+using Robust.Shared.Timing;
 
 namespace Content.Server.War;
 
-public sealed class FrontlineResourceFieldSystem : EntitySystem
+public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 {
+    [Dependency] private IGameTiming _timing = default!;
+
     public override void Initialize()
     {
         SubscribeLocalEvent<FrontlineResourceNodeComponent, EntityTerminatingEvent>(OnNodeTerminating);
@@ -15,23 +18,34 @@ public sealed class FrontlineResourceFieldSystem : EntitySystem
         var query = EntityQueryEnumerator<FrontlineResourceFieldComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var field, out var transform))
         {
-            if (field.FieldInitialized)
-                continue;
+            if (!field.FieldInitialized)
+            {
+                field.RemainingReserveNodes = field.MaxReserveNodes;
+                field.NextReplenishment = _timing.CurTime + field.ReplenishmentDelay;
+                field.FieldInitialized = true;
+            }
+            else if (field.ReplenishmentDelay > TimeSpan.Zero &&
+                     field.RemainingReserveNodes < field.MaxReserveNodes &&
+                     _timing.CurTime >= field.NextReplenishment)
+            {
+                var intervals = 1 + (int) ((_timing.CurTime - field.NextReplenishment) / field.ReplenishmentDelay);
+                field.RemainingReserveNodes = Math.Min(field.MaxReserveNodes,
+                    field.RemainingReserveNodes + intervals);
+                field.NextReplenishment += intervals * field.ReplenishmentDelay;
+            }
 
-            field.RemainingReserveNodes = field.MaxReserveNodes;
             var slots = EntityQueryEnumerator<FrontlineResourceSpawnPointComponent, TransformComponent>();
-            while (slots.MoveNext(out _, out var slot, out var slotTransform))
+            while (slots.MoveNext(out var slotUid, out var slot, out var slotTransform))
             {
                 if (field.ActiveNodes.Count >= field.MaxActiveNodes || field.RemainingReserveNodes == 0)
                     break;
 
-                if (slot.FieldId != field.FieldId || slotTransform.MapID != transform.MapID)
+                if (slot.FieldId != field.FieldId || slotTransform.MapID != transform.MapID ||
+                    SlotOccupied(field, slotUid))
                     continue;
 
-                SpawnNode((uid, field), slotTransform.Coordinates);
+                SpawnNode((uid, field), slotUid, slotTransform.Coordinates);
             }
-
-            field.FieldInitialized = true;
         }
     }
 
@@ -47,13 +61,27 @@ public sealed class FrontlineResourceFieldSystem : EntitySystem
         if (TerminatingOrDeleted(coordinates.EntityId))
             return;
 
-        SpawnNode((node.Comp.Field, field), coordinates);
+        SpawnNode((node.Comp.Field, field), node.Comp.SpawnPoint, coordinates);
     }
 
-    private void SpawnNode(Entity<FrontlineResourceFieldComponent> field, EntityCoordinates coordinates)
+    private bool SlotOccupied(FrontlineResourceFieldComponent field, EntityUid slot)
+    {
+        foreach (var node in field.ActiveNodes)
+        {
+            if (TryComp<FrontlineResourceNodeComponent>(node, out var nodeComp) && nodeComp.SpawnPoint == slot)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void SpawnNode(Entity<FrontlineResourceFieldComponent> field, EntityUid spawnPoint,
+        EntityCoordinates coordinates)
     {
         var node = Spawn(field.Comp.PrimaryNodePrototype, coordinates);
-        Comp<FrontlineResourceNodeComponent>(node).Field = field;
+        var nodeComp = Comp<FrontlineResourceNodeComponent>(node);
+        nodeComp.Field = field;
+        nodeComp.SpawnPoint = spawnPoint;
         field.Comp.ActiveNodes.Add(node);
         field.Comp.RemainingReserveNodes--;
     }

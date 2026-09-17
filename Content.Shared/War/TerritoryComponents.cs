@@ -102,6 +102,7 @@ public sealed partial class FrontlineResourceFieldComponent : Component
     public int RemainingReserveNodes;
     public readonly HashSet<EntityUid> ActiveNodes = new();
     public bool FieldInitialized;
+    public TimeSpan NextReplenishment;
 }
 
 [RegisterComponent]
@@ -127,4 +128,5 @@ public sealed partial class FrontlineResourceNodeComponent : Component
     public TimeSpan ExtractionTime = TimeSpan.FromSeconds(2);
 
     public EntityUid Field;
+    public EntityUid SpawnPoint;
 }
