@@ -4,6 +4,11 @@ namespace Content.Server.War;
 
 public sealed class FrontlineResourceFieldSystem : EntitySystem
 {
+    public override void Initialize()
+    {
+        SubscribeLocalEvent<FrontlineResourceNodeComponent, EntityTerminatingEvent>(OnNodeTerminating);
+    }
+
     public override void Update(float frameTime)
     {
         var query = EntityQueryEnumerator<FrontlineResourceFieldComponent, TransformComponent>();
@@ -22,13 +27,33 @@ public sealed class FrontlineResourceFieldSystem : EntitySystem
                 if (slot.FieldId != field.FieldId || slotTransform.MapID != transform.MapID)
                     continue;
 
-                var node = Spawn(field.PrimaryNodePrototype, slotTransform.Coordinates);
-                Comp<FrontlineResourceNodeComponent>(node).Field = uid;
-                field.ActiveNodes.Add(node);
-                field.RemainingReserveNodes--;
+                SpawnNode((uid, field), slotTransform.Coordinates);
             }
 
             field.Initialized = true;
         }
+    }
+
+    private void OnNodeTerminating(Entity<FrontlineResourceNodeComponent> node, ref EntityTerminatingEvent args)
+    {
+        if (!TryComp<FrontlineResourceFieldComponent>(node.Comp.Field, out var field) ||
+            !field.ActiveNodes.Remove(node) ||
+            field.RemainingReserveNodes == 0 ||
+            field.ActiveNodes.Count >= field.MaxActiveNodes)
+            return;
+
+        var coordinates = Transform(node).Coordinates;
+        if (TerminatingOrDeleted(coordinates.EntityId))
+            return;
+
+        SpawnNode((node.Comp.Field, field), coordinates);
+    }
+
+    private void SpawnNode(Entity<FrontlineResourceFieldComponent> field, EntityCoordinates coordinates)
+    {
+        var node = Spawn(field.Comp.PrimaryNodePrototype, coordinates);
+        Comp<FrontlineResourceNodeComponent>(node).Field = field;
+        field.Comp.ActiveNodes.Add(node);
+        field.Comp.RemainingReserveNodes--;
     }
 }
