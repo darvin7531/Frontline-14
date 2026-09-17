@@ -52,7 +52,12 @@ public sealed class PersistentWarRuleTest : GameTest
 
     public override async Task DoTeardown()
     {
-        await Server.WaitPost(() => Server.ResolveDependency<IResourceManager>().UserData.Delete(WarStateSystem.SavePath));
+        await Server.WaitPost(() =>
+        {
+            var resources = Server.ResolveDependency<IResourceManager>();
+            resources.UserData.Delete(WarStateSystem.SavePath);
+            resources.UserData.Delete(WarFactionSystem.SavePath);
+        });
         await base.DoTeardown();
     }
 
@@ -331,14 +336,20 @@ public sealed class PersistentWarRuleTest : GameTest
 
     [Test]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
-    public async Task DebugCommandsManageWarAndDayNightPhase()
+    public async Task NewWarCommandRestartsWithCleanCampaignState()
     {
         var ticker = Server.System<GameTicker>();
         var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var territories = Server.System<TerritorySystem>();
+        var halls = Server.System<TownHallSystem>();
+        var victory = Server.System<WarVictorySystem>();
         var lightCycle = Server.System<Content.Server.Light.EntitySystems.LightCycleSystem>();
         var console = Server.ResolveDependency<IConsoleHost>();
-        int warId = default;
-        EntityUid map = default;
+        var factionOne = new FactionId("FrontlineFactionOne");
+        var account = ServerSession!.UserId;
+        WarState oldWar = default!;
+        EntityUid oldBody = default;
 
         await Server.WaitPost(() =>
         {
@@ -346,8 +357,7 @@ public sealed class PersistentWarRuleTest : GameTest
             ticker.SetGamePreset("PersistentWar");
             ticker.ToggleReadyAll(true);
             ticker.StartRound(true);
-            warId = war.State!.WarId;
-            map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+            var map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
 
             Assert.That(console.AvailableCommands.Keys, Is.SupersetOf(new[]
             {
@@ -357,21 +367,94 @@ public sealed class PersistentWarRuleTest : GameTest
             console.ExecuteCommand("warstate");
             console.ExecuteCommand("territories");
             console.ExecuteCommand("warphase 120");
+
+            factions.ClearFaction(account);
+            Assert.That(factions.TrySelectFaction(account, factionOne), Is.True);
+            ticker.MakeJoinGame(ServerSession!, EntityUid.Invalid, silent: true);
+            oldBody = ServerSession.AttachedEntity!.Value;
+
+            var captured = 0;
+            foreach (var territory in territories.GetTerritories(ticker.DefaultMap))
+            {
+                if (captured++ == 4)
+                    break;
+                Assert.That(halls.ForceCapture(territory, factionOne, ticker.DefaultMap), Is.True);
+            }
+
+            Assert.That(victory.CheckForVictory(), Is.True);
+            oldWar = war.State!;
+            Assert.That(oldWar.Status, Is.EqualTo(WarStatus.Ended));
         });
 
         await Server.WaitAssertion(() =>
         {
+            var map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
             Assert.That(lightCycle.GetPhase((map, SComp<LightCycleComponent>(map))),
                 Is.InRange(TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(121)));
         });
 
         await Server.WaitPost(() => console.ExecuteCommand("newwar"));
+        await Pair.RunUntilSynced();
         await Server.WaitAssertion(() =>
         {
             Assert.Multiple(() =>
             {
-                Assert.That(war.State?.WarId, Is.EqualTo(warId + 1));
+                Assert.That(war.State?.WarId, Is.EqualTo(oldWar.WarId + 1));
                 Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
+                Assert.That(war.State?.Winner, Is.Null);
+                Assert.That(war.State?.StartedAt, Is.GreaterThan(oldWar.StartedAt));
+                Assert.That(factions.TryGetFaction(account, out _), Is.False);
+                Assert.That(oldBody, Is.Deleted(Server));
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
+            });
+        });
+
+        await Server.WaitPost(() =>
+        {
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+        await Pair.RunTicksSync(1);
+
+        await Server.WaitAssertion(() =>
+        {
+            var map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+            var mapId = ticker.DefaultMap;
+            var factionOneHalls = 0;
+            var factionTwoHalls = 0;
+            var ruins = 0;
+
+            var hallQuery = SEntMan.EntityQueryEnumerator<TownHallComponent, TransformComponent>();
+            while (hallQuery.MoveNext(out _, out var hall, out var transform))
+            {
+                if (transform.MapID != mapId)
+                    continue;
+
+                if (hall.FactionId == "FrontlineFactionOne")
+                    factionOneHalls++;
+                else if (hall.FactionId == "FrontlineFactionTwo")
+                    factionTwoHalls++;
+            }
+
+            var ruinQuery = SEntMan.EntityQueryEnumerator<TownHallRuinComponent, TransformComponent>();
+            while (ruinQuery.MoveNext(out _, out _, out var transform))
+            {
+                if (transform.MapID == mapId)
+                    ruins++;
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(war.State?.WarId, Is.EqualTo(oldWar.WarId + 1));
+                Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
+                Assert.That(war.State?.Winner, Is.Null);
+                Assert.That(territories.GetTerritories(mapId), Has.Count.EqualTo(5));
+                Assert.That(factionOneHalls, Is.EqualTo(1));
+                Assert.That(factionTwoHalls, Is.EqualTo(1));
+                Assert.That(ruins, Is.EqualTo(3));
+                Assert.That(territories.CountOwned(factionOne), Is.EqualTo(1));
                 Assert.That(lightCycle.GetPhase((map, SComp<LightCycleComponent>(map))),
                     Is.InRange(TimeSpan.Zero, TimeSpan.FromSeconds(1)));
             });
