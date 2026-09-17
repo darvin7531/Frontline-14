@@ -101,7 +101,7 @@ public sealed partial class FrontlineResourceFieldComponent : Component
 
     public int RemainingReserveNodes;
     public readonly HashSet<EntityUid> ActiveNodes = new();
-    public bool Initialized;
+    public bool FieldInitialized;
 }
 
 [RegisterComponent]

@@ -15,7 +15,7 @@ public sealed class FrontlineResourceFieldSystem : EntitySystem
         var query = EntityQueryEnumerator<FrontlineResourceFieldComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var field, out var transform))
         {
-            if (field.Initialized)
+            if (field.FieldInitialized)
                 continue;
 
             field.RemainingReserveNodes = field.MaxReserveNodes;
@@ -31,7 +31,7 @@ public sealed class FrontlineResourceFieldSystem : EntitySystem
                 SpawnNode((uid, field), slotTransform.Coordinates);
             }
 
-            field.Initialized = true;
+            field.FieldInitialized = true;
         }
     }
 
