@@ -3,6 +3,7 @@ using Content.IntegrationTests.Fixtures;
 using Content.Server.War;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Console;
 using Robust.Shared.Map;
 
 namespace Content.IntegrationTests.Tests.War;
@@ -87,6 +88,54 @@ public sealed class TerritoryVictoryTest : GameTest
         {
             Assert.That(SEntMan.GetComponent<TownHallComponent>(hall).FactionId,
                 Is.EqualTo("FrontlineFactionTwo"));
+        });
+    }
+
+    [Test]
+    public async Task CaptureTerritoryCommandReplacesObjective()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var war = server.System<WarStateSystem>();
+        var territories = server.System<TerritorySystem>();
+        var console = server.ResolveDependency<IConsoleHost>();
+        var territory = new TerritoryId("debug-territory");
+        var factionOne = new FactionId("FrontlineFactionOne");
+        var factionTwo = new FactionId("FrontlineFactionTwo");
+
+        await server.WaitPost(() =>
+        {
+            war.StartNewWar();
+            var marker = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<TerritoryComponent>(marker)
+                .Configure(territory, new Vector2(-0.5f), new Vector2(0.5f));
+            var hall = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<TownHallComponent>(hall).Configure(territory, factionOne);
+
+            console.ExecuteCommand($"captureterritory {territory.Id} {factionTwo.Id}");
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(territories.TryGetOwner(territory, out var owner), Is.True);
+            Assert.That(owner, Is.EqualTo(factionTwo));
+
+            var objectives = 0;
+            var halls = SEntMan.EntityQueryEnumerator<TownHallComponent>();
+            while (halls.MoveNext(out _, out var hall))
+            {
+                if (hall.TerritoryId == territory.Id)
+                    objectives++;
+            }
+
+            var ruins = SEntMan.EntityQueryEnumerator<TownHallRuinComponent>();
+            while (ruins.MoveNext(out _, out var ruin))
+            {
+                if (ruin.TerritoryId == territory.Id)
+                    objectives++;
+            }
+
+            Assert.That(objectives, Is.EqualTo(1));
         });
     }
 }

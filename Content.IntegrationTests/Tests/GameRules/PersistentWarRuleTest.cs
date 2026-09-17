@@ -19,6 +19,7 @@ using Content.Shared.Light.EntitySystems;
 using Content.Shared.War;
 
 using Robust.Shared.ContentPack;
+using Robust.Shared.Console;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
@@ -323,6 +324,49 @@ public sealed class PersistentWarRuleTest : GameTest
 
             var map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
             Assert.That(SComp<LightCycleComponent>(map).Offset, Is.LessThan(TimeSpan.FromMinutes(1)));
+        });
+
+        ticker.SetGamePreset((GamePresetPrototype) null);
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task DebugCommandsManageWarAndDayNightPhase()
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var console = Server.ResolveDependency<IConsoleHost>();
+        int warId = default;
+        EntityUid map = default;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+            warId = war.State!.WarId;
+            map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+
+            console.ExecuteCommand("warstate");
+            console.ExecuteCommand("territories");
+            console.ExecuteCommand("warphase 120");
+        });
+
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SComp<LightCycleComponent>(map).Offset, Is.EqualTo(TimeSpan.FromSeconds(120)));
+        });
+
+        await Server.WaitPost(() => console.ExecuteCommand("newwar"));
+        await Server.WaitAssertion(() =>
+        {
+            Assert.Multiple(() =>
+            {
+                Assert.That(war.State?.WarId, Is.EqualTo(warId + 1));
+                Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
+                Assert.That(SComp<LightCycleComponent>(map).Offset, Is.EqualTo(TimeSpan.Zero));
+            });
         });
 
         ticker.SetGamePreset((GamePresetPrototype) null);
