@@ -404,7 +404,7 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(war.State?.Winner, Is.Null);
                 Assert.That(war.State?.StartedAt, Is.GreaterThan(oldWar.StartedAt));
                 Assert.That(factions.TryGetFaction(account, out _), Is.False);
-                Assert.That(oldBody, Is.Deleted(Server));
+                Assert.That(SEntMan.EntityExists(oldBody), Is.False);
                 Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
             });
         });
