@@ -111,6 +111,8 @@ public sealed class TerritoryVictoryTest : GameTest
                 .Configure(territory, new Vector2(-0.5f), new Vector2(0.5f));
             var hall = SEntMan.SpawnEntity(null, map.GridCoords);
             SEntMan.AddComponent<TownHallComponent>(hall).Configure(territory, factionOne);
+            var duplicate = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<TownHallRuinComponent>(duplicate).TerritoryId = territory.Id;
 
             console.ExecuteCommand($"captureterritory {territory.Id} {factionTwo.Id}");
         });

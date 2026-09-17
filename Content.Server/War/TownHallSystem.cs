@@ -5,6 +5,7 @@ using Content.Shared.Interaction;
 using Content.Shared.Stacks;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Map;
 using Robust.Shared.Player;
 using Robust.Shared.Prototypes;
 
@@ -36,6 +37,60 @@ public sealed partial class TownHallSystem : EntitySystem
 
         var ruin = Spawn("TownHallRuin", coordinates);
         Comp<TownHallRuinComponent>(ruin).TerritoryId = hall.Comp.TerritoryId;
+    }
+
+    public bool ForceCapture(TerritoryId territory, FactionId faction, MapId? mapId = null)
+    {
+        if (!_prototypes.TryIndex<FrontlineFactionPrototype>(faction.Id, out var factionPrototype))
+            return false;
+
+        var objectives = new List<EntityUid>();
+        var coordinates = EntityCoordinates.Invalid;
+        var halls = EntityQueryEnumerator<TownHallComponent, TransformComponent>();
+        while (halls.MoveNext(out var uid, out var hall, out var transform))
+        {
+            if (hall.TerritoryId != territory.Id ||
+                mapId is { } hallMap && transform.MapID != hallMap ||
+                !_territories.Contains(territory, transform.Coordinates))
+                continue;
+
+            objectives.Add(uid);
+            if (!coordinates.IsValid(EntityManager))
+                coordinates = transform.Coordinates;
+        }
+
+        var ruins = EntityQueryEnumerator<TownHallRuinComponent, TransformComponent>();
+        while (ruins.MoveNext(out var uid, out var ruin, out var transform))
+        {
+            if (ruin.TerritoryId != territory.Id ||
+                mapId is { } ruinMap && transform.MapID != ruinMap ||
+                !_territories.Contains(territory, transform.Coordinates))
+                continue;
+
+            objectives.Add(uid);
+            if (!coordinates.IsValid(EntityManager))
+                coordinates = transform.Coordinates;
+        }
+
+        if (objectives.Count == 0)
+            return false;
+
+        var replacement = Spawn(factionPrototype.TownHallPrototype, coordinates);
+        if (!TryComp<TownHallComponent>(replacement, out var newHall))
+        {
+            Del(replacement);
+            return false;
+        }
+
+        newHall.Configure(territory, faction);
+        foreach (var objective in objectives)
+        {
+            if (TryComp<TownHallComponent>(objective, out var oldHall))
+                oldHall.TerritoryId = "Unassigned";
+            Del(objective);
+        }
+
+        return true;
     }
 
     private void OnRuinInteract(Entity<TownHallRuinComponent> ruin, ref AfterInteractEvent args)

@@ -335,6 +335,7 @@ public sealed class PersistentWarRuleTest : GameTest
     {
         var ticker = Server.System<GameTicker>();
         var war = Server.System<WarStateSystem>();
+        var lightCycle = Server.System<Content.Server.Light.EntitySystems.LightCycleSystem>();
         var console = Server.ResolveDependency<IConsoleHost>();
         int warId = default;
         EntityUid map = default;
@@ -348,6 +349,11 @@ public sealed class PersistentWarRuleTest : GameTest
             warId = war.State!.WarId;
             map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
 
+            Assert.That(console.AvailableCommands.Keys, Is.SupersetOf(new[]
+            {
+                "warstate", "territories", "captureterritory", "newwar", "warphase",
+            }));
+
             console.ExecuteCommand("warstate");
             console.ExecuteCommand("territories");
             console.ExecuteCommand("warphase 120");
@@ -355,7 +361,8 @@ public sealed class PersistentWarRuleTest : GameTest
 
         await Server.WaitAssertion(() =>
         {
-            Assert.That(SComp<LightCycleComponent>(map).Offset, Is.EqualTo(TimeSpan.FromSeconds(120)));
+            Assert.That(lightCycle.GetPhase((map, SComp<LightCycleComponent>(map))),
+                Is.InRange(TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(121)));
         });
 
         await Server.WaitPost(() => console.ExecuteCommand("newwar"));
@@ -365,7 +372,8 @@ public sealed class PersistentWarRuleTest : GameTest
             {
                 Assert.That(war.State?.WarId, Is.EqualTo(warId + 1));
                 Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
-                Assert.That(SComp<LightCycleComponent>(map).Offset, Is.EqualTo(TimeSpan.Zero));
+                Assert.That(lightCycle.GetPhase((map, SComp<LightCycleComponent>(map))),
+                    Is.InRange(TimeSpan.Zero, TimeSpan.FromSeconds(1)));
             });
         });
 

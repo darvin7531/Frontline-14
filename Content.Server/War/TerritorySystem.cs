@@ -8,15 +8,20 @@ public sealed partial class TerritorySystem : EntitySystem
 {
     public int CountOwned(FactionId faction)
     {
+        return GetTerritories().Count(territory => TryGetOwner(territory, out var owner) && owner == faction);
+    }
+
+    public HashSet<TerritoryId> GetTerritories(MapId? mapId = null)
+    {
         var territoryIds = new HashSet<TerritoryId>();
-        var territories = EntityQueryEnumerator<TerritoryComponent>();
-        while (territories.MoveNext(out var uid, out var territory))
+        var territories = EntityQueryEnumerator<TerritoryComponent, TransformComponent>();
+        while (territories.MoveNext(out var uid, out var territory, out var transform))
         {
-            if (!TerminatingOrDeleted(uid))
+            if (!TerminatingOrDeleted(uid) && (mapId == null || transform.MapID == mapId))
                 territoryIds.Add(new TerritoryId(territory.TerritoryId));
         }
 
-        return territoryIds.Count(territory => TryGetOwner(territory, out var owner) && owner == faction);
+        return territoryIds;
     }
 
     public TerritoryState GetState(TerritoryId territory)
