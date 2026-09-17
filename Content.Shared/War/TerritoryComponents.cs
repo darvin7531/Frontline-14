@@ -1,5 +1,6 @@
 using System.Numerics;
 using Robust.Shared.GameStates;
+using Robust.Shared.Prototypes;
 
 namespace Content.Shared.War;
 
@@ -75,4 +76,55 @@ public sealed partial class FactionSpawnPointComponent : Component
 {
     [DataField("territory", required: true)]
     public string TerritoryId = string.Empty;
+}
+
+[RegisterComponent]
+public sealed partial class FrontlineResourceFieldComponent : Component
+{
+    [DataField(required: true)]
+    public string FieldId = string.Empty;
+
+    [DataField(required: true)]
+    public EntProtoId PrimaryNodePrototype;
+
+    [DataField]
+    public int MaxReserveNodes;
+
+    [DataField]
+    public int MaxActiveNodes;
+
+    [DataField]
+    public TimeSpan ReplacementDelay;
+
+    [DataField]
+    public TimeSpan ReplenishmentDelay;
+
+    public int RemainingReserveNodes;
+    public readonly HashSet<EntityUid> ActiveNodes = new();
+    public bool Initialized;
+}
+
+[RegisterComponent]
+public sealed partial class FrontlineResourceSpawnPointComponent : Component
+{
+    [DataField(required: true)]
+    public string FieldId = string.Empty;
+}
+
+[RegisterComponent]
+public sealed partial class FrontlineResourceNodeComponent : Component
+{
+    [DataField(required: true)]
+    public string Output = string.Empty;
+
+    [DataField]
+    public int MaxYield = 1;
+
+    [DataField]
+    public int HarvestAmount = 1;
+
+    [DataField]
+    public TimeSpan ExtractionTime = TimeSpan.FromSeconds(2);
+
+    public EntityUid Field;
 }
