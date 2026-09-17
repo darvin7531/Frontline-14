@@ -109,12 +109,22 @@ public sealed partial class CaptureTerritoryCommand : IConsoleCommand
         shell.WriteLine($"{territory.Id}: captured by {faction.Id}.");
     }
 
-    public CompletionResult GetCompletion(IConsoleShell shell, string[] args) => args.Length switch
+    public CompletionResult GetCompletion(IConsoleShell shell, string[] args)
     {
-        1 => CompletionResult.FromOptions(_entities.System<TerritorySystem>().GetTerritories().Select(id => id.Id)),
-        2 => CompletionResult.FromOptions(_prototypes.EnumeratePrototypes<FrontlineFactionPrototype>().Select(faction => faction.ID)),
-        _ => CompletionResult.Empty,
-    };
+        if (args.Length == 1)
+        {
+            var ticker = _entities.System<GameTicker>();
+            var maps = _entities.System<SharedMapSystem>();
+            var territories = maps.MapExists(ticker.DefaultMap)
+                ? _entities.System<TerritorySystem>().GetTerritories(ticker.DefaultMap).Select(id => id.Id)
+                : Enumerable.Empty<string>();
+            return CompletionResult.FromOptions(territories);
+        }
+
+        return args.Length == 2
+            ? CompletionResult.FromOptions(_prototypes.EnumeratePrototypes<FrontlineFactionPrototype>().Select(faction => faction.ID))
+            : CompletionResult.Empty;
+    }
 }
 
 [AdminCommand(AdminFlags.Round)]
@@ -123,7 +133,7 @@ public sealed partial class NewWarCommand : IConsoleCommand
     [Dependency] private IEntityManager _entities = default!;
 
     public string Command => "newwar";
-    public string Description => "Starts a new persistent war and resets the active day/night phase.";
+    public string Description => "Starts a new persistent war and reloads a clean campaign map.";
     public string Help => "newwar";
 
     public void Execute(IConsoleShell shell, string argStr, string[] args)
@@ -134,18 +144,8 @@ public sealed partial class NewWarCommand : IConsoleCommand
             return;
         }
 
-        var ticker = _entities.System<GameTicker>();
-        var map = _entities.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
-        if (!_entities.TryGetComponent(map, out LightCycleComponent? cycle) || cycle.Duration <= TimeSpan.Zero)
-        {
-            shell.WriteError("The active map has no day/night cycle.");
-            return;
-        }
-
         var state = _entities.System<WarStateSystem>().StartNewWar();
-        _entities.System<LightCycleSystem>().SetPhase((map, cycle), TimeSpan.Zero);
-
-        ticker.SendStatusToAll();
+        _entities.System<GameTicker>().RestartRound();
         shell.WriteLine($"Started war {state.WarId} at {state.StartedAt:O}.");
     }
 
@@ -158,7 +158,7 @@ public sealed partial class WarPhaseCommand : IConsoleCommand
     [Dependency] private IEntityManager _entities = default!;
 
     public string Command => "warphase";
-    public string Description => "Shows or sets the persistent war day/night phase in seconds.";
+    public string Description => "Shows or temporarily sets the live day/night phase in seconds; overrides do not persist across restarts.";
     public string Help => "warphase [seconds]";
 
     public void Execute(IConsoleShell shell, string argStr, string[] args)

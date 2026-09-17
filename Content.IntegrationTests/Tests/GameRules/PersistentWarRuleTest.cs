@@ -350,6 +350,7 @@ public sealed class PersistentWarRuleTest : GameTest
         var account = ServerSession!.UserId;
         WarState oldWar = default!;
         EntityUid oldBody = default;
+        List<WarFactionMembership> memberships = default!;
 
         await Server.WaitPost(() =>
         {
@@ -395,6 +396,12 @@ public sealed class PersistentWarRuleTest : GameTest
 
         await Server.WaitPost(() => console.ExecuteCommand("newwar"));
         await Pair.RunUntilSynced();
+        await Server.WaitPost(() =>
+        {
+            var resources = Server.ResolveDependency<IResourceManager>();
+            using var stream = resources.UserData.Open(WarFactionSystem.SavePath, FileMode.Open);
+            memberships = JsonSerializer.Deserialize<List<WarFactionMembership>>(stream)!;
+        });
         await Server.WaitAssertion(() =>
         {
             Assert.Multiple(() =>
@@ -404,6 +411,8 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(war.State?.Winner, Is.Null);
                 Assert.That(war.State?.StartedAt, Is.GreaterThan(oldWar.StartedAt));
                 Assert.That(factions.TryGetFaction(account, out _), Is.False);
+                Assert.That(memberships.Exists(member =>
+                    member.AccountId == account.UserId && member.WarId == oldWar.WarId), Is.True);
                 Assert.That(SEntMan.EntityExists(oldBody), Is.False);
                 Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
             });
