@@ -29,7 +29,6 @@ public sealed class FrontlineResourceFieldSystem : EntitySystem
             }
 
             field.Initialized = true;
-            Dirty(uid, field);
         }
     }
 }
