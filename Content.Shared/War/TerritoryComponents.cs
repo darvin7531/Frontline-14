@@ -1,6 +1,7 @@
 using System.Numerics;
 using Robust.Shared.GameStates;
 using Robust.Shared.Prototypes;
+using Content.Shared.Stacks;
 
 namespace Content.Shared.War;
 
@@ -116,7 +117,7 @@ public sealed partial class FrontlineResourceSpawnPointComponent : Component
 public sealed partial class FrontlineResourceNodeComponent : Component
 {
     [DataField(required: true)]
-    public string Output = string.Empty;
+    public ProtoId<StackPrototype> Output;
 
     [DataField]
     public int MaxYield = 1;
@@ -127,6 +128,7 @@ public sealed partial class FrontlineResourceNodeComponent : Component
     [DataField]
     public TimeSpan ExtractionTime = TimeSpan.FromSeconds(2);
 
+    public int RemainingYield;
     public EntityUid Field;
     public EntityUid SpawnPoint;
 }

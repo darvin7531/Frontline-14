@@ -1,16 +1,73 @@
+using Content.Server.Stack;
+using Content.Shared.DoAfter;
+using Content.Shared.Interaction;
+using Content.Shared.Stacks;
+using Content.Shared.Tag;
 using Content.Shared.War;
 using Robust.Shared.Map;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Timing;
 
 namespace Content.Server.War;
 
 public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 {
+    private static readonly ProtoId<TagPrototype> PickaxeTag = "Pickaxe";
+
+    [Dependency] private SharedDoAfterSystem _doAfter = default!;
+    [Dependency] private SharedInteractionSystem _interaction = default!;
+    [Dependency] private StackSystem _stack = default!;
+    [Dependency] private TagSystem _tags = default!;
     [Dependency] private IGameTiming _timing = default!;
 
     public override void Initialize()
     {
         SubscribeLocalEvent<FrontlineResourceNodeComponent, EntityTerminatingEvent>(OnNodeTerminating);
+        SubscribeLocalEvent<FrontlineResourceNodeComponent, MapInitEvent>(OnNodeMapInit);
+        SubscribeLocalEvent<FrontlineResourceNodeComponent, AfterInteractEvent>(OnNodeInteract);
+        SubscribeLocalEvent<FrontlineResourceNodeComponent, FrontlineResourceExtractionDoAfterEvent>(OnExtractionComplete);
+    }
+
+    private void OnNodeMapInit(Entity<FrontlineResourceNodeComponent> node, ref MapInitEvent args)
+    {
+        node.Comp.RemainingYield = node.Comp.MaxYield;
+    }
+
+    private void OnNodeInteract(Entity<FrontlineResourceNodeComponent> node, ref AfterInteractEvent args)
+    {
+        if (args.Handled || !args.CanReach)
+            return;
+
+        args.Handled = TryStartExtraction(node, args.User, args.Used);
+    }
+
+    public bool TryStartExtraction(EntityUid node, EntityUid user, EntityUid tool)
+    {
+        if (!TryComp<FrontlineResourceNodeComponent>(node, out var nodeComp) || nodeComp.RemainingYield <= 0 ||
+            !_tags.HasTag(tool, PickaxeTag))
+            return false;
+
+        return _doAfter.TryStartDoAfter(new DoAfterArgs(EntityManager, user, nodeComp.ExtractionTime,
+            new FrontlineResourceExtractionDoAfterEvent(), node, target: node, used: tool)
+        {
+            BreakOnMove = true,
+            NeedHand = true,
+        });
+    }
+
+    private void OnExtractionComplete(Entity<FrontlineResourceNodeComponent> node,
+        ref FrontlineResourceExtractionDoAfterEvent args)
+    {
+        if (args.Cancelled || args.Used is not { } tool || node.Comp.RemainingYield <= 0 ||
+            !_tags.HasTag(tool, PickaxeTag) || !_interaction.InRangeUnobstructed(args.User, node.Owner))
+            return;
+
+        var amount = Math.Min(node.Comp.HarvestAmount, node.Comp.RemainingYield);
+        node.Comp.RemainingYield -= amount;
+        _stack.SpawnAtPosition(amount, node.Comp.Output, Transform(node).Coordinates);
+
+        if (node.Comp.RemainingYield == 0)
+            Del(node);
     }
 
     public override void Update(float frameTime)
