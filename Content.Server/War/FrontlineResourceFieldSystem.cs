@@ -15,6 +15,7 @@ namespace Content.Server.War;
 public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 {
     private static readonly ProtoId<TagPrototype> PickaxeTag = "Pickaxe";
+    private readonly HashSet<EntityUid> _extractingNodes = [];
 
     [Dependency] private SharedDoAfterSystem _doAfter = default!;
     [Dependency] private SharedInteractionSystem _interaction = default!;
@@ -70,27 +71,32 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     public bool TryStartExtraction(EntityUid node, EntityUid user, EntityUid tool)
     {
         if (!TryComp<FrontlineResourceNodeComponent>(node, out var nodeComp) || nodeComp.RemainingYield <= 0 ||
-            !_tags.HasTag(tool, PickaxeTag))
+            !_tags.HasTag(tool, PickaxeTag) || !_extractingNodes.Add(node))
             return false;
 
-        return _doAfter.TryStartDoAfter(new DoAfterArgs(EntityManager, user, nodeComp.ExtractionTime,
+        var started = _doAfter.TryStartDoAfter(new DoAfterArgs(EntityManager, user, nodeComp.ExtractionTime,
             new FrontlineResourceExtractionDoAfterEvent(), node, target: node, used: tool)
         {
             BreakOnMove = true,
             NeedHand = true,
         });
+        if (!started)
+            _extractingNodes.Remove(node);
+        return started;
     }
 
     private void OnExtractionComplete(Entity<FrontlineResourceNodeComponent> node,
         ref FrontlineResourceExtractionDoAfterEvent args)
     {
+        _extractingNodes.Remove(node);
         if (args.Cancelled || args.Used is not { } tool || node.Comp.RemainingYield <= 0 ||
             !_tags.HasTag(tool, PickaxeTag) || !_interaction.InRangeUnobstructed(args.User, node.Owner))
             return;
 
         var amount = Math.Min(node.Comp.HarvestAmount, node.Comp.RemainingYield);
         node.Comp.RemainingYield -= amount;
-        _stack.SpawnAtPosition(amount, node.Comp.Output, Transform(node).Coordinates);
+        var output = _stack.SpawnAtPosition(amount, node.Comp.Output, Transform(node).Coordinates);
+        _stack.TryMergeToContacts(output);
 
         if (node.Comp.RemainingYield == 0)
             Del(node);
@@ -148,6 +154,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 
     private void OnNodeTerminating(Entity<FrontlineResourceNodeComponent> node, ref EntityTerminatingEvent args)
     {
+        _extractingNodes.Remove(node);
         if (!TryComp<FrontlineResourceFieldComponent>(node.Comp.Field, out var field) ||
             !field.ActiveNodes.Remove(node))
             return;

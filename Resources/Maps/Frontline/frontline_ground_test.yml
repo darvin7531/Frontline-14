@@ -5,7 +5,7 @@ meta:
   forkId: ""
   forkVersion: ""
   time: 08/31/2025 14:22:33
-  entityCount: 21
+  entityCount: 22
 maps:
 - 3
 grids:
@@ -259,4 +259,11 @@ entities:
       parent: 2
     - type: FrontlineResourceSpawnPoint
       fieldId: frontline-test-iron
+- proto: Pickaxe
+  entities:
+  - uid: 22
+    components:
+    - type: Transform
+      pos: -0.6,-0.1
+      parent: 2
 ...

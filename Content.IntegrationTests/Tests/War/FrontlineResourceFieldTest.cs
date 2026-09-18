@@ -43,7 +43,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
             output: SteelOre
             maxYield: 1
             harvestAmount: 1
-            extractionTime: 0
+            extractionTime: 1
 
         - type: entity
           id: TestFrontlineHarvester
@@ -58,6 +58,22 @@ public sealed class FrontlineResourceFieldTest : GameTest
           - type: Tag
             tags:
             - Pickaxe
+
+        - type: entity
+          parent: TestFrontlineHarvester
+          id: TestFrontlineFactionOneHarvester
+          components:
+          - type: NpcFactionMember
+            factions:
+            - NanoTrasen
+
+        - type: entity
+          parent: TestFrontlineHarvester
+          id: TestFrontlineFactionTwoHarvester
+          components:
+          - type: NpcFactionMember
+            factions:
+            - Syndicate
         """;
 
     [Test]
@@ -370,14 +386,74 @@ public sealed class FrontlineResourceFieldTest : GameTest
 
         await Pair.RunTicksSync(1);
 
+        await server.WaitPost(() =>
+        {
+            var node = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Single();
+            Assert.That(system.TryStartExtraction(node, user, tool), Is.True);
+        });
+
+        await Pair.RunTicksSync(1);
+
         await server.WaitAssertion(() =>
         {
             var node = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Single();
-            Assert.That(SEntMan.GetComponent<FrontlineResourceNodeComponent>(node).RemainingYield, Is.EqualTo(4));
+            Assert.That(SEntMan.GetComponent<FrontlineResourceNodeComponent>(node).RemainingYield, Is.EqualTo(3));
 
             var iron = SEntMan.EntityQuery<StackComponent>()
                 .Single(stack => stack.StackTypeId == "SteelOre");
-            Assert.That(iron.Count, Is.EqualTo(1));
+            Assert.That(iron.Count, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task OpposingFactionsCanHarvestSameField()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var system = server.System<FrontlineResourceFieldSystem>();
+        var hands = server.System<SharedHandsSystem>();
+        EntityUid field = default;
+        var users = new EntityUid[2];
+        var tools = new EntityUid[2];
+
+        await server.WaitPost(() =>
+        {
+            field = SEntMan.SpawnEntity(null, map.GridCoords);
+            var fieldComp = SEntMan.AddComponent<FrontlineResourceFieldComponent>(field);
+            fieldComp.FieldId = "neutral-field";
+            fieldComp.PrimaryNodePrototype = new EntProtoId("TestFrontlineIronNode");
+            fieldComp.MaxReserveNodes = 1;
+            fieldComp.MaxActiveNodes = 1;
+
+            var slot = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(slot).FieldId = fieldComp.FieldId;
+            users[0] = SEntMan.SpawnEntity("TestFrontlineFactionOneHarvester", map.GridCoords);
+            users[1] = SEntMan.SpawnEntity("TestFrontlineFactionTwoHarvester", map.GridCoords);
+            for (var i = 0; i < users.Length; i++)
+            {
+                tools[i] = SEntMan.SpawnEntity("TestFrontlinePickaxe", map.GridCoords);
+                hands.AddHand(users[i], $"hand-{i}", HandLocation.Left);
+                Assert.That(hands.TryPickupAnyHand(users[i], tools[i]), Is.True);
+            }
+        });
+
+        await Pair.RunTicksSync(1);
+        for (var i = 0; i < users.Length; i++)
+        {
+            var index = i;
+            await server.WaitPost(() =>
+            {
+                var node = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Single();
+                Assert.That(system.TryStartExtraction(node, users[index], tools[index]), Is.True);
+            });
+            await Pair.RunTicksSync(1);
+        }
+
+        await server.WaitAssertion(() =>
+        {
+            var output = SEntMan.EntityQuery<StackComponent>()
+                .Single(stack => stack.StackTypeId == "SteelOre");
+            Assert.That(output.Count, Is.EqualTo(2));
         });
     }
 
@@ -425,7 +501,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
             });
         });
 
-        await Pair.RunTicksSync(2);
+        await Pair.RunSeconds(1.1f);
 
         await server.WaitAssertion(() =>
         {
