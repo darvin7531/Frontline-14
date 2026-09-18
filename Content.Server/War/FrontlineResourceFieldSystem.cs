@@ -24,10 +24,20 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 
     public override void Initialize()
     {
+        SubscribeLocalEvent<FrontlineResourceFieldComponent, EntityTerminatingEvent>(OnFieldTerminating);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, EntityTerminatingEvent>(OnNodeTerminating);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, MapInitEvent>(OnNodeMapInit);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, AfterInteractEvent>(OnNodeInteract);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, FrontlineResourceExtractionDoAfterEvent>(OnExtractionComplete);
+    }
+
+    private void OnFieldTerminating(Entity<FrontlineResourceFieldComponent> field, ref EntityTerminatingEvent args)
+    {
+        foreach (var node in field.Comp.ActiveNodes)
+        {
+            if (Exists(node))
+                QueueDel(node);
+        }
     }
 
     private void OnNodeMapInit(Entity<FrontlineResourceNodeComponent> node, ref MapInitEvent args)

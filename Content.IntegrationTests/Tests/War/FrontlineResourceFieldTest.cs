@@ -380,4 +380,46 @@ public sealed class FrontlineResourceFieldTest : GameTest
             Assert.That(SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes, Is.Empty);
         });
     }
+
+    [Test]
+    public async Task DeletingFieldRemovesNodesAndCannotRespawnThem()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        _ = server.System<FrontlineResourceFieldSystem>();
+        EntityUid field = default;
+        EntityUid node = default;
+
+        await server.WaitPost(() =>
+        {
+            field = SEntMan.SpawnEntity(null, map.GridCoords);
+            var fieldComp = SEntMan.AddComponent<FrontlineResourceFieldComponent>(field);
+            fieldComp.FieldId = "cleanup-field";
+            fieldComp.PrimaryNodePrototype = new EntProtoId("TestFrontlineIronNode");
+            fieldComp.MaxReserveNodes = 2;
+            fieldComp.MaxActiveNodes = 1;
+            fieldComp.ReplacementDelay = TimeSpan.FromSeconds(0.1);
+            fieldComp.ReplenishmentDelay = TimeSpan.FromSeconds(0.1);
+
+            var slot = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(slot).FieldId = fieldComp.FieldId;
+        });
+
+        await Pair.RunTicksSync(1);
+        await server.WaitPost(() =>
+        {
+            node = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Single();
+            SEntMan.DeleteEntity(field);
+        });
+
+        await Pair.RunSeconds(0.3f);
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.EntityExists(field), Is.False);
+            Assert.That(SEntMan.EntityExists(node), Is.False);
+            Assert.That(SEntMan.EntityQuery<FrontlineResourceNodeComponent>().Any(comp => comp.Field == field),
+                Is.False);
+        });
+    }
 }
