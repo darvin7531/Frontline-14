@@ -35,7 +35,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 
     private void OnFieldExamined(Entity<FrontlineResourceFieldComponent> field, ref ExaminedEvent args)
     {
-        var remaining = field.Comp.State == FrontlineResourceFieldState.Replenishing
+        var remaining = field.Comp.State is FrontlineResourceFieldState.Depleted or FrontlineResourceFieldState.Replenishing
             ? Math.Max(0, (int) Math.Ceiling((field.Comp.NextReplenishment - _timing.CurTime).TotalSeconds))
             : 0;
         args.PushMarkup(Loc.GetString("frontline-resource-field-examine",
@@ -109,6 +109,11 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
                 field.FieldInitialized = true;
                 canSpawn = true;
             }
+            else if (field.State == FrontlineResourceFieldState.Depleted)
+            {
+                field.State = FrontlineResourceFieldState.Replenishing;
+                continue;
+            }
             else if (field.State == FrontlineResourceFieldState.Replenishing)
             {
                 if (_timing.CurTime < field.NextReplenishment)
@@ -153,7 +158,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 
         if (field.RemainingReserveNodes == 0 && field.ActiveNodes.Count == 0)
         {
-            field.State = FrontlineResourceFieldState.Replenishing;
+            field.State = FrontlineResourceFieldState.Depleted;
             field.NextReplenishment = _timing.CurTime + field.ReplenishmentDelay;
             return;
         }

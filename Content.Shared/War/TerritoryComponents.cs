@@ -8,6 +8,7 @@ namespace Content.Shared.War;
 public enum FrontlineResourceFieldState : byte
 {
     Active,
+    Depleted,
     Replenishing,
 }
 

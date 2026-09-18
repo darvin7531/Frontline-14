@@ -215,6 +215,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
         {
             var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
             SEntMan.DeleteEntity(fieldComp.ActiveNodes.Single());
+            Assert.That(fieldComp.State, Is.EqualTo(FrontlineResourceFieldState.Depleted));
         });
 
         await Pair.RunTicksSync(1);
@@ -223,6 +224,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
             var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
             Assert.That(fieldComp.RemainingReserveNodes, Is.Zero);
             Assert.That(fieldComp.ActiveNodes, Is.Empty);
+            Assert.That(fieldComp.State, Is.EqualTo(FrontlineResourceFieldState.Replenishing));
         });
 
         await Pair.RunSeconds(1.1f);
