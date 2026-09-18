@@ -1,5 +1,6 @@
 using Content.Server.Stack;
 using Content.Shared.DoAfter;
+using Content.Shared.Examine;
 using Content.Shared.Interaction;
 using Content.Shared.Stacks;
 using Content.Shared.Tag;
@@ -25,10 +26,23 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     public override void Initialize()
     {
         SubscribeLocalEvent<FrontlineResourceFieldComponent, EntityTerminatingEvent>(OnFieldTerminating);
+        SubscribeLocalEvent<FrontlineResourceFieldComponent, ExaminedEvent>(OnFieldExamined);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, EntityTerminatingEvent>(OnNodeTerminating);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, MapInitEvent>(OnNodeMapInit);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, AfterInteractEvent>(OnNodeInteract);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, FrontlineResourceExtractionDoAfterEvent>(OnExtractionComplete);
+    }
+
+    private void OnFieldExamined(Entity<FrontlineResourceFieldComponent> field, ref ExaminedEvent args)
+    {
+        var remaining = field.Comp.State == FrontlineResourceFieldState.Replenishing
+            ? Math.Max(0, (int) Math.Ceiling((field.Comp.NextReplenishment - _timing.CurTime).TotalSeconds))
+            : 0;
+        args.PushMarkup(Loc.GetString("frontline-resource-field-examine",
+            ("state", field.Comp.State),
+            ("reserve", field.Comp.RemainingReserveNodes),
+            ("active", field.Comp.ActiveNodes.Count),
+            ("seconds", remaining)));
     }
 
     private void OnFieldTerminating(Entity<FrontlineResourceFieldComponent> field, ref EntityTerminatingEvent args)

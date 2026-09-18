@@ -74,3 +74,74 @@
   components:
   - type: FactionSpawnPoint
     territory: Unassigned
+
+- type: entity
+  id: FrontlineResourceField
+  parent: BaseStructure
+  name: resource field
+  description: A strategic deposit that periodically exposes harvestable resources.
+  components:
+  - type: Sprite
+    sprite: Objects/Materials/ore.rsi
+    state: iron
+  - type: FrontlineResourceField
+    fieldId: unassigned
+    primaryNodePrototype: FrontlineIronResourceNode
+    bonusNodePrototype: FrontlineTechnologyResourceNode
+    bonusNodeChance: 0.1
+    maxReserveNodes: 6
+    maxActiveNodes: 3
+    replacementDelay: 2
+    replenishmentDelay: 15
+
+- type: entity
+  id: FrontlineResourceSpawnPoint
+  parent: MarkerBase
+  name: resource field spawn point
+  components:
+  - type: FrontlineResourceSpawnPoint
+    fieldId: unassigned
+
+- type: entity
+  abstract: true
+  id: FrontlineResourceNodeBase
+  parent: BaseStructure
+  components:
+  - type: Anchorable
+  - type: Transform
+    anchored: true
+  - type: Sprite
+    sprite: Objects/Materials/ore.rsi
+
+- type: entity
+  id: FrontlineIronResourceNode
+  parent: FrontlineResourceNodeBase
+  name: raw iron deposit
+  description: A finite deposit of unrefined iron.
+  components:
+  - type: Sprite
+    state: iron
+  - type: FrontlineResourceNode
+    output: SteelOre
+    maxYield: 20
+    harvestAmount: 5
+    extractionTime: 1
+
+- type: entity
+  id: FrontlineTechnologyResourceNode
+  parent: FrontlineResourceNodeBase
+  name: technology material deposit
+  description: A rare, visibly unusual resource deposit.
+  components:
+  - type: Sprite
+    state: uranium
+  - type: PointLight
+    radius: 1.2
+    energy: 0.6
+    castShadows: false
+    color: "#67e17d"
+  - type: FrontlineResourceNode
+    output: RawTechnologyMaterial
+    maxYield: 5
+    harvestAmount: 1
+    extractionTime: 1

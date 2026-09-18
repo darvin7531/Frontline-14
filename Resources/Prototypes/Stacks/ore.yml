@@ -69,3 +69,10 @@
   name: stack-salt
   icon: { sprite: /Textures/Objects/Materials/ore.rsi, state: salt }
   spawn: Salt1
+
+- type: stack
+  parent: BaseMediumStack
+  id: RawTechnologyMaterial
+  name: raw technology material
+  icon: { sprite: /Textures/Objects/Materials/ore.rsi, state: uranium }
+  spawn: RawTechnologyMaterial1

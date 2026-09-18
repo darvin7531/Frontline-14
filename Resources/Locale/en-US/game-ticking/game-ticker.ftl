@@ -53,6 +53,7 @@ frontline-victory-return-lobby = Return to Lobby
 frontline-respawn-choice-title = You died
 frontline-respawn-choice-wait = Wait for revival. Your body can still be revived.
 frontline-respawn-choice-respawn = Respawn
+frontline-resource-field-examine = State: {$state}; reserve: {$reserve}; active nodes: {$active}; replenishment: {$seconds}s.
 game-ticker-player-no-jobs-available-when-joining = When attempting to join to the game, no jobs were available.
 
 # Displayed in chat to admins when a player joins

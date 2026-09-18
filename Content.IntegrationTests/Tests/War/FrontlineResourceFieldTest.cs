@@ -22,7 +22,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
           id: TestFrontlineIronNode
           components:
           - type: FrontlineResourceNode
-            output: Steel
+            output: SteelOre
             maxYield: 5
             harvestAmount: 1
             extractionTime: 0
@@ -31,7 +31,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
           id: TestFrontlineTechNode
           components:
           - type: FrontlineResourceNode
-            output: Steel
+            output: RawTechnologyMaterial
             maxYield: 1
             harvestAmount: 1
             extractionTime: 0
@@ -40,7 +40,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
           id: TestFrontlineSingleYieldNode
           components:
           - type: FrontlineResourceNode
-            output: Steel
+            output: SteelOre
             maxYield: 1
             harvestAmount: 1
             extractionTime: 0
@@ -59,6 +59,32 @@ public sealed class FrontlineResourceFieldTest : GameTest
             tags:
             - Pickaxe
         """;
+
+    [Test]
+    public async Task ProductionNodesUseDistinctPhysicalResourceStacks()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        EntityUid iron = default;
+        EntityUid technology = default;
+
+        await server.WaitPost(() =>
+        {
+            iron = SEntMan.SpawnEntity("FrontlineIronResourceNode", map.GridCoords);
+            technology = SEntMan.SpawnEntity("FrontlineTechnologyResourceNode", map.GridCoords);
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.Multiple(() =>
+            {
+                Assert.That(SEntMan.GetComponent<FrontlineResourceNodeComponent>(iron).Output.Id,
+                    Is.EqualTo("SteelOre"));
+                Assert.That(SEntMan.GetComponent<FrontlineResourceNodeComponent>(technology).Output.Id,
+                    Is.EqualTo("RawTechnologyMaterial"));
+            });
+        });
+    }
 
     [Test]
     public async Task FieldInitializesNoMoreThanMaxActiveNodes()
@@ -245,12 +271,15 @@ public sealed class FrontlineResourceFieldTest : GameTest
     }
 
     [Test]
-    public async Task BonusChanceOneSpawnsConfiguredNode()
+    public async Task BonusChanceOneSpawnsAndExtractsConfiguredTechnologyNode()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
-        _ = server.System<FrontlineResourceFieldSystem>();
+        var system = server.System<FrontlineResourceFieldSystem>();
+        var hands = server.System<SharedHandsSystem>();
         EntityUid field = default;
+        EntityUid user = default;
+        EntityUid tool = default;
 
         await server.WaitPost(() =>
         {
@@ -265,6 +294,10 @@ public sealed class FrontlineResourceFieldTest : GameTest
 
             var slot = SEntMan.SpawnEntity(null, map.GridCoords);
             SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(slot).FieldId = fieldComp.FieldId;
+            user = SEntMan.SpawnEntity("TestFrontlineHarvester", map.GridCoords);
+            tool = SEntMan.SpawnEntity("TestFrontlinePickaxe", map.GridCoords);
+            hands.AddHand(user, "hand", HandLocation.Left);
+            Assert.That(hands.TryPickupAnyHand(user, tool), Is.True);
         });
 
         await Pair.RunTicksSync(1);
@@ -274,6 +307,15 @@ public sealed class FrontlineResourceFieldTest : GameTest
             var node = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Single();
             Assert.That(SEntMan.GetComponent<MetaDataComponent>(node).EntityPrototype?.ID,
                 Is.EqualTo("TestFrontlineTechNode"));
+            Assert.That(system.TryStartExtraction(node, user, tool), Is.True);
+        });
+
+        await Pair.RunTicksSync(1);
+        await server.WaitAssertion(() =>
+        {
+            var technology = SEntMan.EntityQuery<StackComponent>()
+                .Single(stack => stack.StackTypeId == "RawTechnologyMaterial");
+            Assert.That(technology.Count, Is.EqualTo(1));
         });
     }
 
@@ -319,9 +361,9 @@ public sealed class FrontlineResourceFieldTest : GameTest
             var node = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Single();
             Assert.That(SEntMan.GetComponent<FrontlineResourceNodeComponent>(node).RemainingYield, Is.EqualTo(4));
 
-            var steel = SEntMan.EntityQuery<StackComponent>()
-                .Single(stack => stack.StackTypeId == "Steel");
-            Assert.That(steel.Count, Is.EqualTo(1));
+            var iron = SEntMan.EntityQuery<StackComponent>()
+                .Single(stack => stack.StackTypeId == "SteelOre");
+            Assert.That(iron.Count, Is.EqualTo(1));
         });
     }
 
@@ -374,7 +416,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
         await server.WaitAssertion(() =>
         {
             var total = SEntMan.EntityQuery<StackComponent>()
-                .Where(stack => stack.StackTypeId == "Steel")
+                .Where(stack => stack.StackTypeId == "SteelOre")
                 .Sum(stack => stack.Count);
             Assert.That(total, Is.EqualTo(1));
             Assert.That(SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes, Is.Empty);

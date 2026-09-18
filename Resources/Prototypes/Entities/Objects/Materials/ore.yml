@@ -345,3 +345,25 @@
   components:
   - type: Stack
     count: 1
+
+- type: entity
+  parent: OreBase
+  id: RawTechnologyMaterial
+  name: raw technology material
+  description: Unrefined material with unusual technological properties.
+  suffix: Full
+  components:
+  - type: Stack
+    stackType: RawTechnologyMaterial
+  - type: Sprite
+    state: uranium
+  - type: Item
+    heldPrefix: uranium
+
+- type: entity
+  parent: RawTechnologyMaterial
+  id: RawTechnologyMaterial1
+  suffix: Single
+  components:
+  - type: Stack
+    count: 1
