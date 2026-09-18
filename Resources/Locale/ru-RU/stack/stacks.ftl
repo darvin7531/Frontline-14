@@ -234,6 +234,7 @@ stack-telecrystal = телекристалл
 stack-gold-ore = золотая руда
 stack-rough-diamond = сырой алмаз
 stack-iron-ore = железная руда
+stack-raw-technology-material = сырьё для технологий
 stack-plasma-ore = плазменная руда
 stack-silver-ore = серебряная руда
 stack-space-quartz = космический кварц

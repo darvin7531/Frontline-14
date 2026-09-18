@@ -117,6 +117,7 @@ stack-telecrystal = telecrystal
 stack-gold-ore = gold ore
 stack-rough-diamond = rough diamond
 stack-iron-ore = iron ore
+stack-raw-technology-material = raw technology material
 stack-plasma-ore = plasma ore
 stack-silver-ore = silver ore
 stack-space-quartz = space quartz
