@@ -37,6 +37,15 @@ public sealed class FrontlineResourceFieldTest : GameTest
             extractionTime: 0
 
         - type: entity
+          id: TestFrontlineSingleYieldNode
+          components:
+          - type: FrontlineResourceNode
+            output: Steel
+            maxYield: 1
+            harvestAmount: 1
+            extractionTime: 0
+
+        - type: entity
           id: TestFrontlineHarvester
           components:
           - type: DoAfter
@@ -313,6 +322,62 @@ public sealed class FrontlineResourceFieldTest : GameTest
             var steel = SEntMan.EntityQuery<StackComponent>()
                 .Single(stack => stack.StackTypeId == "Steel");
             Assert.That(steel.Count, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task ConcurrentExtractionCannotDuplicateOutput()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var system = server.System<FrontlineResourceFieldSystem>();
+        var hands = server.System<SharedHandsSystem>();
+        EntityUid field = default;
+        var users = new EntityUid[2];
+        var tools = new EntityUid[2];
+
+        await server.WaitPost(() =>
+        {
+            field = SEntMan.SpawnEntity(null, map.GridCoords);
+            var fieldComp = SEntMan.AddComponent<FrontlineResourceFieldComponent>(field);
+            fieldComp.FieldId = "concurrent-field";
+            fieldComp.PrimaryNodePrototype = new EntProtoId("TestFrontlineSingleYieldNode");
+            fieldComp.MaxReserveNodes = 1;
+            fieldComp.MaxActiveNodes = 1;
+            fieldComp.ReplenishmentDelay = TimeSpan.FromMinutes(10);
+
+            var slot = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(slot).FieldId = fieldComp.FieldId;
+
+            for (var i = 0; i < users.Length; i++)
+            {
+                users[i] = SEntMan.SpawnEntity("TestFrontlineHarvester", map.GridCoords);
+                tools[i] = SEntMan.SpawnEntity("TestFrontlinePickaxe", map.GridCoords);
+                hands.AddHand(users[i], $"hand-{i}", HandLocation.Left);
+                Assert.That(hands.TryPickupAnyHand(users[i], tools[i]), Is.True);
+            }
+        });
+
+        await Pair.RunTicksSync(1);
+        await server.WaitPost(() =>
+        {
+            var node = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Single();
+            Assert.Multiple(() =>
+            {
+                Assert.That(system.TryStartExtraction(node, users[0], tools[0]), Is.True);
+                Assert.That(system.TryStartExtraction(node, users[1], tools[1]), Is.False);
+            });
+        });
+
+        await Pair.RunTicksSync(2);
+
+        await server.WaitAssertion(() =>
+        {
+            var total = SEntMan.EntityQuery<StackComponent>()
+                .Where(stack => stack.StackTypeId == "Steel")
+                .Sum(stack => stack.Count);
+            Assert.That(total, Is.EqualTo(1));
+            Assert.That(SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes, Is.Empty);
         });
     }
 }
