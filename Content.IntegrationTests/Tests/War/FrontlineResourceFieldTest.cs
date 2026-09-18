@@ -118,7 +118,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
             SEntMan.QueueDeleteEntity(original);
         });
 
-        await Pair.RunTicksSync(1);
+        await Pair.RunTicksSync(2);
 
         await server.WaitAssertion(() =>
         {
@@ -157,6 +157,12 @@ public sealed class FrontlineResourceFieldTest : GameTest
         {
             var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
             SEntMan.DeleteEntity(fieldComp.ActiveNodes.Single());
+        });
+
+        await Pair.RunTicksSync(2);
+        await server.WaitPost(() =>
+        {
+            var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
             SEntMan.DeleteEntity(fieldComp.ActiveNodes.Single());
         });
 
@@ -174,6 +180,49 @@ public sealed class FrontlineResourceFieldTest : GameTest
         {
             var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
             Assert.That(fieldComp.ActiveNodes.Count, Is.EqualTo(1));
+            Assert.That(fieldComp.RemainingReserveNodes, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task ReplacementWaitsForConfiguredDelay()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        _ = server.System<FrontlineResourceFieldSystem>();
+        EntityUid field = default;
+
+        await server.WaitPost(() =>
+        {
+            field = SEntMan.SpawnEntity(null, map.GridCoords);
+            var fieldComp = SEntMan.AddComponent<FrontlineResourceFieldComponent>(field);
+            fieldComp.FieldId = "delayed-replacement-field";
+            fieldComp.PrimaryNodePrototype = new EntProtoId("TestFrontlineIronNode");
+            fieldComp.MaxReserveNodes = 2;
+            fieldComp.MaxActiveNodes = 1;
+            fieldComp.ReplacementDelay = TimeSpan.FromSeconds(1);
+
+            var slot = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(slot).FieldId = fieldComp.FieldId;
+        });
+
+        await Pair.RunTicksSync(1);
+        await server.WaitPost(() =>
+        {
+            var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
+            SEntMan.DeleteEntity(fieldComp.ActiveNodes.Single());
+        });
+
+        await Pair.RunSeconds(0.5f);
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes, Is.Empty);
+        });
+
+        await Pair.RunSeconds(0.6f);
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Count, Is.EqualTo(1));
         });
     }
 

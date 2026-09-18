@@ -5,6 +5,12 @@ using Content.Shared.Stacks;
 
 namespace Content.Shared.War;
 
+public enum FrontlineResourceFieldState : byte
+{
+    Active,
+    Replenishing,
+}
+
 [RegisterComponent]
 public sealed partial class TerritoryComponent : Component
 {
@@ -103,6 +109,8 @@ public sealed partial class FrontlineResourceFieldComponent : Component
     public int RemainingReserveNodes;
     public readonly HashSet<EntityUid> ActiveNodes = new();
     public bool FieldInitialized;
+    public FrontlineResourceFieldState State;
+    public TimeSpan NextReplacement;
     public TimeSpan NextReplenishment;
 }
 
