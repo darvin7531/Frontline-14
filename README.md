@@ -1,3 +1,5 @@
+[Русский](./README.md) | [English](./README.en.md)
+
 # Frontline 14
 
 **Frontline 14** — самостоятельный игровой проект на базе Space Station 14 / RobustToolbox про длительную войну двух фракций в общем физическом мире.
