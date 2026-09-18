@@ -41,6 +41,9 @@ public sealed class PersistentWarRuleTest : GameTest
         ObjectiveOutsideBounds,
         DuplicateObjective,
         WrongObjectiveComposition,
+        InvalidResourceField,
+        ResourceFieldWithoutSpawnPoints,
+        UnknownResourceFieldReference,
     }
 
     public override PoolSettings PoolSettings => new()
@@ -170,6 +173,12 @@ public sealed class PersistentWarRuleTest : GameTest
         "PersistentWar map territory 'frontline-one' must include exactly one objective within its bounds")]
     [TestCase(InvalidMapCase.WrongObjectiveComposition,
         "PersistentWar map must include exactly two town halls and three ruins")]
+    [TestCase(InvalidMapCase.InvalidResourceField,
+        "PersistentWar resource field 'invalid-field' must have MaxActiveNodes greater than zero.")]
+    [TestCase(InvalidMapCase.ResourceFieldWithoutSpawnPoints,
+        "PersistentWar resource field 'orphan-field' must have at least one spawn point.")]
+    [TestCase(InvalidMapCase.UnknownResourceFieldReference,
+        "PersistentWar resource spawn point references unknown field 'missing-field'.")]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
     public async Task ValidatorRejectsInvalidGroundMap(InvalidMapCase invalidCase, string expectedError)
     {
@@ -222,6 +231,20 @@ public sealed class PersistentWarRuleTest : GameTest
                     SEntMan.RemoveComponent<TownHallRuinComponent>(ruin);
                     SEntMan.AddComponent<TownHallComponent>(ruin)
                         .Configure(new TerritoryId("frontline-three"), new FactionId("FrontlineFactionOne"));
+                    break;
+                case InvalidMapCase.InvalidResourceField:
+                    var invalidField = SSpawnAtPosition(null, SComp<TransformComponent>(map).Coordinates);
+                    SEntMan.AddComponent<FrontlineResourceFieldComponent>(invalidField).FieldId = "invalid-field";
+                    break;
+                case InvalidMapCase.ResourceFieldWithoutSpawnPoints:
+                    var orphanField = SSpawnAtPosition(null, SComp<TransformComponent>(map).Coordinates);
+                    var orphanFieldComp = SEntMan.AddComponent<FrontlineResourceFieldComponent>(orphanField);
+                    orphanFieldComp.FieldId = "orphan-field";
+                    orphanFieldComp.MaxActiveNodes = 1;
+                    break;
+                case InvalidMapCase.UnknownResourceFieldReference:
+                    var unknownSlot = SSpawnAtPosition(null, SComp<TransformComponent>(map).Coordinates);
+                    SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(unknownSlot).FieldId = "missing-field";
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(invalidCase), invalidCase, null);
