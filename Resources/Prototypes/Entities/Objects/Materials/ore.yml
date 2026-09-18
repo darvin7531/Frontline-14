@@ -348,6 +348,28 @@
 
 - type: entity
   parent: OreBase
+  id: FrontlineRawIron
+  name: frontline raw iron
+  description: Unrefined iron reserved for Frontline production.
+  suffix: Full
+  components:
+  - type: Stack
+    stackType: FrontlineRawIron
+  - type: Sprite
+    state: iron
+  - type: Item
+    heldPrefix: iron
+
+- type: entity
+  parent: FrontlineRawIron
+  id: FrontlineRawIron1
+  suffix: Single
+  components:
+  - type: Stack
+    count: 1
+
+- type: entity
+  parent: OreBase
   id: RawTechnologyMaterial
   name: raw technology material
   description: Unrefined material with unusual technological properties.

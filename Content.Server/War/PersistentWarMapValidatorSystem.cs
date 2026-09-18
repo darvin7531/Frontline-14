@@ -44,11 +44,7 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
                 errors.Add($"PersistentWar resource field '{field.FieldId}' must not have a negative reserve.");
             if (field.MaxActiveNodes <= 0)
                 errors.Add($"PersistentWar resource field '{field.FieldId}' must have MaxActiveNodes greater than zero.");
-            if (field.BonusNodeChance is < 0f or > 1f)
-                errors.Add($"PersistentWar resource field '{field.FieldId}' bonus chance must be between zero and one.");
             ValidateResourceNodePrototype(field.FieldId, field.PrimaryNodePrototype, "primary", errors);
-            if (field.BonusNodePrototype is { } bonus)
-                ValidateResourceNodePrototype(field.FieldId, bonus, "bonus", errors);
         }
 
         var spawnCounts = new Dictionary<string, int>();

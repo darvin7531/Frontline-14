@@ -12,6 +12,22 @@ public enum FrontlineResourceFieldState : byte
     Replenishing,
 }
 
+[DataDefinition]
+public sealed partial class FrontlineResourceBonusDrop
+{
+    [DataField(required: true)]
+    public ProtoId<StackPrototype> Output;
+
+    [DataField]
+    public float Chance;
+
+    [DataField]
+    public int MinAmount = 1;
+
+    [DataField]
+    public int MaxAmount = 1;
+}
+
 [RegisterComponent]
 public sealed partial class TerritoryComponent : Component
 {
@@ -95,11 +111,6 @@ public sealed partial class FrontlineResourceFieldComponent : Component
     [DataField(required: true)]
     public EntProtoId PrimaryNodePrototype;
 
-    [DataField]
-    public EntProtoId? BonusNodePrototype;
-
-    [DataField]
-    public float BonusNodeChance;
 
     [DataField]
     public int MaxReserveNodes;
@@ -142,6 +153,9 @@ public sealed partial class FrontlineResourceNodeComponent : Component
 
     [DataField]
     public TimeSpan ExtractionTime = TimeSpan.FromSeconds(2);
+
+    [DataField]
+    public List<FrontlineResourceBonusDrop> BonusDrops = new();
 
     public int RemainingYield;
     public EntityUid Field;

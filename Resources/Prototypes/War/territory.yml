@@ -87,8 +87,6 @@
   - type: FrontlineResourceField
     fieldId: unassigned
     primaryNodePrototype: FrontlineIronResourceNode
-    bonusNodePrototype: FrontlineTechnologyResourceNode
-    bonusNodeChance: 0.1
     maxReserveNodes: 6
     maxActiveNodes: 3
     replacementDelay: 2
@@ -122,26 +120,12 @@
   - type: Sprite
     state: iron
   - type: FrontlineResourceNode
-    output: SteelOre
+    output: FrontlineRawIron
     maxYield: 20
     harvestAmount: 5
     extractionTime: 1
-
-- type: entity
-  id: FrontlineTechnologyResourceNode
-  parent: FrontlineResourceNodeBase
-  name: technology material deposit
-  description: A rare, visibly unusual resource deposit.
-  components:
-  - type: Sprite
-    state: uranium
-  - type: PointLight
-    radius: 1.2
-    energy: 0.6
-    castShadows: false
-    color: "#67e17d"
-  - type: FrontlineResourceNode
-    output: RawTechnologyMaterial
-    maxYield: 5
-    harvestAmount: 1
-    extractionTime: 1
+    bonusDrops:
+    - output: RawTechnologyMaterial
+      chance: 0.05
+      minAmount: 1
+      maxAmount: 1

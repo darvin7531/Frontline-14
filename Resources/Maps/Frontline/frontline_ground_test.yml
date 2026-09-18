@@ -235,8 +235,6 @@ entities:
     - type: FrontlineResourceField
       fieldId: frontline-test-iron
       primaryNodePrototype: FrontlineIronResourceNode
-      bonusNodePrototype: FrontlineTechnologyResourceNode
-      bonusNodeChance: 0.25
       maxReserveNodes: 6
       maxActiveNodes: 2
       replacementDelay: 1

@@ -97,6 +97,16 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
         node.Comp.RemainingYield -= amount;
         var output = _stack.SpawnAtPosition(amount, node.Comp.Output, Transform(node).Coordinates);
         _stack.TryMergeToContacts(output);
+        foreach (var bonus in node.Comp.BonusDrops)
+        {
+            if (!_random.Prob(bonus.Chance))
+                continue;
+
+            var bonusOutput = _stack.SpawnAtPosition(_random.Next(bonus.MinAmount, bonus.MaxAmount + 1),
+                bonus.Output,
+                Transform(node).Coordinates);
+            _stack.TryMergeToContacts(bonusOutput);
+        }
 
         if (node.Comp.RemainingYield == 0)
             Del(node);
@@ -188,10 +198,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     private void SpawnNode(Entity<FrontlineResourceFieldComponent> field, EntityUid spawnPoint,
         EntityCoordinates coordinates)
     {
-        var prototype = field.Comp.BonusNodePrototype is { } bonus && _random.Prob(field.Comp.BonusNodeChance)
-            ? bonus
-            : field.Comp.PrimaryNodePrototype;
-        var node = Spawn(prototype, coordinates);
+        var node = Spawn(field.Comp.PrimaryNodePrototype, coordinates);
         var nodeComp = Comp<FrontlineResourceNodeComponent>(node);
         nodeComp.Field = field;
         nodeComp.SpawnPoint = spawnPoint;
