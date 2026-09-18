@@ -175,12 +175,15 @@ public sealed class FrontlineResourceFieldTest : GameTest
     }
 
     [Test]
-    public async Task ExhaustedFieldReplenishesAfterDelay()
+    public async Task ReplenishedFieldCanBeHarvestedAgain()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
-        _ = server.System<FrontlineResourceFieldSystem>();
+        var system = server.System<FrontlineResourceFieldSystem>();
+        var hands = server.System<SharedHandsSystem>();
         EntityUid field = default;
+        EntityUid user = default;
+        EntityUid tool = default;
 
         await server.WaitPost(() =>
         {
@@ -194,6 +197,10 @@ public sealed class FrontlineResourceFieldTest : GameTest
 
             var slot = SEntMan.SpawnEntity(null, map.GridCoords);
             SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(slot).FieldId = "replenishing-field";
+            user = SEntMan.SpawnEntity("TestFrontlineHarvester", map.GridCoords);
+            tool = SEntMan.SpawnEntity("TestFrontlinePickaxe", map.GridCoords);
+            hands.AddHand(user, "hand", HandLocation.Left);
+            Assert.That(hands.TryPickupAnyHand(user, tool), Is.True);
         });
 
         await Pair.RunTicksSync(1);
@@ -225,7 +232,12 @@ public sealed class FrontlineResourceFieldTest : GameTest
             var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
             Assert.That(fieldComp.ActiveNodes.Count, Is.EqualTo(1));
             Assert.That(fieldComp.RemainingReserveNodes, Is.EqualTo(1));
+            Assert.That(system.TryStartExtraction(fieldComp.ActiveNodes.Single(), user, tool), Is.True);
         });
+
+        await Pair.RunTicksSync(1);
+        await server.WaitAssertion(() =>
+            Assert.That(SEntMan.EntityQuery<StackComponent>().Any(stack => stack.StackTypeId == "SteelOre"), Is.True));
     }
 
     [Test]
