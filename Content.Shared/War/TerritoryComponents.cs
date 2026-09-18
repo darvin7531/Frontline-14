@@ -95,6 +95,12 @@ public sealed partial class FrontlineResourceFieldComponent : Component
     public EntProtoId PrimaryNodePrototype;
 
     [DataField]
+    public EntProtoId? BonusNodePrototype;
+
+    [DataField]
+    public float BonusNodeChance;
+
+    [DataField]
     public int MaxReserveNodes;
 
     [DataField]

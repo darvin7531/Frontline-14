@@ -28,6 +28,15 @@ public sealed class FrontlineResourceFieldTest : GameTest
             extractionTime: 0
 
         - type: entity
+          id: TestFrontlineTechNode
+          components:
+          - type: FrontlineResourceNode
+            output: Steel
+            maxYield: 1
+            harvestAmount: 1
+            extractionTime: 0
+
+        - type: entity
           id: TestFrontlineHarvester
           components:
           - type: DoAfter
@@ -223,6 +232,39 @@ public sealed class FrontlineResourceFieldTest : GameTest
         await server.WaitAssertion(() =>
         {
             Assert.That(SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Count, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task BonusChanceOneSpawnsConfiguredNode()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        _ = server.System<FrontlineResourceFieldSystem>();
+        EntityUid field = default;
+
+        await server.WaitPost(() =>
+        {
+            field = SEntMan.SpawnEntity(null, map.GridCoords);
+            var fieldComp = SEntMan.AddComponent<FrontlineResourceFieldComponent>(field);
+            fieldComp.FieldId = "bonus-field";
+            fieldComp.PrimaryNodePrototype = new EntProtoId("TestFrontlineIronNode");
+            fieldComp.BonusNodePrototype = new EntProtoId("TestFrontlineTechNode");
+            fieldComp.BonusNodeChance = 1f;
+            fieldComp.MaxReserveNodes = 1;
+            fieldComp.MaxActiveNodes = 1;
+
+            var slot = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(slot).FieldId = fieldComp.FieldId;
+        });
+
+        await Pair.RunTicksSync(1);
+
+        await server.WaitAssertion(() =>
+        {
+            var node = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field).ActiveNodes.Single();
+            Assert.That(SEntMan.GetComponent<MetaDataComponent>(node).EntityPrototype?.ID,
+                Is.EqualTo("TestFrontlineTechNode"));
         });
     }
 

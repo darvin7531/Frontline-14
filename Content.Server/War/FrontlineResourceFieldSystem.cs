@@ -6,6 +6,7 @@ using Content.Shared.Tag;
 using Content.Shared.War;
 using Robust.Shared.Map;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Random;
 using Robust.Shared.Timing;
 
 namespace Content.Server.War;
@@ -19,6 +20,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     [Dependency] private StackSystem _stack = default!;
     [Dependency] private TagSystem _tags = default!;
     [Dependency] private IGameTiming _timing = default!;
+    [Dependency] private IRobustRandom _random = default!;
 
     public override void Initialize()
     {
@@ -150,7 +152,10 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     private void SpawnNode(Entity<FrontlineResourceFieldComponent> field, EntityUid spawnPoint,
         EntityCoordinates coordinates)
     {
-        var node = Spawn(field.Comp.PrimaryNodePrototype, coordinates);
+        var prototype = field.Comp.BonusNodePrototype is { } bonus && _random.Prob(field.Comp.BonusNodeChance)
+            ? bonus
+            : field.Comp.PrimaryNodePrototype;
+        var node = Spawn(prototype, coordinates);
         var nodeComp = Comp<FrontlineResourceNodeComponent>(node);
         nodeComp.Field = field;
         nodeComp.SpawnPoint = spawnPoint;
