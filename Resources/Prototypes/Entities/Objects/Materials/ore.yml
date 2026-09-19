@@ -23,6 +23,37 @@
         restitution: 0.3
         friction: 0.2
 
+- type: entity
+  abstract: true
+  parent: MaterialBase
+  id: FrontlineMaterialBase
+  components:
+  - type: Sprite
+    sprite: Objects/Materials/ore.rsi
+  - type: Item
+    sprite: Objects/Materials/ore.rsi
+  - type: Fixtures
+    fixtures:
+      fix1:
+        shape:
+          !type:PhysShapeCircle
+          radius: 0.2
+        density: 20
+        mask:
+          - ItemMask
+        restitution: 0.3
+        friction: 0.2
+
+- type: entity
+  abstract: true
+  parent: FrontlineMaterialBase
+  id: FrontlineRawMaterialBase
+
+- type: entity
+  abstract: true
+  parent: FrontlineMaterialBase
+  id: FrontlineRefinedMaterialBase
+
 # Ores have twice the reagents compared to their smelted forms
 
 - type: entity
@@ -347,7 +378,7 @@
     count: 1
 
 - type: entity
-  parent: OreBase
+  parent: FrontlineRawMaterialBase
   id: FrontlineRawIron
   name: frontline raw iron
   description: Unrefined iron reserved for Frontline production.
@@ -369,7 +400,7 @@
     count: 1
 
 - type: entity
-  parent: OreBase
+  parent: FrontlineRawMaterialBase
   id: RawTechnologyMaterial
   name: raw technology material
   description: Unrefined material with unusual technological properties.
@@ -391,7 +422,7 @@
     count: 1
 
 - type: entity
-  parent: OreBase
+  parent: FrontlineRefinedMaterialBase
   id: TechnologyAlloy
   name: technology alloy
   description: Refined Frontline material reserved for future technology production.

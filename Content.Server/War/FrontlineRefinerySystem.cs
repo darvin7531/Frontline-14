@@ -62,6 +62,10 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
                spawn.HasComp<StackComponent>(_componentFactory);
     }
 
+    /// <summary>
+    /// The caller must provide authorized physical inputs. Player-facing callers must not pass
+    /// arbitrary client-selected entity IDs without server-side authorization.
+    /// </summary>
     public bool TrySubmitJob(
         EntityUid refineryUid,
         ProtoId<FrontlineRefineryRecipePrototype> recipeId,

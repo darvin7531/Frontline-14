@@ -8,6 +8,7 @@ using Content.Shared.Tag;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
+using Robust.Shared.Prototypes;
 
 namespace Content.IntegrationTests.Tests.War;
 
@@ -15,6 +16,8 @@ namespace Content.IntegrationTests.Tests.War;
 [TestOf(typeof(FrontlineRefinerySystem))]
 public sealed class FrontlineRefineryTest : GameTest
 {
+    private static readonly ProtoId<TagPrototype> OreTag = "Ore";
+
     private sealed partial class ReentrantStackMutationSystem : EntitySystem
     {
         public EntityUid Target;
@@ -114,10 +117,10 @@ public sealed class FrontlineRefineryTest : GameTest
         {
             Assert.Multiple(() =>
             {
-                Assert.That(tagSystem.HasTag(rawIron, "Ore"), Is.False);
-                Assert.That(tagSystem.HasTag(rawTechnology, "Ore"), Is.False);
-                Assert.That(tagSystem.HasTag(technologyAlloy, "Ore"), Is.False);
-                Assert.That(tagSystem.HasTag(vanillaOre, "Ore"), Is.True);
+                Assert.That(tagSystem.HasTag(rawIron, OreTag), Is.False);
+                Assert.That(tagSystem.HasTag(rawTechnology, OreTag), Is.False);
+                Assert.That(tagSystem.HasTag(technologyAlloy, OreTag), Is.False);
+                Assert.That(tagSystem.HasTag(vanillaOre, OreTag), Is.True);
             });
         });
     }
