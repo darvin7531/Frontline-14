@@ -11,7 +11,7 @@ public sealed partial class FrontlineRefineryRecipePrototype : IPrototype
     public string ID { get; private set; } = null!;
 
     [DataField]
-    public LocId Name;
+    public LocId Name = "frontline-refinery-recipe-unknown";
 
     [DataField(required: true)]
     public Dictionary<ProtoId<StackPrototype>, int> Input = new();
