@@ -4,6 +4,7 @@ using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.Stack;
 using Content.Server.War;
 using Content.Shared.Stacks;
+using Content.Shared.Tag;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
@@ -89,6 +90,37 @@ public sealed class FrontlineRefineryTest : GameTest
           duration: 1
 
         """;
+
+    [Test]
+    public async Task FrontlineMaterialsDoNotHaveVanillaOreTag()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var tagSystem = server.System<TagSystem>();
+        EntityUid rawIron = default;
+        EntityUid rawTechnology = default;
+        EntityUid technologyAlloy = default;
+        EntityUid vanillaOre = default;
+
+        await server.WaitPost(() =>
+        {
+            rawIron = SEntMan.SpawnEntity("FrontlineRawIron1", map.GridCoords);
+            rawTechnology = SEntMan.SpawnEntity("RawTechnologyMaterial1", map.GridCoords);
+            technologyAlloy = SEntMan.SpawnEntity("TechnologyAlloy1", map.GridCoords);
+            vanillaOre = SEntMan.SpawnEntity("SteelOre1", map.GridCoords);
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.Multiple(() =>
+            {
+                Assert.That(tagSystem.HasTag(rawIron, "Ore"), Is.False);
+                Assert.That(tagSystem.HasTag(rawTechnology, "Ore"), Is.False);
+                Assert.That(tagSystem.HasTag(technologyAlloy, "Ore"), Is.False);
+                Assert.That(tagSystem.HasTag(vanillaOre, "Ore"), Is.True);
+            });
+        });
+    }
 
     [Test]
     public async Task IronJobConsumesInputAndProducesSteelAfterDelay()
