@@ -53,6 +53,7 @@ frontline-victory-return-lobby = Вернуться в лобби
 frontline-respawn-choice-title = Вы погибли
 frontline-respawn-choice-wait = Ждите воскрешения. Ваше тело ещё можно воскресить.
 frontline-respawn-choice-respawn = Возродиться
+frontline-resource-field-examine = Состояние: {$state}; резерв: {$reserve}; активные узлы: {$active}; пополнение через: {$seconds} с.
 game-ticker-player-no-jobs-available-when-joining = При попытке присоединиться к игре ни одной роли не было доступно.
 
 # Displayed in chat to admins when a player joins

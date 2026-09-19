@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using Content.Server.Atmos.EntitySystems;
 using Content.Shared.Atmos.Components;
 using Content.Shared.Light.Components;
+using Content.Shared.Stacks;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
+using Robust.Shared.Prototypes;
 
 namespace Content.Server.War;
 
@@ -14,15 +16,89 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
 {
     [Dependency] private AtmosphereSystem _atmosphere = default!;
     [Dependency] private TerritorySystem _territories = default!;
+    [Dependency] private IPrototypeManager _prototypes = default!;
 
     public void Validate(EntityUid map)
     {
         var errors = new List<string>();
         ValidateEnvironment(map, errors);
         ValidateTerritories(map, errors);
+        ValidateResourceFields(map, errors);
 
         if (errors.Count != 0)
             throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
+    }
+
+    private void ValidateResourceFields(EntityUid map, List<string> errors)
+    {
+        var mapId = Comp<MapComponent>(map).MapId;
+        var fields = new Dictionary<string, FrontlineResourceFieldComponent>();
+        var fieldQuery = EntityQueryEnumerator<FrontlineResourceFieldComponent, TransformComponent>();
+        while (fieldQuery.MoveNext(out _, out var field, out var xform))
+        {
+            if (xform.MapID != mapId)
+                continue;
+
+            if (string.IsNullOrWhiteSpace(field.FieldId))
+                errors.Add("PersistentWar resource field ID must not be empty.");
+            else if (!fields.TryAdd(field.FieldId, field))
+                errors.Add($"PersistentWar resource field '{field.FieldId}' is duplicated.");
+            if (field.MaxReserveNodes <= 0)
+                errors.Add($"PersistentWar resource field '{field.FieldId}' must have MaxReserveNodes greater than zero.");
+            if (field.MaxActiveNodes <= 0)
+                errors.Add($"PersistentWar resource field '{field.FieldId}' must have MaxActiveNodes greater than zero.");
+            if (field.ReplacementDelay < TimeSpan.Zero || field.ReplenishmentDelay < TimeSpan.Zero)
+                errors.Add($"PersistentWar resource field '{field.FieldId}' delays must not be negative.");
+            ValidateResourceNodePrototype(field.FieldId, field.PrimaryNodePrototype, "primary", errors);
+        }
+
+        var spawnCounts = new Dictionary<string, int>();
+        var spawnQuery = EntityQueryEnumerator<FrontlineResourceSpawnPointComponent, TransformComponent>();
+        while (spawnQuery.MoveNext(out _, out var spawn, out var xform))
+        {
+            if (xform.MapID != mapId)
+                continue;
+
+            if (!fields.ContainsKey(spawn.FieldId))
+                errors.Add($"PersistentWar resource spawn point references unknown field '{spawn.FieldId}'.");
+            else
+                spawnCounts[spawn.FieldId] = spawnCounts.GetValueOrDefault(spawn.FieldId) + 1;
+        }
+
+        foreach (var id in fields.Keys)
+        {
+            var count = spawnCounts.GetValueOrDefault(id);
+            if (count == 0)
+                errors.Add($"PersistentWar resource field '{id}' must have at least one spawn point.");
+            else if (fields[id].MaxActiveNodes > count)
+                errors.Add($"PersistentWar resource field '{id}' cannot have more active nodes than spawn points.");
+        }
+    }
+
+    private void ValidateResourceNodePrototype(string fieldId, EntProtoId prototype, string kind, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(prototype.Id) ||
+            !_prototypes.TryIndex<EntityPrototype>(prototype, out var entity) ||
+            !entity.TryGetComponent<FrontlineResourceNodeComponent>(out var node, EntityManager.ComponentFactory))
+        {
+            errors.Add($"PersistentWar resource field '{fieldId}' {kind} node prototype '{prototype}' is invalid.");
+            return;
+        }
+
+        if (node.MaxYield <= 0 || node.HarvestAmount <= 0 || node.HarvestAmount > node.MaxYield)
+            errors.Add($"PersistentWar resource field '{fieldId}' {kind} node must have positive yield and harvest amount no greater than yield.");
+        if (node.ExtractionTime < TimeSpan.Zero)
+            errors.Add($"PersistentWar resource field '{fieldId}' {kind} node extraction time must not be negative.");
+        if (!_prototypes.HasIndex<StackPrototype>(node.Output))
+            errors.Add($"PersistentWar resource field '{fieldId}' {kind} node output '{node.Output}' is invalid.");
+
+        foreach (var bonus in node.BonusDrops)
+        {
+            if (!float.IsFinite(bonus.Chance) || bonus.Chance is < 0f or > 1f || bonus.MinAmount <= 0 ||
+                bonus.MaxAmount < bonus.MinAmount || bonus.MaxAmount == int.MaxValue ||
+                !_prototypes.HasIndex<StackPrototype>(bonus.Output))
+                errors.Add($"PersistentWar resource field '{fieldId}' {kind} node has an invalid bonus drop '{bonus.Output}'.");
+        }
     }
 
     private void ValidateEnvironment(EntityUid map, List<string> errors)
