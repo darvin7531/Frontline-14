@@ -144,11 +144,19 @@ public sealed class PersistentWarRuleTest : GameTest
             atmos = SEntMan.GetComponent<MapAtmosphereComponent>(map);
             var light = SEntMan.GetComponent<MapLightComponent>(map);
             cycle = SEntMan.GetComponent<LightCycleComponent>(map);
+            var refineryCount = 0;
+            var refineryQuery = SEntMan.EntityQueryEnumerator<FrontlineRefineryComponent, TransformComponent>();
+            while (refineryQuery.MoveNext(out _, out _, out var transform))
+            {
+                if (transform.MapID == ticker.DefaultMap)
+                    refineryCount++;
+            }
 
             Assert.Multiple(() =>
             {
                 Assert.That(atmos.Space, Is.False);
                 Assert.That(cycle.Duration, Is.GreaterThan(TimeSpan.Zero));
+                Assert.That(refineryCount, Is.EqualTo(2));
                 Assert.That(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, 0),
                     Is.Not.EqualTo(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, (float) cycle.Duration.TotalSeconds / 2)));
             });

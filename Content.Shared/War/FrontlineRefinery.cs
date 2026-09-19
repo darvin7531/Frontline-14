@@ -1,4 +1,5 @@
 using Content.Shared.Stacks;
+using Robust.Shared.Containers;
 using Robust.Shared.Prototypes;
 
 namespace Content.Shared.War;
@@ -32,6 +33,14 @@ public sealed partial class FrontlineRefineryJob
 [RegisterComponent]
 public sealed partial class FrontlineRefineryComponent : Component
 {
+    public const string InputContainerId = "inputContainer";
+
+    [ViewVariables]
+    public Container InputContainer = default!;
+
     [DataField]
     public List<FrontlineRefineryJob> Jobs = new();
+
+    [DataField]
+    public int ProcessingSlots = 1;
 }

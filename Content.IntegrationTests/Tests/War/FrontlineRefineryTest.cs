@@ -5,9 +5,11 @@ using Content.Server.Stack;
 using Content.Server.War;
 using Content.Shared.Stacks;
 using Content.Shared.Tag;
+using Content.Shared.UserInterface;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
+using Robust.Shared.Maths;
 using Robust.Shared.Prototypes;
 
 namespace Content.IntegrationTests.Tests.War;
@@ -67,6 +69,12 @@ public sealed class FrontlineRefineryTest : GameTest
             - recipe: TestInvalidFrontlineRecipe
               remaining: 0
 
+        - type: entity
+          id: TestTwoSlotFrontlineRefinery
+          components:
+          - type: FrontlineRefinery
+            processingSlots: 2
+
         - type: frontlineRefineryRecipe
           id: TestInvalidFrontlineRecipe
           input:
@@ -93,6 +101,128 @@ public sealed class FrontlineRefineryTest : GameTest
           duration: 1
 
         """;
+
+    [Test]
+    public async Task ValidInputCanBeInsertedAndRemainsPhysical()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var refinerySystem = server.System<FrontlineRefinerySystem>();
+        var stackSystem = server.System<StackSystem>();
+        EntityUid refinery = default;
+        EntityUid input = default;
+        bool inserted = false;
+
+        await server.WaitPost(() =>
+        {
+            refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            input = stackSystem.SpawnAtPosition(5, "FrontlineRawIron", map.GridCoords);
+            inserted = refinerySystem.TryInsertInput(refinery, input);
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(inserted, Is.True);
+            Assert.That(SEntMan.EntityExists(input), Is.True);
+            Assert.That(SComp<FrontlineRefineryComponent>(refinery).InputContainer.Contains(input), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task ProductionRefineryExposesPlayerInterface()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        EntityUid refinery = default;
+
+        await server.WaitPost(() => refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords));
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.HasComponent<ActivatableUIComponent>(refinery), Is.True);
+            Assert.That(SEntMan.HasComponent<UserInterfaceComponent>(refinery), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task InvalidItemIsRejectedFromInput()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var refinerySystem = server.System<FrontlineRefinerySystem>();
+        EntityUid refinery = default;
+        EntityUid item = default;
+        bool inserted = true;
+
+        await server.WaitPost(() =>
+        {
+            refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            item = SEntMan.SpawnEntity("Screwdriver", map.GridCoords);
+            inserted = refinerySystem.TryInsertInput(refinery, item);
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(inserted, Is.False);
+            Assert.That(SComp<FrontlineRefineryComponent>(refinery).InputContainer.Contains(item), Is.False);
+            Assert.That(SEntMan.EntityExists(item), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task EjectReturnsSamePhysicalInputWithoutDuplication()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var refinerySystem = server.System<FrontlineRefinerySystem>();
+        var stackSystem = server.System<StackSystem>();
+        EntityUid refinery = default;
+        EntityUid input = default;
+
+        await server.WaitPost(() =>
+        {
+            refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            input = stackSystem.SpawnAtPosition(5, "FrontlineRawIron", map.GridCoords);
+            Assert.That(refinerySystem.TryInsertInput(refinery, input), Is.True);
+            refinerySystem.EjectInputs(refinery);
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SComp<FrontlineRefineryComponent>(refinery).InputContainer.ContainedEntities, Is.Empty);
+            Assert.That(SEntMan.EntityExists(input), Is.True);
+            Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(5));
+            Assert.That(CountStacks("FrontlineRawIron"), Is.EqualTo(5));
+        });
+    }
+
+    [Test]
+    public async Task SubmissionOnlyConsumesContainedInput()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var refinerySystem = server.System<FrontlineRefinerySystem>();
+        var stackSystem = server.System<StackSystem>();
+        EntityUid refinery = default;
+        EntityUid contained = default;
+        EntityUid outside = default;
+
+        await server.WaitPost(() =>
+        {
+            refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            contained = stackSystem.SpawnAtPosition(10, "FrontlineRawIron", map.GridCoords);
+            outside = stackSystem.SpawnAtPosition(5, "FrontlineRawIron", map.GridCoords);
+            Assert.That(refinerySystem.TryInsertInput(refinery, contained), Is.True);
+            Assert.That(refinerySystem.TrySubmitContainedJob(refinery, "FrontlineSteel"), Is.True);
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SComp<StackComponent>(contained).Count, Is.EqualTo(5));
+            Assert.That(SComp<StackComponent>(outside).Count, Is.EqualTo(5));
+            Assert.That(refinerySystem.GetJobs(refinery), Has.Count.EqualTo(1));
+        });
+    }
 
     [Test]
     public async Task FrontlineMaterialsDoNotHaveVanillaOreTag()
@@ -261,7 +391,7 @@ public sealed class FrontlineRefineryTest : GameTest
     }
 
     [Test]
-    public async Task MultipleJobsProcessIndependently()
+    public async Task SingleProcessingSlotRunsJobsInFifoOrder()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -285,12 +415,25 @@ public sealed class FrontlineRefineryTest : GameTest
             Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Has.Count.EqualTo(2));
         });
 
-        await Pair.RunSeconds(5.1f);
+        await Pair.RunSeconds(2.5f);
         await server.WaitAssertion(() =>
         {
-            Assert.That(CountStacks("Steel"), Is.EqualTo(10));
-            Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Is.Empty);
+            var jobs = refinerySystem.GetJobs(refinery);
+            Assert.That(jobs[0].Remaining.TotalSeconds, Is.EqualTo(2.5).Within(0.2));
+            Assert.That(jobs[1].Remaining, Is.EqualTo(TimeSpan.FromSeconds(5)));
+            Assert.That(CountStacks("Steel"), Is.Zero);
         });
+
+        await Pair.RunSeconds(2.6f);
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(CountStacks("Steel"), Is.EqualTo(5));
+            var job = refinerySystem.GetJobs(refinery).Single();
+            Assert.That(job.Remaining.TotalSeconds, Is.EqualTo(4.9).Within(0.2));
+        });
+
+        await Pair.RunSeconds(5f);
+        await server.WaitAssertion(() => Assert.That(CountStacks("Steel"), Is.EqualTo(10)));
     }
 
     [Test]
@@ -320,6 +463,34 @@ public sealed class FrontlineRefineryTest : GameTest
     }
 
     [Test]
+    public async Task TwoProcessingSlotsAdvanceExactlyTwoJobs()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var refinerySystem = server.System<FrontlineRefinerySystem>();
+        var stackSystem = server.System<StackSystem>();
+        EntityUid refinery = default;
+
+        await server.WaitPost(() =>
+        {
+            refinery = SEntMan.SpawnEntity("TestTwoSlotFrontlineRefinery", map.GridCoords);
+            var input = stackSystem.SpawnAtPosition(15, "FrontlineRawIron", map.GridCoords);
+            Assert.That(refinerySystem.TrySubmitJob(refinery, "FrontlineSteel", new[] { input }), Is.True);
+            Assert.That(refinerySystem.TrySubmitJob(refinery, "FrontlineSteel", new[] { input }), Is.True);
+            Assert.That(refinerySystem.TrySubmitJob(refinery, "FrontlineSteel", new[] { input }), Is.True);
+        });
+
+        await Pair.RunSeconds(2.5f);
+        await server.WaitAssertion(() =>
+        {
+            var jobs = refinerySystem.GetJobs(refinery);
+            Assert.That(jobs[0].Remaining.TotalSeconds, Is.EqualTo(2.5).Within(0.2));
+            Assert.That(jobs[1].Remaining.TotalSeconds, Is.EqualTo(2.5).Within(0.2));
+            Assert.That(jobs[2].Remaining, Is.EqualTo(TimeSpan.FromSeconds(5)));
+        });
+    }
+
+    [Test]
     public async Task ServerApiExposesRecipesAndQueueState()
     {
         var server = Pair.Server;
@@ -345,6 +516,62 @@ public sealed class FrontlineRefineryTest : GameTest
             snapshot[0].Remaining = TimeSpan.Zero;
             Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs.Single().Remaining,
                 Is.EqualTo(TimeSpan.FromSeconds(5)));
+        });
+    }
+
+    [Test]
+    public async Task ServerUiStateReflectsContainedInputAndQueue()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var refinerySystem = server.System<FrontlineRefinerySystem>();
+        var stackSystem = server.System<StackSystem>();
+        EntityUid refinery = default;
+
+        await server.WaitPost(() =>
+        {
+            refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            var input = stackSystem.SpawnAtPosition(10, "FrontlineRawIron", map.GridCoords);
+            Assert.That(refinerySystem.TryInsertInput(refinery, input), Is.True);
+            Assert.That(refinerySystem.TrySubmitContainedJob(refinery, "FrontlineSteel"), Is.True);
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            var state = refinerySystem.BuildUiState(refinery);
+            Assert.That(state.Inputs.Single(input => input.Stack == "FrontlineRawIron").Amount, Is.EqualTo(5));
+            Assert.That(state.Recipes.Single(recipe => recipe.Id == "FrontlineSteel").CanSubmit, Is.True);
+            Assert.That(state.Jobs, Has.Length.EqualTo(1));
+            Assert.That(state.Jobs[0].Processing, Is.True);
+            Assert.That(state.Jobs[0].Remaining, Is.EqualTo(TimeSpan.FromSeconds(5)));
+        });
+    }
+
+    [Test]
+    public async Task RemotePlayerSubmissionIsRejected()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var refinerySystem = server.System<FrontlineRefinerySystem>();
+        var stackSystem = server.System<StackSystem>();
+        EntityUid refinery = default;
+        EntityUid input = default;
+        bool accepted = true;
+
+        await server.WaitPost(() =>
+        {
+            refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            input = stackSystem.SpawnAtPosition(5, "FrontlineRawIron", map.GridCoords);
+            var user = SEntMan.SpawnEntity("MobHuman", map.GridCoords.Offset(new Vector2i(10, 0)));
+            Assert.That(refinerySystem.TryInsertInput(refinery, input), Is.True);
+            accepted = refinerySystem.TrySubmitPlayerJob(refinery, user, "FrontlineSteel");
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(accepted, Is.False);
+            Assert.That(refinerySystem.GetJobs(refinery), Is.Empty);
+            Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(5));
         });
     }
 
@@ -435,7 +662,7 @@ public sealed class FrontlineRefineryTest : GameTest
     }
 
     [Test]
-    public async Task InvalidPersistedJobsRemainQueuedWithoutOutput()
+    public async Task InvalidPersistedJobIsSkippedWithoutBlockingValidJob()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -447,15 +674,15 @@ public sealed class FrontlineRefineryTest : GameTest
             refinery = SEntMan.SpawnEntity("TestInvalidPersistedFrontlineRefinery", map.GridCoords);
             SComp<FrontlineRefineryComponent>(refinery).Jobs.Add(new FrontlineRefineryJob
             {
-                Recipe = "MissingFrontlineRecipe",
-                Remaining = TimeSpan.Zero,
+                Recipe = "FrontlineSteel",
+                Remaining = TimeSpan.FromSeconds(0.1),
             });
         });
-        await Pair.RunTicksSync(1);
+        await Pair.RunSeconds(0.2f);
         await server.WaitAssertion(() =>
         {
-            Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Has.Count.EqualTo(2));
-            Assert.That(CountStacks("Steel"), Is.Zero);
+            Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Is.Empty);
+            Assert.That(CountStacks("Steel"), Is.EqualTo(5));
         });
     }
 

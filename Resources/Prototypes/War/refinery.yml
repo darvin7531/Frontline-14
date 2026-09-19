@@ -24,3 +24,12 @@
     sprite: Structures/Machines/ore_processor.rsi
     state: icon
   - type: FrontlineRefinery
+  - type: ActivatableUI
+    key: enum.FrontlineRefineryUiKey.Key
+  - type: UserInterface
+    interfaces:
+      enum.FrontlineRefineryUiKey.Key:
+        type: FrontlineRefineryBoundUserInterface
+  - type: ContainerContainer
+    containers:
+      inputContainer: !type:Container
