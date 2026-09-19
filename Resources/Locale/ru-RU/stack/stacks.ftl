@@ -236,6 +236,7 @@ stack-rough-diamond = сырой алмаз
 stack-iron-ore = железная руда
 stack-frontline-raw-iron = фронтовое железное сырьё
 stack-raw-technology-material = сырьё для технологий
+stack-technology-alloy = технологический сплав
 stack-plasma-ore = плазменная руда
 stack-silver-ore = серебряная руда
 stack-space-quartz = космический кварц

@@ -1,0 +1,26 @@
+- type: frontlineRefineryRecipe
+  id: FrontlineSteel
+  input:
+    FrontlineRawIron: 5
+  output:
+    Steel: 5
+  duration: 5
+
+- type: frontlineRefineryRecipe
+  id: FrontlineTechnologyAlloy
+  input:
+    RawTechnologyMaterial: 5
+  output:
+    TechnologyAlloy: 1
+  duration: 10
+
+- type: entity
+  id: FrontlineRefinery
+  parent: BaseStructure
+  name: frontline refinery
+  description: Processes physical Frontline resources without station infrastructure.
+  components:
+  - type: Sprite
+    sprite: Structures/Machines/ore_processor.rsi
+    state: icon
+  - type: FrontlineRefinery
