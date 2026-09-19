@@ -57,7 +57,8 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 
     private void OnNodeMapInit(Entity<FrontlineResourceNodeComponent> node, ref MapInitEvent args)
     {
-        node.Comp.RemainingYield = node.Comp.MaxYield;
+        if (node.Comp.RemainingYield < 0)
+            node.Comp.RemainingYield = node.Comp.MaxYield;
     }
 
     private void OnNodeInteract(Entity<FrontlineResourceNodeComponent> node, ref AfterInteractEvent args)
@@ -117,6 +118,12 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
         var query = EntityQueryEnumerator<FrontlineResourceFieldComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var field, out var transform))
         {
+            if (!field.CacheInitialized)
+            {
+                RebuildFieldCache((uid, field), transform.MapID);
+                field.CacheInitialized = true;
+            }
+
             var canSpawn = false;
             if (!field.FieldInitialized)
             {
@@ -139,6 +146,8 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
                 field.State = FrontlineResourceFieldState.Active;
                 canSpawn = true;
             }
+            else if (field.ActiveNodes.Count >= field.MaxActiveNodes || field.RemainingReserveNodes <= 0)
+                continue;
             else if (field.NextReplacement <= _timing.CurTime)
                 canSpawn = true;
 
@@ -184,6 +193,30 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
             field.NextReplacement = _timing.CurTime + field.ReplacementDelay;
     }
 
+    private void RebuildFieldCache(Entity<FrontlineResourceFieldComponent> field, MapId mapId)
+    {
+        var nodes = EntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+        while (nodes.MoveNext(out var nodeUid, out var node, out var nodeTransform))
+        {
+            if (node.FieldId != field.Comp.FieldId || nodeTransform.MapID != mapId)
+                continue;
+
+            node.Field = field;
+            field.Comp.ActiveNodes.Add(nodeUid);
+
+            var slots = EntityQueryEnumerator<FrontlineResourceSpawnPointComponent, TransformComponent>();
+            while (slots.MoveNext(out var slotUid, out var slot, out var slotTransform))
+            {
+                if (slot.FieldId == field.Comp.FieldId && slotTransform.ParentUid == nodeTransform.ParentUid &&
+                    slotTransform.LocalPosition == nodeTransform.LocalPosition)
+                {
+                    node.SpawnPoint = slotUid;
+                    break;
+                }
+            }
+        }
+    }
+
     private bool SlotOccupied(FrontlineResourceFieldComponent field, EntityUid slot)
     {
         foreach (var node in field.ActiveNodes)
@@ -200,6 +233,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     {
         var node = Spawn(field.Comp.PrimaryNodePrototype, coordinates);
         var nodeComp = Comp<FrontlineResourceNodeComponent>(node);
+        nodeComp.FieldId = field.Comp.FieldId;
         nodeComp.Field = field;
         nodeComp.SpawnPoint = spawnPoint;
         field.Comp.ActiveNodes.Add(node);

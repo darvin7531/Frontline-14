@@ -1,6 +1,7 @@
 using System.Numerics;
 using Robust.Shared.GameStates;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom;
 using Content.Shared.Stacks;
 
 namespace Content.Shared.War;
@@ -102,7 +103,7 @@ public sealed partial class FactionSpawnPointComponent : Component
     public string TerritoryId = string.Empty;
 }
 
-[RegisterComponent]
+[RegisterComponent, AutoGenerateComponentPause]
 public sealed partial class FrontlineResourceFieldComponent : Component
 {
     [DataField(required: true)]
@@ -124,12 +125,26 @@ public sealed partial class FrontlineResourceFieldComponent : Component
     [DataField]
     public TimeSpan ReplenishmentDelay;
 
+    [DataField]
     public int RemainingReserveNodes;
+
     public readonly HashSet<EntityUid> ActiveNodes = new();
+
+    [DataField]
     public bool FieldInitialized;
+
+    [DataField]
     public FrontlineResourceFieldState State;
+
+    [DataField(customTypeSerializer: typeof(TimeOffsetSerializer))]
+    [AutoPausedField]
     public TimeSpan NextReplacement;
+
+    [DataField(customTypeSerializer: typeof(TimeOffsetSerializer))]
+    [AutoPausedField]
     public TimeSpan NextReplenishment;
+
+    public bool CacheInitialized;
 }
 
 [RegisterComponent]
@@ -157,7 +172,12 @@ public sealed partial class FrontlineResourceNodeComponent : Component
     [DataField]
     public List<FrontlineResourceBonusDrop> BonusDrops = new();
 
-    public int RemainingYield;
+    [DataField]
+    public int RemainingYield = -1;
+
+    [DataField]
+    public string FieldId = string.Empty;
+
     public EntityUid Field;
     public EntityUid SpawnPoint;
 }

@@ -1,8 +1,10 @@
 using System;
 using System.Linq;
+using System.Numerics;
 using Content.IntegrationTests.Fixtures;
 using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.War;
+using Content.Shared.DoAfter;
 using Content.Shared.Hands.Components;
 using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Stacks;
@@ -43,6 +45,29 @@ public sealed class FrontlineResourceFieldTest : GameTest
             extractionTime: 1
 
         - type: entity
+          id: TestFrontlinePersistedNode
+          components:
+          - type: FrontlineResourceNode
+            output: FrontlineRawIron
+            maxYield: 5
+            harvestAmount: 1
+            extractionTime: 0
+            remainingYield: 2
+            fieldId: persisted-field
+
+        - type: entity
+          id: TestFrontlinePersistedField
+          components:
+          - type: FrontlineResourceField
+            fieldId: persisted-field
+            primaryNodePrototype: TestFrontlineIronNode
+            maxReserveNodes: 5
+            maxActiveNodes: 1
+            remainingReserveNodes: 2
+            fieldInitialized: true
+            state: Active
+
+        - type: entity
           id: TestFrontlineHarvester
           components:
           - type: DoAfter
@@ -55,6 +80,11 @@ public sealed class FrontlineResourceFieldTest : GameTest
           - type: Tag
             tags:
             - Pickaxe
+
+        - type: entity
+          id: TestFrontlineInvalidTool
+          components:
+          - type: Item
 
         - type: entity
           parent: TestFrontlineHarvester
@@ -136,6 +166,37 @@ public sealed class FrontlineResourceFieldTest : GameTest
             }
 
             Assert.That(nodes, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task PersistedStateIsPreservedAndRuntimeCacheIsRebuilt()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        _ = server.System<FrontlineResourceFieldSystem>();
+        EntityUid field = default;
+        EntityUid node = default;
+
+        await server.WaitPost(() =>
+        {
+            field = SEntMan.SpawnEntity("TestFrontlinePersistedField", map.GridCoords);
+            var slot = SEntMan.SpawnEntity(null, map.GridCoords);
+            SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(slot).FieldId = "persisted-field";
+            node = SEntMan.SpawnEntity("TestFrontlinePersistedNode", map.GridCoords);
+        });
+
+        await Pair.RunTicksSync(1);
+        await server.WaitAssertion(() =>
+        {
+            var fieldComp = SEntMan.GetComponent<FrontlineResourceFieldComponent>(field);
+            var nodeComp = SEntMan.GetComponent<FrontlineResourceNodeComponent>(node);
+            Assert.Multiple(() =>
+            {
+                Assert.That(fieldComp.RemainingReserveNodes, Is.EqualTo(2));
+                Assert.That(fieldComp.ActiveNodes, Is.EquivalentTo(new[] { node }));
+                Assert.That(nodeComp.RemainingYield, Is.EqualTo(2));
+            });
         });
     }
 
@@ -395,6 +456,91 @@ public sealed class FrontlineResourceFieldTest : GameTest
             var iron = SEntMan.EntityQuery<StackComponent>()
                 .Single(stack => stack.StackTypeId == "FrontlineRawIron");
             Assert.That(iron.Count, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task OutOfRangeCannotStartExtraction()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var system = server.System<FrontlineResourceFieldSystem>();
+        var hands = server.System<SharedHandsSystem>();
+
+        await server.WaitPost(() =>
+        {
+            var node = SEntMan.SpawnEntity("TestFrontlineIronNode", map.GridCoords);
+            var user = SEntMan.SpawnEntity("TestFrontlineHarvester", map.GridCoords.Offset(new Vector2(10, 0)));
+            var tool = SEntMan.SpawnEntity("TestFrontlinePickaxe", map.GridCoords.Offset(new Vector2(10, 0)));
+            hands.AddHand(user, "hand", HandLocation.Left);
+            Assert.That(hands.TryPickupAnyHand(user, tool), Is.True);
+            Assert.That(system.TryStartExtraction(node, user, tool), Is.False);
+        });
+    }
+
+    [Test]
+    public async Task InvalidToolCannotExtract()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var system = server.System<FrontlineResourceFieldSystem>();
+        var hands = server.System<SharedHandsSystem>();
+        EntityUid node = default;
+        EntityUid user = default;
+        EntityUid tool = default;
+
+        await server.WaitPost(() =>
+        {
+            node = SEntMan.SpawnEntity("TestFrontlineIronNode", map.GridCoords);
+            user = SEntMan.SpawnEntity("TestFrontlineHarvester", map.GridCoords);
+            tool = SEntMan.SpawnEntity("TestFrontlineInvalidTool", map.GridCoords);
+            hands.AddHand(user, "hand", HandLocation.Left);
+            Assert.That(hands.TryPickupAnyHand(user, tool), Is.True);
+            Assert.That(system.TryStartExtraction(node, user, tool), Is.False);
+        });
+
+        await Pair.RunTicksSync(1);
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.GetComponent<FrontlineResourceNodeComponent>(node).RemainingYield, Is.EqualTo(5));
+            Assert.That(SEntMan.EntityQuery<StackComponent>(), Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task InterruptedExtractionProducesNothingAndReleasesNode()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var system = server.System<FrontlineResourceFieldSystem>();
+        var doAfter = server.System<SharedDoAfterSystem>();
+        var hands = server.System<SharedHandsSystem>();
+        EntityUid node = default;
+        EntityUid user = default;
+        EntityUid tool = default;
+
+        await server.WaitPost(() =>
+        {
+            node = SEntMan.SpawnEntity("TestFrontlineSingleYieldNode", map.GridCoords);
+            user = SEntMan.SpawnEntity("TestFrontlineHarvester", map.GridCoords);
+            tool = SEntMan.SpawnEntity("TestFrontlinePickaxe", map.GridCoords);
+            hands.AddHand(user, "hand", HandLocation.Left);
+            Assert.That(hands.TryPickupAnyHand(user, tool), Is.True);
+            Assert.That(system.TryStartExtraction(node, user, tool), Is.True);
+
+            var component = SEntMan.GetComponent<DoAfterComponent>(user);
+            doAfter.Cancel(user, component.DoAfters.Keys.Single());
+        });
+
+        await Pair.RunSeconds(1.1f);
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.GetComponent<FrontlineResourceNodeComponent>(node).RemainingYield, Is.EqualTo(1));
+            Assert.That(SEntMan.EntityQuery<StackComponent>(), Is.Empty);
+        });
+        await server.WaitPost(() =>
+        {
+            Assert.That(system.TryStartExtraction(node, user, tool), Is.True);
         });
     }
 

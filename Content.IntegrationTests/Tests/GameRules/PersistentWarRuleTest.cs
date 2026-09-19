@@ -32,6 +32,43 @@ namespace Content.IntegrationTests.Tests.GameRules;
 [TestOf(typeof(PersistentWarRuleComponent))]
 public sealed class PersistentWarRuleTest : GameTest
 {
+    [TestPrototypes]
+    private const string ResourceValidationPrototypes = """
+        - type: entity
+          id: TestInvalidFrontlineResourceNode
+          components:
+          - type: FrontlineResourceNode
+            output: FrontlineRawIron
+            maxYield: 0
+            harvestAmount: 1
+
+        - type: entity
+          id: TestInvalidFrontlineBonusNode
+          components:
+          - type: FrontlineResourceNode
+            output: FrontlineRawIron
+            maxYield: 1
+            harvestAmount: 1
+            bonusDrops:
+            - output: RawTechnologyMaterial
+              chance: 2
+              minAmount: 1
+              maxAmount: 1
+
+        - type: entity
+          id: TestOverflowingFrontlineBonusNode
+          components:
+          - type: FrontlineResourceNode
+            output: FrontlineRawIron
+            maxYield: 1
+            harvestAmount: 1
+            bonusDrops:
+            - output: RawTechnologyMaterial
+              chance: 1
+              minAmount: 1
+              maxAmount: 2147483647
+        """;
+
     public enum InvalidMapCase
     {
         UnassignedTerritory,
@@ -44,6 +81,13 @@ public sealed class PersistentWarRuleTest : GameTest
         InvalidResourceField,
         ResourceFieldWithoutSpawnPoints,
         UnknownResourceFieldReference,
+        EmptyResourceFieldId,
+        ZeroResourceReserve,
+        TooManyActiveResourceNodes,
+        NegativeResourceDelay,
+        InvalidResourceNode,
+        InvalidResourceBonus,
+        OverflowingResourceBonusAmount,
     }
 
     public override PoolSettings PoolSettings => new()
@@ -179,6 +223,20 @@ public sealed class PersistentWarRuleTest : GameTest
         "PersistentWar resource field 'orphan-field' must have at least one spawn point.")]
     [TestCase(InvalidMapCase.UnknownResourceFieldReference,
         "PersistentWar resource spawn point references unknown field 'missing-field'.")]
+    [TestCase(InvalidMapCase.EmptyResourceFieldId,
+        "PersistentWar resource field ID must not be empty.")]
+    [TestCase(InvalidMapCase.ZeroResourceReserve,
+        "PersistentWar resource field 'frontline-test-iron' must have MaxReserveNodes greater than zero.")]
+    [TestCase(InvalidMapCase.TooManyActiveResourceNodes,
+        "PersistentWar resource field 'frontline-test-iron' cannot have more active nodes than spawn points.")]
+    [TestCase(InvalidMapCase.NegativeResourceDelay,
+        "PersistentWar resource field 'frontline-test-iron' delays must not be negative.")]
+    [TestCase(InvalidMapCase.InvalidResourceNode,
+        "PersistentWar resource field 'frontline-test-iron' primary node must have positive yield and harvest amount")]
+    [TestCase(InvalidMapCase.InvalidResourceBonus,
+        "PersistentWar resource field 'frontline-test-iron' primary node has an invalid bonus drop")]
+    [TestCase(InvalidMapCase.OverflowingResourceBonusAmount,
+        "PersistentWar resource field 'frontline-test-iron' primary node has an invalid bonus drop")]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
     public async Task ValidatorRejectsInvalidGroundMap(InvalidMapCase invalidCase, string expectedError)
     {
@@ -245,6 +303,33 @@ public sealed class PersistentWarRuleTest : GameTest
                 case InvalidMapCase.UnknownResourceFieldReference:
                     var unknownSlot = SSpawnAtPosition(null, SComp<TransformComponent>(map).Coordinates);
                     SEntMan.AddComponent<FrontlineResourceSpawnPointComponent>(unknownSlot).FieldId = "missing-field";
+                    break;
+                case InvalidMapCase.EmptyResourceFieldId:
+                    SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true)).FieldId = "";
+                    break;
+                case InvalidMapCase.ZeroResourceReserve:
+                    SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
+                        .MaxReserveNodes = 0;
+                    break;
+                case InvalidMapCase.TooManyActiveResourceNodes:
+                    SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
+                        .MaxActiveNodes = 3;
+                    break;
+                case InvalidMapCase.NegativeResourceDelay:
+                    SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
+                        .ReplacementDelay = TimeSpan.FromSeconds(-1);
+                    break;
+                case InvalidMapCase.InvalidResourceNode:
+                    SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
+                        .PrimaryNodePrototype = "TestInvalidFrontlineResourceNode";
+                    break;
+                case InvalidMapCase.InvalidResourceBonus:
+                    SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
+                        .PrimaryNodePrototype = "TestInvalidFrontlineBonusNode";
+                    break;
+                case InvalidMapCase.OverflowingResourceBonusAmount:
+                    SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
+                        .PrimaryNodePrototype = "TestOverflowingFrontlineBonusNode";
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(invalidCase), invalidCase, null);
