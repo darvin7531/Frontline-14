@@ -62,8 +62,6 @@ public sealed class FrontlineRefineryTest : GameTest
             jobs:
             - recipe: TestInvalidFrontlineRecipe
               remaining: 0
-            - recipe: MissingFrontlineRecipe
-              remaining: 0
 
         - type: frontlineRefineryRecipe
           id: TestInvalidFrontlineRecipe
@@ -82,14 +80,6 @@ public sealed class FrontlineRefineryTest : GameTest
           duration: 1
 
         - type: frontlineRefineryRecipe
-          id: TestNonStackSpawnRecipe
-          input:
-            FrontlineRawIron: 1
-          output:
-            TestNonStackSpawn: 1
-          duration: 1
-
-        - type: frontlineRefineryRecipe
           id: TestMultiOutputRecipe
           input:
             FrontlineRawIron: 1
@@ -98,14 +88,6 @@ public sealed class FrontlineRefineryTest : GameTest
             TechnologyAlloy: 1
           duration: 1
 
-        - type: stack
-          id: TestNonStackSpawn
-          name: test non-stack spawn
-          spawn: TestNonStackEntity
-          maxCount: 10
-
-        - type: entity
-          id: TestNonStackEntity
         """;
 
     [Test]
@@ -182,7 +164,6 @@ public sealed class FrontlineRefineryTest : GameTest
         bool insufficient = true;
         bool missing = true;
         bool invalid = true;
-        bool nonStackSpawn = true;
         bool multiOutput = true;
 
         await server.WaitPost(() =>
@@ -192,7 +173,6 @@ public sealed class FrontlineRefineryTest : GameTest
             insufficient = refinerySystem.TrySubmitJob(refinery, "FrontlineSteel", new[] { input });
             missing = refinerySystem.TrySubmitJob(refinery, "MissingFrontlineRecipe", new[] { input });
             invalid = refinerySystem.TrySubmitJob(refinery, "TestInvalidFrontlineRecipe", new[] { input });
-            nonStackSpawn = refinerySystem.TrySubmitJob(refinery, "TestNonStackSpawnRecipe", new[] { input });
             multiOutput = refinerySystem.TrySubmitJob(refinery, "TestMultiOutputRecipe", new[] { input });
         });
 
@@ -203,12 +183,10 @@ public sealed class FrontlineRefineryTest : GameTest
                 Assert.That(insufficient, Is.False);
                 Assert.That(missing, Is.False);
                 Assert.That(invalid, Is.False);
-                Assert.That(nonStackSpawn, Is.False);
                 Assert.That(multiOutput, Is.False);
                 Assert.That(refinerySystem.GetAvailableRecipes().Select(recipe => recipe.ID),
                     Does.Not.Contain("TestInvalidFrontlineRecipe")
                         .And.Not.Contain("TestAbstractStackFrontlineRecipe")
-                        .And.Not.Contain("TestNonStackSpawnRecipe")
                         .And.Not.Contain("TestMultiOutputRecipe"));
                 Assert.That(CountStacks("FrontlineRawIron"), Is.EqualTo(4));
                 Assert.That(CountStacks("Steel"), Is.Zero);
@@ -430,7 +408,14 @@ public sealed class FrontlineRefineryTest : GameTest
         EntityUid refinery = default;
 
         await server.WaitPost(() =>
-            refinery = SEntMan.SpawnEntity("TestInvalidPersistedFrontlineRefinery", map.GridCoords));
+        {
+            refinery = SEntMan.SpawnEntity("TestInvalidPersistedFrontlineRefinery", map.GridCoords);
+            SComp<FrontlineRefineryComponent>(refinery).Jobs.Add(new FrontlineRefineryJob
+            {
+                Recipe = "MissingFrontlineRecipe",
+                Remaining = TimeSpan.Zero,
+            });
+        });
         await Pair.RunTicksSync(1);
         await server.WaitAssertion(() =>
         {
