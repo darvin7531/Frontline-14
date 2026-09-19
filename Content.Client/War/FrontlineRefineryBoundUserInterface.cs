@@ -34,12 +34,19 @@ public sealed partial class FrontlineRefineryBoundUserInterface : BoundUserInter
     {
         base.UpdateState(state);
         if (state is FrontlineRefineryUiState refinery)
-            _window?.SetState(refinery, StackName);
+            _window?.SetState(refinery, StackName, RecipeName);
     }
 
     private string StackName(ProtoId<StackPrototype> id)
     {
         return _prototypes.TryIndex(id, out var stack) ? Loc.GetString(stack.Name) : id.Id;
+    }
+
+    private string RecipeName(ProtoId<FrontlineRefineryRecipePrototype> id)
+    {
+        return _prototypes.TryIndex(id, out var recipe) && !string.IsNullOrEmpty(recipe.Name)
+            ? Loc.GetString(recipe.Name)
+            : Loc.GetString("frontline-refinery-recipe-unknown");
     }
 }
 
@@ -54,7 +61,10 @@ public sealed class FrontlineRefineryWindow : DefaultWindow
         MinSize = new Vector2(420, 480);
     }
 
-    public void SetState(FrontlineRefineryUiState state, Func<ProtoId<StackPrototype>, string> stackName)
+    public void SetState(
+        FrontlineRefineryUiState state,
+        Func<ProtoId<StackPrototype>, string> stackName,
+        Func<ProtoId<FrontlineRefineryRecipePrototype>, string> recipeName)
     {
         ContentsContainer.RemoveAllChildren();
         var contents = new BoxContainer { Orientation = LayoutOrientation.Vertical };
@@ -107,7 +117,7 @@ public sealed class FrontlineRefineryWindow : DefaultWindow
             {
                 Text = Loc.GetString("frontline-refinery-job-line",
                     ("position", i + 1),
-                    ("recipe", job.Recipe.Id),
+                    ("recipe", recipeName(job.Recipe)),
                     ("status", Loc.GetString(job.Processing
                         ? "frontline-refinery-status-processing"
                         : "frontline-refinery-status-waiting")),

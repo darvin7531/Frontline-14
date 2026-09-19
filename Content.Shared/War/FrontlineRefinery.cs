@@ -10,6 +10,9 @@ public sealed partial class FrontlineRefineryRecipePrototype : IPrototype
     [IdDataField]
     public string ID { get; private set; } = null!;
 
+    [DataField]
+    public LocId Name;
+
     [DataField(required: true)]
     public Dictionary<ProtoId<StackPrototype>, int> Input = new();
 

@@ -88,11 +88,8 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
 
     private void OnEjectMessage(Entity<FrontlineRefineryComponent> refinery, ref FrontlineRefineryEjectMessage args)
     {
-        if (!_interaction.InRangeUnobstructed(args.Actor, refinery.Owner))
-            return;
-
-        EjectInputs(refinery.Owner);
-        UpdateUi(refinery);
+        if (TryEjectPlayerInputs(refinery.Owner, args.Actor))
+            UpdateUi(refinery);
     }
 
     private void OnContainerChanged(Entity<FrontlineRefineryComponent> refinery, ref EntInsertedIntoContainerMessage args)
@@ -204,6 +201,15 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
             return;
 
         _containers.EmptyContainer(refinery.InputContainer);
+    }
+
+    public bool TryEjectPlayerInputs(EntityUid refineryUid, EntityUid playerUid)
+    {
+        if (!_interaction.InRangeUnobstructed(playerUid, refineryUid))
+            return false;
+
+        EjectInputs(refineryUid);
+        return true;
     }
 
     public bool TrySubmitContainedJob(EntityUid refineryUid, ProtoId<FrontlineRefineryRecipePrototype> recipeId)

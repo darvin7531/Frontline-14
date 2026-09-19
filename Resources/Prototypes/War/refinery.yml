@@ -1,5 +1,6 @@
 - type: frontlineRefineryRecipe
   id: FrontlineSteel
+  name: frontline-refinery-recipe-steel
   input:
     FrontlineRawIron: 5
   output:
@@ -8,6 +9,7 @@
 
 - type: frontlineRefineryRecipe
   id: FrontlineTechnologyAlloy
+  name: frontline-refinery-recipe-technology-alloy
   input:
     RawTechnologyMaterial: 5
   output:

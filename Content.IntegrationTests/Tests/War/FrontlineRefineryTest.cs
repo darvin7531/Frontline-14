@@ -8,6 +8,7 @@ using Content.Shared.Tag;
 using Content.Shared.UserInterface;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Localization;
 using Robust.Shared.Map;
 using Robust.Shared.Maths;
 using Robust.Shared.Prototypes;
@@ -145,6 +146,18 @@ public sealed class FrontlineRefineryTest : GameTest
     }
 
     [Test]
+    public void ProductionRecipesHaveLocalizedDisplayNames()
+    {
+        var localization = Pair.Server.ResolveDependency<ILocalizationManager>();
+
+        foreach (var recipe in Pair.Server.System<FrontlineRefinerySystem>().GetAvailableRecipes())
+        {
+            Assert.That(recipe.Name.ToString(), Is.Not.EqualTo(recipe.ID));
+            Assert.That(localization.HasString(recipe.Name), Is.True);
+        }
+    }
+
+    [Test]
     public async Task InvalidItemIsRejectedFromInput()
     {
         var server = Pair.Server;
@@ -193,6 +206,35 @@ public sealed class FrontlineRefineryTest : GameTest
             Assert.That(SEntMan.EntityExists(input), Is.True);
             Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(5));
             Assert.That(CountStacks("FrontlineRawIron"), Is.EqualTo(5));
+        });
+    }
+
+    [Test]
+    public async Task RemotePlayerCannotEjectInput()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var refinerySystem = server.System<FrontlineRefinerySystem>();
+        var stackSystem = server.System<StackSystem>();
+        EntityUid refinery = default;
+        EntityUid input = default;
+        EntityUid player = default;
+        var ejected = true;
+
+        await server.WaitPost(() =>
+        {
+            refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            input = stackSystem.SpawnAtPosition(5, "FrontlineRawIron", map.GridCoords);
+            player = SEntMan.SpawnEntity(null, map.GridCoords.Offset(new Vector2i(10, 0)));
+            Assert.That(refinerySystem.TryInsertInput(refinery, input), Is.True);
+
+            ejected = refinerySystem.TryEjectPlayerInputs(refinery, player);
+        });
+
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(ejected, Is.False);
+            Assert.That(SComp<FrontlineRefineryComponent>(refinery).InputContainer.Contains(input), Is.True);
         });
     }
 
