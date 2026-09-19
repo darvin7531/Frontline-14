@@ -389,3 +389,25 @@
   components:
   - type: Stack
     count: 1
+
+- type: entity
+  parent: OreBase
+  id: TechnologyAlloy
+  name: technology alloy
+  description: Refined Frontline material reserved for future technology production.
+  suffix: Full
+  components:
+  - type: Stack
+    stackType: TechnologyAlloy
+  - type: Sprite
+    state: uranium
+  - type: Item
+    heldPrefix: uranium
+
+- type: entity
+  parent: TechnologyAlloy
+  id: TechnologyAlloy1
+  suffix: Single
+  components:
+  - type: Stack
+    count: 1
