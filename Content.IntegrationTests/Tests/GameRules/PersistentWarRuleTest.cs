@@ -152,14 +152,11 @@ public sealed class PersistentWarRuleTest : GameTest
                     refineryCount++;
             }
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(atmos.Space, Is.False);
-                Assert.That(cycle.Duration, Is.GreaterThan(TimeSpan.Zero));
-                Assert.That(refineryCount, Is.EqualTo(2));
-                Assert.That(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, 0),
-                    Is.Not.EqualTo(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, (float) cycle.Duration.TotalSeconds / 2)));
-            });
+            Assert.That(atmos.Space, Is.False);
+            Assert.That(cycle.Duration, Is.GreaterThan(TimeSpan.Zero));
+            Assert.That(refineryCount, Is.EqualTo(2));
+            Assert.That(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, 0),
+                Is.Not.EqualTo(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, (float) cycle.Duration.TotalSeconds / 2)));
 
             Assert.That(cycle.Offset, Is.InRange(TimeSpan.FromMinutes(7), TimeSpan.FromMinutes(8)));
 
@@ -197,17 +194,14 @@ public sealed class PersistentWarRuleTest : GameTest
         await Server.WaitAssertion(() =>
         {
             var error = Assert.Throws<InvalidOperationException>(() => validator.Validate(map.MapUid));
-            Assert.Multiple(() =>
-            {
-                Assert.That(error!.Message, Does.Contain("PersistentWar map must include MapAtmosphere."));
-                Assert.That(error.Message, Does.Contain("PersistentWar map must include MapLight."));
-                Assert.That(error.Message, Does.Contain("PersistentWar map must include LightCycle."));
-                Assert.That(error.Message, Does.Contain("PersistentWar map must define exactly five territories (found 0)."));
-                Assert.That(error.Message, Does.Contain("PersistentWar map must include a town hall or ruin for each territory."));
-                Assert.That(error.Message, Does.Contain("PersistentWar map must include a faction spawn point for each territory."));
-                Assert.That(error.Message, Does.Contain("PersistentWar map must include exactly one starting town hall for FrontlineFactionOne"));
-                Assert.That(error.Message, Does.Contain("PersistentWar map must include exactly one starting town hall for FrontlineFactionTwo"));
-            });
+            Assert.That(error!.Message, Does.Contain("PersistentWar map must include MapAtmosphere."));
+            Assert.That(error.Message, Does.Contain("PersistentWar map must include MapLight."));
+            Assert.That(error.Message, Does.Contain("PersistentWar map must include LightCycle."));
+            Assert.That(error.Message, Does.Contain("PersistentWar map must define exactly five territories (found 0)."));
+            Assert.That(error.Message, Does.Contain("PersistentWar map must include a town hall or ruin for each territory."));
+            Assert.That(error.Message, Does.Contain("PersistentWar map must include a faction spawn point for each territory."));
+            Assert.That(error.Message, Does.Contain("PersistentWar map must include exactly one starting town hall for FrontlineFactionOne"));
+            Assert.That(error.Message, Does.Contain("PersistentWar map must include exactly one starting town hall for FrontlineFactionTwo"));
         });
     }
 
@@ -437,12 +431,9 @@ public sealed class PersistentWarRuleTest : GameTest
 
         await Server.WaitAssertion(() =>
         {
-            Assert.Multiple(() =>
-            {
-                Assert.That(newWar.WarId, Is.EqualTo(42));
-                Assert.That(newWar.StartedAt, Is.GreaterThan(oldStartedAt));
-                Assert.That(war.State, Is.EqualTo(newWar));
-            });
+            Assert.That(newWar.WarId, Is.EqualTo(42));
+            Assert.That(newWar.StartedAt, Is.GreaterThan(oldStartedAt));
+            Assert.That(war.State, Is.EqualTo(newWar));
 
             var map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
             Assert.That(SComp<LightCycleComponent>(map).Offset, Is.LessThan(TimeSpan.FromMinutes(1)));
@@ -521,18 +512,15 @@ public sealed class PersistentWarRuleTest : GameTest
         });
         await Server.WaitAssertion(() =>
         {
-            Assert.Multiple(() =>
-            {
-                Assert.That(war.State?.WarId, Is.EqualTo(oldWar.WarId + 1));
-                Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
-                Assert.That(war.State?.Winner, Is.Null);
-                Assert.That(war.State?.StartedAt, Is.GreaterThan(oldWar.StartedAt));
-                Assert.That(factions.TryGetFaction(account, out _), Is.False);
-                Assert.That(memberships.Exists(member =>
-                    member.AccountId == account.UserId && member.WarId == oldWar.WarId), Is.True);
-                Assert.That(SEntMan.EntityExists(oldBody), Is.False);
-                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
-            });
+            Assert.That(war.State?.WarId, Is.EqualTo(oldWar.WarId + 1));
+            Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
+            Assert.That(war.State?.Winner, Is.Null);
+            Assert.That(war.State?.StartedAt, Is.GreaterThan(oldWar.StartedAt));
+            Assert.That(factions.TryGetFaction(account, out _), Is.False);
+            Assert.That(memberships.Exists(member =>
+                member.AccountId == account.UserId && member.WarId == oldWar.WarId), Is.True);
+            Assert.That(SEntMan.EntityExists(oldBody), Is.False);
+            Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
         });
 
         await Server.WaitPost(() =>
@@ -571,19 +559,22 @@ public sealed class PersistentWarRuleTest : GameTest
                     ruins++;
             }
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(war.State?.WarId, Is.EqualTo(oldWar.WarId + 1));
-                Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
-                Assert.That(war.State?.Winner, Is.Null);
-                Assert.That(territories.GetTerritories(mapId), Has.Count.EqualTo(5));
-                Assert.That(factionOneHalls, Is.EqualTo(1));
-                Assert.That(factionTwoHalls, Is.EqualTo(1));
-                Assert.That(ruins, Is.EqualTo(3));
-                Assert.That(territories.CountOwned(factionOne), Is.EqualTo(1));
-                Assert.That(lightCycle.GetPhase((map, SComp<LightCycleComponent>(map))),
-                    Is.InRange(TimeSpan.Zero, TimeSpan.FromSeconds(1)));
-            });
+            Assert.That(war.State?.WarId, Is.EqualTo(oldWar.WarId + 1));
+            Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
+            Assert.That(war.State?.Winner, Is.Null);
+            Assert.That(territories.GetTerritories(mapId), Has.Count.EqualTo(5));
+            Assert.That(factionOneHalls, Is.EqualTo(1));
+            Assert.That(factionTwoHalls, Is.EqualTo(1));
+            Assert.That(ruins, Is.EqualTo(3));
+            Assert.That(territories.CountOwned(factionOne), Is.EqualTo(1));
+
+            // New-war startup is wall-clock based, so do not require the whole restart/map-load path
+            // to complete within one exact second. The important invariant is that neither the old
+            // 120-second debug override nor the old campaign age survives the new war.
+            var freshWarAge = DateTimeOffset.UtcNow - war.State!.StartedAt;
+            var phase = lightCycle.GetPhase((map, SComp<LightCycleComponent>(map)));
+            Assert.That(freshWarAge, Is.InRange(TimeSpan.Zero, TimeSpan.FromSeconds(30)));
+            Assert.That(phase, Is.InRange(TimeSpan.Zero, TimeSpan.FromSeconds(30)));
         });
 
         ticker.SetGamePreset((GamePresetPrototype) null);
