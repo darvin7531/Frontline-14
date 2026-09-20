@@ -18,6 +18,11 @@
   name: entity-category-name-roles
   hideSpawnMenu: true
 
+- type: entityCategory
+  id: Frontline
+  name: entity-category-name-frontline
+  description: entity-category-description-frontline
+
 # markers, atmos fixing, etc
 - type: entityCategory
   id: Mapping
