@@ -265,11 +265,6 @@
   - type: PhysicalComposition
     materialComposition:
       RawBananium: 100
-  - type: PointLight
-    radius: 1.2
-    energy: 1
-    castShadows: false
-    color: "#eef066"
   - type: Item
     heldPrefix: bananium
   - type: Tag
@@ -286,7 +281,7 @@
     count: 1
 
 - type: entity
-  parent: OreBase
+  parent: Coal
   id: Coal
   name: coal
   suffix: Full
@@ -383,6 +378,7 @@
   name: frontline raw iron
   description: Unrefined iron reserved for Frontline production.
   suffix: Full
+  categories: [ Frontline ]
   components:
   - type: Stack
     stackType: FrontlineRawIron
@@ -405,6 +401,7 @@
   name: raw technology material
   description: Unrefined material with unusual technological properties.
   suffix: Full
+  categories: [ Frontline ]
   components:
   - type: Stack
     stackType: RawTechnologyMaterial
@@ -427,6 +424,7 @@
   name: technology alloy
   description: Refined Frontline material reserved for future technology production.
   suffix: Full
+  categories: [ Frontline ]
   components:
   - type: Stack
     stackType: TechnologyAlloy
