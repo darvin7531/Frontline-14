@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Text.Json;
+using System.Linq;
+using Content.Client.Markers;
 using Content.IntegrationTests.Fixtures;
 using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.Atmos.EntitySystems;
@@ -20,6 +22,7 @@ using Content.Shared.Light.EntitySystems;
 using Content.Shared.War;
 
 using Robust.Shared.ContentPack;
+using Robust.Client.GameObjects;
 using Robust.Shared.Console;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
@@ -193,6 +196,28 @@ public sealed class PersistentWarRuleTest : GameTest
         {
             var clientCycle = CEntMan.GetComponent<LightCycleComponent>(Pair.ToClientUid(map));
             Assert.That(clientCycle.Offset, Is.EqualTo(cycle.Offset));
+
+            var resourceSpawnMarkers = 0;
+            var markerQuery = CEntMan.EntityQueryEnumerator<MarkerComponent, SpriteComponent, MetaDataComponent>();
+            while (markerQuery.MoveNext(out _, out _, out var sprite, out var metadata))
+            {
+                if (metadata.EntityPrototype?.ID != "FrontlineResourceSpawnPoint")
+                    continue;
+
+                resourceSpawnMarkers++;
+                Assert.That(sprite.Visible, Is.False);
+                Assert.That(sprite.AllLayers.Any(layer => layer.RsiState.IsValid), Is.True);
+            }
+
+            Assert.That(resourceSpawnMarkers, Is.EqualTo(3));
+            Pair.Client.System<MarkerSystem>().MarkersVisible = true;
+
+            markerQuery = CEntMan.EntityQueryEnumerator<MarkerComponent, SpriteComponent, MetaDataComponent>();
+            while (markerQuery.MoveNext(out _, out _, out var sprite, out var metadata))
+            {
+                if (metadata.EntityPrototype?.ID == "FrontlineResourceSpawnPoint")
+                    Assert.That(sprite.Visible, Is.True);
+            }
         });
 
         await Server.WaitPost(() => atmosphere.SetMapGasMixture(map, GasMixture.SpaceGas, atmos));
