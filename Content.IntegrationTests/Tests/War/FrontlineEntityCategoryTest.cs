@@ -8,23 +8,34 @@ public sealed class FrontlineEntityCategoryTest : GameTest
 {
     private const string FrontlineCategory = "Frontline";
 
-    private static readonly string[] InitialFrontlineAssets =
+    private static readonly string[] KeyFrontlineAssets =
     [
         "FrontlineFactory",
-        "FrontlineRefinery",
         "FrontlineSupplyCrate",
         "FrontlineWeaponPistolMk58",
+        "FrontlineRefinery",
+        "FrontlineRawIron",
+        "RawTechnologyMaterial",
+        "TechnologyAlloy",
+        "FrontlineResourceField",
+        "FrontlineResourceSpawnPoint",
+        "FrontlineIronResourceNode",
+        "TerritoryMarker",
+        "TownHallCoreFactionOne",
+        "TownHallCoreFactionTwo",
+        "TownHallRuin",
+        "FactionSpawnPoint",
     ];
 
     [Test]
-    public void InitialAssetsBelongToFrontlineCategory()
+    public void KeyAssetsBelongToFrontlineCategory()
     {
         var prototypes = Pair.Server.ResolveDependency<IPrototypeManager>();
 
         Assert.That(prototypes.TryIndex<EntityCategoryPrototype>(FrontlineCategory, out var category), Is.True);
         Assert.That(category, Is.Not.Null);
 
-        foreach (var id in InitialFrontlineAssets)
+        foreach (var id in KeyFrontlineAssets)
         {
             Assert.That(prototypes.TryIndex<EntityPrototype>(id, out var prototype), Is.True, id);
             Assert.That(prototype, Is.Not.Null, id);
