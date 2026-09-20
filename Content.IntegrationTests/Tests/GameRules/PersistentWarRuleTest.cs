@@ -151,10 +151,18 @@ public sealed class PersistentWarRuleTest : GameTest
                 if (transform.MapID == ticker.DefaultMap)
                     refineryCount++;
             }
+            var factoryCount = 0;
+            var factoryQuery = SEntMan.EntityQueryEnumerator<FrontlineFactoryComponent, TransformComponent>();
+            while (factoryQuery.MoveNext(out _, out _, out var transform))
+            {
+                if (transform.MapID == ticker.DefaultMap)
+                    factoryCount++;
+            }
 
             Assert.That(atmos.Space, Is.False);
             Assert.That(cycle.Duration, Is.GreaterThan(TimeSpan.Zero));
             Assert.That(refineryCount, Is.EqualTo(2));
+            Assert.That(factoryCount, Is.EqualTo(2));
             Assert.That(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, 0),
                 Is.Not.EqualTo(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, (float) cycle.Duration.TotalSeconds / 2)));
 

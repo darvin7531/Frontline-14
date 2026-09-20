@@ -1,0 +1,61 @@
+- type: frontlineFactoryRecipe
+  id: FrontlineFactoryMk58
+  name: frontline-factory-recipe-mk58
+  input:
+    Steel: 20
+  output: WeaponPistolMk58
+  outputAmount: 1
+  duration: 10
+
+- type: frontlineFactoryRecipe
+  id: FrontlineFactoryMagazinePistol
+  name: frontline-factory-recipe-magazine-pistol
+  input:
+    Steel: 5
+  output: MagazinePistol
+  outputAmount: 1
+  duration: 5
+
+- type: frontlineFactoryRecipe
+  id: FrontlineFactoryBrutepack
+  name: frontline-factory-recipe-brutepack
+  input:
+    Steel: 5
+  output: Brutepack1
+  outputAmount: 2
+  duration: 5
+
+- type: frontlineFactoryRecipe
+  id: FrontlineFactorySupplyCrate
+  name: frontline-factory-recipe-supply-crate
+  input:
+    Steel: 10
+  output: FrontlineSupplyCrate
+  outputAmount: 1
+  duration: 5
+
+- type: entity
+  id: FrontlineFactory
+  parent: BaseStructure
+  name: frontline factory
+  description: Produces physical frontline supplies from refined resources.
+  components:
+  - type: Sprite
+    sprite: Structures/Machines/ore_processor.rsi
+    state: icon
+  - type: FrontlineFactory
+  - type: ActivatableUI
+    key: enum.FrontlineFactoryUiKey.Key
+  - type: UserInterface
+    interfaces:
+      enum.FrontlineFactoryUiKey.Key:
+        type: FrontlineFactoryBoundUserInterface
+  - type: ContainerContainer
+    containers:
+      inputContainer: !type:Container
+
+- type: entity
+  id: FrontlineSupplyCrate
+  parent: CrateGenericSteel
+  name: frontline supply crate
+  description: A public crate for physically transporting frontline supplies.
