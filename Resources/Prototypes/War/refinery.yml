@@ -21,6 +21,7 @@
   parent: BaseStructure
   name: frontline refinery
   description: Processes physical Frontline resources without station infrastructure.
+  categories: [ Frontline ]
   components:
   - type: Sprite
     sprite: Structures/Machines/ore_processor.rsi

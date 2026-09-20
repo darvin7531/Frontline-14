@@ -39,6 +39,7 @@
   parent: BaseStructure
   name: frontline factory
   description: Produces physical frontline supplies from refined resources.
+  categories: [ Frontline ]
   components:
   - type: Sprite
     sprite: Structures/Machines/ore_processor.rsi
@@ -59,12 +60,14 @@
   parent: CrateGenericSteel
   name: frontline supply crate
   description: A public crate for physically transporting frontline supplies.
+  categories: [ Frontline ]
 
 - type: entity
   id: FrontlineWeaponPistolMk58
   parent: WeaponPistolMk58
   name: frontline Mk 58
   description: A conventional Mk 58 issued without a magazine for frontline production.
+  categories: [ Frontline ]
   components:
   - type: ItemSlots
     slots:
