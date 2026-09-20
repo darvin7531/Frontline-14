@@ -26,6 +26,8 @@ public sealed class FactionSelectionEui : BaseEui
         return new FactionSelectionEuiState(factions);
     }
 
+    public override void Opened() => StateDirty();
+
     public override void HandleMessage(EuiMessageBase msg)
     {
         base.HandleMessage(msg);

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Text.Json;
+using System.Linq;
+using Content.Client.Markers;
 using Content.IntegrationTests.Fixtures;
 using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.Atmos.EntitySystems;
@@ -20,6 +22,7 @@ using Content.Shared.Light.EntitySystems;
 using Content.Shared.War;
 
 using Robust.Shared.ContentPack;
+using Robust.Client.GameObjects;
 using Robust.Shared.Console;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
@@ -117,6 +120,7 @@ public sealed class PersistentWarRuleTest : GameTest
         var atmosphere = Server.System<AtmosphereSystem>();
         var resources = Server.ResolveDependency<IResourceManager>();
         var war = Server.System<WarStateSystem>();
+        var mapSystem = Server.System<SharedMapSystem>();
         var startedAt = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(7);
         EntityUid map = default;
         MapAtmosphereComponent atmos = default!;
@@ -140,7 +144,7 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
             Assert.That(war.State, Is.EqualTo(new WarState(1, WarStatus.Active, startedAt)));
 
-            map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+            map = mapSystem.GetMapOrInvalid(ticker.DefaultMap);
             atmos = SEntMan.GetComponent<MapAtmosphereComponent>(map);
             var light = SEntMan.GetComponent<MapLightComponent>(map);
             cycle = SEntMan.GetComponent<LightCycleComponent>(map);
@@ -158,11 +162,22 @@ public sealed class PersistentWarRuleTest : GameTest
                 if (transform.MapID == ticker.DefaultMap)
                     factoryCount++;
             }
+            var floorTiles = 0;
+            var gridQuery = SEntMan.EntityQueryEnumerator<MapGridComponent, TransformComponent>();
+            while (gridQuery.MoveNext(out var gridUid, out var grid, out var transform))
+            {
+                if (transform.MapID != ticker.DefaultMap)
+                    continue;
+
+                foreach (var _ in mapSystem.GetAllTiles(gridUid, grid))
+                    floorTiles++;
+            }
 
             Assert.That(atmos.Space, Is.False);
             Assert.That(cycle.Duration, Is.GreaterThan(TimeSpan.Zero));
             Assert.That(refineryCount, Is.EqualTo(2));
             Assert.That(factoryCount, Is.EqualTo(2));
+            Assert.That(floorTiles, Is.GreaterThanOrEqualTo(256));
             Assert.That(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, 0),
                 Is.Not.EqualTo(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, (float) cycle.Duration.TotalSeconds / 2)));
 
@@ -181,6 +196,28 @@ public sealed class PersistentWarRuleTest : GameTest
         {
             var clientCycle = CEntMan.GetComponent<LightCycleComponent>(Pair.ToClientUid(map));
             Assert.That(clientCycle.Offset, Is.EqualTo(cycle.Offset));
+
+            var resourceSpawnMarkers = 0;
+            var markerQuery = CEntMan.EntityQueryEnumerator<MarkerComponent, SpriteComponent, MetaDataComponent>();
+            while (markerQuery.MoveNext(out _, out _, out var sprite, out var metadata))
+            {
+                if (metadata.EntityPrototype?.ID != "FrontlineResourceSpawnPoint")
+                    continue;
+
+                resourceSpawnMarkers++;
+                Assert.That(sprite.Visible, Is.False);
+                Assert.That(sprite.AllLayers.Any(layer => layer.RsiState.IsValid), Is.True);
+            }
+
+            Assert.That(resourceSpawnMarkers, Is.EqualTo(3));
+            Pair.Client.System<MarkerSystem>().MarkersVisible = true;
+
+            markerQuery = CEntMan.EntityQueryEnumerator<MarkerComponent, SpriteComponent, MetaDataComponent>();
+            while (markerQuery.MoveNext(out _, out _, out var sprite, out var metadata))
+            {
+                if (metadata.EntityPrototype?.ID == "FrontlineResourceSpawnPoint")
+                    Assert.That(sprite.Visible, Is.True);
+            }
         });
 
         await Server.WaitPost(() => atmosphere.SetMapGasMixture(map, GasMixture.SpaceGas, atmos));
@@ -323,7 +360,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     break;
                 case InvalidMapCase.TooManyActiveResourceNodes:
                     SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
-                        .MaxActiveNodes = 3;
+                        .MaxActiveNodes = int.MaxValue;
                     break;
                 case InvalidMapCase.NegativeResourceDelay:
                     SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))

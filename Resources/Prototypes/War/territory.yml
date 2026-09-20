@@ -7,6 +7,9 @@
     territory: Unassigned
     boundsMin: -5,-5
     boundsMax: 5,5
+  - type: Sprite
+    sprite: Markers/cross.rsi
+    state: blue
 
 - type: entity
   id: TownHallBase
@@ -74,6 +77,9 @@
   components:
   - type: FactionSpawnPoint
     territory: Unassigned
+  - type: Sprite
+    sprite: Markers/cross.rsi
+    state: green
 
 - type: entity
   id: FrontlineResourceField
@@ -99,6 +105,9 @@
   components:
   - type: FrontlineResourceSpawnPoint
     fieldId: unassigned
+  - type: Sprite
+    sprite: Markers/cross.rsi
+    state: red
 
 - type: entity
   abstract: true
