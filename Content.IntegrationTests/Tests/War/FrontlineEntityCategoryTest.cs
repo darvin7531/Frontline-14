@@ -117,7 +117,7 @@ public sealed class FrontlineEntityCategoryTest : GameTest
         }
     }
 
-    private static string? GetScalar(YamlMappingNode mapping, string key)
+    private static string GetScalar(YamlMappingNode mapping, string key)
     {
         foreach (var (node, value) in mapping.Children)
         {
