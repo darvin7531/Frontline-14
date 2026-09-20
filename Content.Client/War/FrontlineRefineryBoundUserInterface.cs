@@ -67,7 +67,11 @@ public sealed class FrontlineRefineryWindow : DefaultWindow
         Func<ProtoId<FrontlineRefineryRecipePrototype>, string> recipeName)
     {
         ContentsContainer.RemoveAllChildren();
-        var contents = new BoxContainer { Orientation = LayoutOrientation.Vertical };
+        var contents = new BoxContainer
+        {
+            Orientation = LayoutOrientation.Vertical,
+            HorizontalExpand = true,
+        };
 
         contents.AddChild(new Label { Text = Loc.GetString("frontline-refinery-input-heading") });
         if (state.Inputs.Length == 0)
@@ -100,7 +104,8 @@ public sealed class FrontlineRefineryWindow : DefaultWindow
                     ("input", inputs),
                     ("output", stackName(recipe.Output.Stack)),
                     ("amount", recipe.Output.Amount),
-                    ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds))),
+                    ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds))).Replace(" → ", "\n→ "),
+                HorizontalExpand = true,
             };
             var recipeId = recipe.Id;
             button.OnPressed += _ => Submit?.Invoke(recipeId);
@@ -125,7 +130,12 @@ public sealed class FrontlineRefineryWindow : DefaultWindow
             });
         }
 
-        var scroll = new ScrollContainer();
+        var scroll = new ScrollContainer
+        {
+            HScrollEnabled = false,
+            HorizontalExpand = true,
+            VerticalExpand = true,
+        };
         scroll.AddChild(contents);
         ContentsContainer.AddChild(scroll);
     }

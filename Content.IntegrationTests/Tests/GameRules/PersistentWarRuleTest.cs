@@ -117,6 +117,7 @@ public sealed class PersistentWarRuleTest : GameTest
         var atmosphere = Server.System<AtmosphereSystem>();
         var resources = Server.ResolveDependency<IResourceManager>();
         var war = Server.System<WarStateSystem>();
+        var mapSystem = Server.System<SharedMapSystem>();
         var startedAt = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(7);
         EntityUid map = default;
         MapAtmosphereComponent atmos = default!;
@@ -140,7 +141,7 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
             Assert.That(war.State, Is.EqualTo(new WarState(1, WarStatus.Active, startedAt)));
 
-            map = Server.System<SharedMapSystem>().GetMapOrInvalid(ticker.DefaultMap);
+            map = mapSystem.GetMapOrInvalid(ticker.DefaultMap);
             atmos = SEntMan.GetComponent<MapAtmosphereComponent>(map);
             var light = SEntMan.GetComponent<MapLightComponent>(map);
             cycle = SEntMan.GetComponent<LightCycleComponent>(map);
@@ -158,11 +159,22 @@ public sealed class PersistentWarRuleTest : GameTest
                 if (transform.MapID == ticker.DefaultMap)
                     factoryCount++;
             }
+            var floorTiles = 0;
+            var gridQuery = SEntMan.EntityQueryEnumerator<MapGridComponent, TransformComponent>();
+            while (gridQuery.MoveNext(out var gridUid, out var grid, out var transform))
+            {
+                if (transform.MapID != ticker.DefaultMap)
+                    continue;
+
+                foreach (var _ in mapSystem.GetAllTiles(gridUid, grid))
+                    floorTiles++;
+            }
 
             Assert.That(atmos.Space, Is.False);
             Assert.That(cycle.Duration, Is.GreaterThan(TimeSpan.Zero));
             Assert.That(refineryCount, Is.EqualTo(2));
             Assert.That(factoryCount, Is.EqualTo(2));
+            Assert.That(floorTiles, Is.EqualTo(256));
             Assert.That(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, 0),
                 Is.Not.EqualTo(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, (float) cycle.Duration.TotalSeconds / 2)));
 

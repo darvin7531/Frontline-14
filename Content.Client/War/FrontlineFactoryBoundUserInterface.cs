@@ -77,7 +77,11 @@ public sealed class FrontlineFactoryWindow : DefaultWindow
         Func<ProtoId<FrontlineFactoryRecipePrototype>, string> recipeName)
     {
         ContentsContainer.RemoveAllChildren();
-        var contents = new BoxContainer { Orientation = LayoutOrientation.Vertical };
+        var contents = new BoxContainer
+        {
+            Orientation = LayoutOrientation.Vertical,
+            HorizontalExpand = true,
+        };
 
         contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-input-heading") });
         if (state.Inputs.Length == 0)
@@ -112,7 +116,8 @@ public sealed class FrontlineFactoryWindow : DefaultWindow
             var button = new Button
             {
                 Disabled = !recipe.CanSubmit,
-                Text = Loc.GetString("frontline-factory-produce", ("recipe", details)),
+                Text = Loc.GetString("frontline-factory-produce", ("recipe", details)).Replace(" → ", "\n→ "),
+                HorizontalExpand = true,
             };
             var recipeId = recipe.Id;
             button.OnPressed += _ => Submit?.Invoke(recipeId);
@@ -137,7 +142,12 @@ public sealed class FrontlineFactoryWindow : DefaultWindow
             });
         }
 
-        var scroll = new ScrollContainer();
+        var scroll = new ScrollContainer
+        {
+            HScrollEnabled = false,
+            HorizontalExpand = true,
+            VerticalExpand = true,
+        };
         scroll.AddChild(contents);
         ContentsContainer.AddChild(scroll);
     }
