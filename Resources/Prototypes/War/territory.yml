@@ -2,6 +2,7 @@
   id: TerritoryMarker
   parent: MarkerBase
   name: territory marker
+  categories: [ Frontline ]
   components:
   - type: Territory
     territory: Unassigned
@@ -29,6 +30,7 @@
   parent: TownHallBase
   id: TownHallCoreFactionOne
   name: faction one town hall
+  categories: [ Frontline ]
   components:
   - type: TownHall
     faction: FrontlineFactionOne
@@ -43,6 +45,7 @@
   parent: TownHallBase
   id: TownHallCoreFactionTwo
   name: faction two town hall
+  categories: [ Frontline ]
   components:
   - type: TownHall
     faction: FrontlineFactionTwo
@@ -57,6 +60,7 @@
   id: TownHallRuin
   parent: [BaseStructure, StructureHealthFurniture]
   name: destroyed town hall
+  categories: [ Frontline ]
   components:
   - type: Anchorable
   - type: Transform
@@ -74,6 +78,7 @@
   id: FactionSpawnPoint
   parent: MarkerBase
   name: faction spawn point
+  categories: [ Frontline ]
   components:
   - type: FactionSpawnPoint
     territory: Unassigned
@@ -86,6 +91,7 @@
   parent: BaseStructure
   name: resource field
   description: A strategic deposit that periodically exposes harvestable resources.
+  categories: [ Frontline ]
   components:
   - type: Sprite
     sprite: Objects/Materials/ore.rsi
@@ -102,6 +108,7 @@
   id: FrontlineResourceSpawnPoint
   parent: MarkerBase
   name: resource field spawn point
+  categories: [ Frontline ]
   components:
   - type: FrontlineResourceSpawnPoint
     fieldId: unassigned
@@ -125,6 +132,7 @@
   parent: FrontlineResourceNodeBase
   name: raw iron deposit
   description: A finite deposit of unrefined iron.
+  categories: [ Frontline ]
   components:
   - type: Sprite
     state: iron
