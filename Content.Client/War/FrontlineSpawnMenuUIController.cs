@@ -38,7 +38,7 @@ public sealed partial class FrontlineSpawnMenuUIController : UIController
 
     private void AttachFilter(EntitySpawnWindow window)
     {
-        if (window.GetChild(0) is not BoxContainer contents)
+        if (window.Contents.GetChild(0) is not BoxContainer contents)
             return;
 
         foreach (var child in contents.Children)
