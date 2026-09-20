@@ -1,7 +1,7 @@
 - type: gameMap
   id: PersistentWarGround
-  mapName: Frontline Ground Test
-  mapPath: /Maps/Frontline/frontline_ground_test.yml
+  mapName: Frontline Base Test
+  mapPath: /Maps/Frontline/base_test.yaml
   minPlayers: 0
   stations: {}
   maxRandomOffset: 0

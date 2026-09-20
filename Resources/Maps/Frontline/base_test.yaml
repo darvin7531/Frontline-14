@@ -5,7 +5,7 @@ meta:
   forkId: ""
   forkVersion: ""
   time: 09/20/2026 15:42:52
-  entityCount: 163
+  entityCount: 184
 maps:
 - 1
 grids:
@@ -30,6 +30,20 @@ entities:
     - type: ChunkContainer
       chunkEntities: []
     - type: OccluderTree
+    - type: MapAtmosphere
+      space: false
+      mixture:
+        temperature: 293.15
+        volume: 2500
+        moles:
+          Oxygen: 21.824879
+          Nitrogen: 82.10312
+        immutable: true
+    - type: MapLight
+      ambientLightColor: '#D8B059FF'
+    - type: LightCycle
+      initialOffset: false
+      duration: 2400
   - uid: 2
     components:
     - type: MetaData
@@ -121,21 +135,195 @@ entities:
     components:
     - type: Transform
       parent: 2
-      pos: 2.5,-1.5
+      pos: 5,-20
+  - uid: 164
+    components:
+    - type: Transform
+      parent: 2
+      pos: 45,-20
 - proto: FrontlineRefinery
   entities:
   - uid: 163
     components:
     - type: Transform
       parent: 2
-      pos: 3.5,-1.5
+      pos: 6,-20
+  - uid: 165
+    components:
+    - type: Transform
+      parent: 2
+      pos: 44,-20
 - proto: FrontlineResourceSpawnPoint
   entities:
   - uid: 162
     components:
     - type: Transform
       parent: 2
-      pos: 12.5,-5.5
+      pos: 20,-7
+    - type: FrontlineResourceSpawnPoint
+      fieldId: frontline-test-iron
+  - uid: 166
+    components:
+    - type: Transform
+      parent: 2
+      pos: 25,-7
+    - type: FrontlineResourceSpawnPoint
+      fieldId: frontline-test-iron
+  - uid: 167
+    components:
+    - type: Transform
+      parent: 2
+      pos: 30,-7
+    - type: FrontlineResourceSpawnPoint
+      fieldId: frontline-test-iron
+- proto: TerritoryMarker
+  entities:
+  - uid: 168
+    components:
+    - type: Transform
+      parent: 2
+      pos: 5,-15
+    - type: Territory
+      territory: frontline-one
+      boundsMin: -4,-12
+      boundsMax: 4,12
+  - uid: 169
+    components:
+    - type: Transform
+      parent: 2
+      pos: 15,-15
+    - type: Territory
+      territory: frontline-two
+      boundsMin: -4,-12
+      boundsMax: 4,12
+  - uid: 170
+    components:
+    - type: Transform
+      parent: 2
+      pos: 25,-15
+    - type: Territory
+      territory: frontline-three
+      boundsMin: -4,-12
+      boundsMax: 4,12
+  - uid: 171
+    components:
+    - type: Transform
+      parent: 2
+      pos: 35,-15
+    - type: Territory
+      territory: frontline-four
+      boundsMin: -4,-12
+      boundsMax: 4,12
+  - uid: 172
+    components:
+    - type: Transform
+      parent: 2
+      pos: 45,-15
+    - type: Territory
+      territory: frontline-five
+      boundsMin: -4,-12
+      boundsMax: 4,12
+- proto: TownHallCoreFactionOne
+  entities:
+  - uid: 173
+    components:
+    - type: Transform
+      parent: 2
+      pos: 5,-15
+    - type: TownHall
+      territory: frontline-one
+      faction: FrontlineFactionOne
+- proto: TownHallRuin
+  entities:
+  - uid: 174
+    components:
+    - type: Transform
+      parent: 2
+      pos: 15,-15
+    - type: TownHallRuin
+      territory: frontline-two
+  - uid: 175
+    components:
+    - type: Transform
+      parent: 2
+      pos: 25,-15
+    - type: TownHallRuin
+      territory: frontline-three
+  - uid: 176
+    components:
+    - type: Transform
+      parent: 2
+      pos: 35,-15
+    - type: TownHallRuin
+      territory: frontline-four
+- proto: TownHallCoreFactionTwo
+  entities:
+  - uid: 177
+    components:
+    - type: Transform
+      parent: 2
+      pos: 45,-15
+    - type: TownHall
+      territory: frontline-five
+      faction: FrontlineFactionTwo
+- proto: FactionSpawnPoint
+  entities:
+  - uid: 178
+    components:
+    - type: Transform
+      parent: 2
+      pos: 5,-13
+    - type: FactionSpawnPoint
+      territory: frontline-one
+  - uid: 179
+    components:
+    - type: Transform
+      parent: 2
+      pos: 15,-13
+    - type: FactionSpawnPoint
+      territory: frontline-two
+  - uid: 180
+    components:
+    - type: Transform
+      parent: 2
+      pos: 25,-13
+    - type: FactionSpawnPoint
+      territory: frontline-three
+  - uid: 181
+    components:
+    - type: Transform
+      parent: 2
+      pos: 35,-13
+    - type: FactionSpawnPoint
+      territory: frontline-four
+  - uid: 182
+    components:
+    - type: Transform
+      parent: 2
+      pos: 45,-13
+    - type: FactionSpawnPoint
+      territory: frontline-five
+- proto: FrontlineResourceField
+  entities:
+  - uid: 183
+    components:
+    - type: Transform
+      parent: 2
+      pos: 25,-7
+    - type: FrontlineResourceField
+      fieldId: frontline-test-iron
+      primaryNodePrototype: FrontlineIronResourceNode
+      maxReserveNodes: 6
+      maxActiveNodes: 3
+      replacementDelay: 1
+      replenishmentDelay: 5
+- proto: Pickaxe
+  entities:
+  - uid: 184
+    components:
+    - type: Transform
+      parent: 2
+      pos: 25,-9
 - proto: WallRock
   entities:
   - uid: 3

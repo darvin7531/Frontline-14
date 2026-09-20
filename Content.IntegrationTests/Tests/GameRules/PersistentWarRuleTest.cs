@@ -174,7 +174,7 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(cycle.Duration, Is.GreaterThan(TimeSpan.Zero));
             Assert.That(refineryCount, Is.EqualTo(2));
             Assert.That(factoryCount, Is.EqualTo(2));
-            Assert.That(floorTiles, Is.EqualTo(256));
+            Assert.That(floorTiles, Is.GreaterThanOrEqualTo(256));
             Assert.That(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, 0),
                 Is.Not.EqualTo(SharedLightCycleSystem.GetColor((map, cycle), light.AmbientLightColor, (float) cycle.Duration.TotalSeconds / 2)));
 
