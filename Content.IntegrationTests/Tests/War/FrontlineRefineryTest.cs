@@ -21,7 +21,7 @@ public sealed class FrontlineRefineryTest : GameTest
 {
     private static readonly ProtoId<TagPrototype> OreTag = "Ore";
 
-    private sealed partial class ReentrantStackMutationSystem : EntitySystem
+    public sealed partial class ReentrantStackMutationSystem : EntitySystem
     {
         public EntityUid Target;
         public bool Enabled;

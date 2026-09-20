@@ -5,7 +5,7 @@ meta:
   forkId: ""
   forkVersion: ""
   time: 08/31/2025 14:22:33
-  entityCount: 24
+  entityCount: 26
 maps:
 - 3
 grids:
@@ -275,5 +275,17 @@ entities:
     components:
     - type: Transform
       pos: -0.7,-0.6
+      parent: 2
+- proto: FrontlineFactory
+  entities:
+  - uid: 25
+    components:
+    - type: Transform
+      pos: -0.9,-0.4
+      parent: 2
+  - uid: 26
+    components:
+    - type: Transform
+      pos: -0.7,-0.4
       parent: 2
 ...
