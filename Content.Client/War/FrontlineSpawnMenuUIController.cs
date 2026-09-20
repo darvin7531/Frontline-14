@@ -56,7 +56,7 @@ public sealed partial class FrontlineSpawnMenuUIController : UIController
         row.AddChild(new Label
         {
             Text = Loc.GetString("frontline-spawn-filter-label"),
-            VerticalAlignment = VAlignment.Center,
+            VerticalAlignment = Control.VAlignment.Center,
         });
 
         var mode = new OptionButton
