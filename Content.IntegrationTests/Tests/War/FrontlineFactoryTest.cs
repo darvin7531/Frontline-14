@@ -58,14 +58,6 @@ public sealed class FrontlineFactoryTest : GameTest
           outputAmount: 1
           duration: 1
 
-        - type: frontlineFactoryRecipe
-          id: TestMissingLocalizationFrontlineFactoryRecipe
-          name: test-frontline-factory-missing-localization
-          input:
-            Steel: 1
-          output: Brutepack1
-          outputAmount: 1
-          duration: 1
         """;
 
     [Test]
@@ -90,12 +82,13 @@ public sealed class FrontlineFactoryTest : GameTest
     }
 
     [Test]
-    public void InvalidOutputAndMissingLocalizationAreNotAdvertised()
+    public void InvalidOutputAndMissingLocalizationAreRejected()
     {
-        var recipes = Pair.Server.System<FrontlineFactorySystem>().GetAvailableRecipes().Select(recipe => recipe.ID);
+        var system = Pair.Server.System<FrontlineFactorySystem>();
+        var recipes = system.GetAvailableRecipes().Select(recipe => recipe.ID);
 
         Assert.That(recipes, Does.Not.Contain("TestAbstractOutputFrontlineFactoryRecipe"));
-        Assert.That(recipes, Does.Not.Contain("TestMissingLocalizationFrontlineFactoryRecipe"));
+        Assert.That(system.HasValidLocalization("test-frontline-factory-missing-localization"), Is.False);
     }
 
     [Test]

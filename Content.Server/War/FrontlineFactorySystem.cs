@@ -167,10 +167,15 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                recipe.Input.Count > 0 &&
                recipe.OutputAmount > 0 &&
                recipe.Input.All(entry => entry.Value > 0 && IsSpawnableStack(entry.Key)) &&
-               _localization.HasString(recipe.Name) &&
+               HasValidLocalization(recipe.Name) &&
                !string.IsNullOrWhiteSpace(recipe.Output.Id) &&
                _prototypes.TryIndex<EntityPrototype>(recipe.Output, out var output) &&
                !output.Abstract;
+    }
+
+    internal bool HasValidLocalization(LocId name)
+    {
+        return _localization.HasString(name);
     }
 
     private bool IsSpawnableStack(ProtoId<StackPrototype> stackId)
