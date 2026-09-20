@@ -360,7 +360,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     break;
                 case InvalidMapCase.TooManyActiveResourceNodes:
                     SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
-                        .MaxActiveNodes = 3;
+                        .MaxActiveNodes = int.MaxValue;
                     break;
                 case InvalidMapCase.NegativeResourceDelay:
                     SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
