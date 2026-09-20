@@ -1,9 +1,13 @@
+using System.Collections.Generic;
 using System.Linq;
+using Content.Client.War;
 using Content.IntegrationTests.Fixtures;
 using Content.Server.GameTicking;
 using Content.Server.War;
 using Content.Shared.War;
 using Robust.Client.Console;
+using Robust.Client.UserInterface;
+using Robust.Client.UserInterface.Controls;
 using Robust.Server.Player;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Network;
@@ -19,6 +23,30 @@ public sealed class WarFactionMembershipTest : GameTest
         Dirty = true,
         DummyTicker = false,
     };
+
+    [Test]
+    public async Task FactionSelectorShowsAvailableFactionsWhenOpened()
+    {
+        var server = Pair.Server;
+        var war = server.System<WarStateSystem>();
+        var factions = server.System<WarFactionSystem>();
+        var account = ServerSession!.UserId;
+
+        await server.WaitPost(() =>
+        {
+            war.StartNewWar();
+            factions.ClearFaction(account);
+            factions.OpenSelector(server.ResolveDependency<IPlayerManager>().Sessions.Single());
+        });
+        await Pair.RunUntilSynced();
+
+        var ui = Pair.Client.ResolveDependency<IUserInterfaceManager>();
+        await Pair.Client.WaitAssertion(() =>
+        {
+            var window = ui.WindowRoot.Children.OfType<FactionSelectionWindow>().Single(control => control.IsOpen);
+            Assert.That(Descendants(window).OfType<Button>().ToArray(), Has.Length.EqualTo(2));
+        });
+    }
 
     [Test]
     public async Task MembershipSurvivesReconnectAndTechnicalRestartAndLocksFaction()
@@ -85,5 +113,15 @@ public sealed class WarFactionMembershipTest : GameTest
             Assert.That(factions.TryGetFaction(account, out _), Is.False);
             Assert.That(factions.TrySelectFaction(account, second), Is.True);
         });
+    }
+
+    private static IEnumerable<Control> Descendants(Control parent)
+    {
+        foreach (var child in parent.Children)
+        {
+            yield return child;
+            foreach (var descendant in Descendants(child))
+                yield return descendant;
+        }
     }
 }
