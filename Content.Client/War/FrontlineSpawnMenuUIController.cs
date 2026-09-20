@@ -50,7 +50,7 @@ public sealed partial class FrontlineSpawnMenuUIController : UIController
         var row = new BoxContainer
         {
             Name = FilterControlName,
-            Orientation = LayoutOrientation.Horizontal,
+            Orientation = BoxContainer.LayoutOrientation.Horizontal,
         };
 
         row.AddChild(new Label
