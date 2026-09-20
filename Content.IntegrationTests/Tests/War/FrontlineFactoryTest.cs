@@ -5,10 +5,12 @@ using Content.Server.Stack;
 using Content.Server.Storage.EntitySystems;
 using Content.Server.War;
 using Content.Shared.Hands.EntitySystems;
+using Content.Shared.Containers.ItemSlots;
 using Content.Shared.Storage.Components;
 using Content.Shared.Stacks;
 using Content.Shared.UserInterface;
 using Content.Shared.War;
+using Content.Shared.Weapons.Ranged.Systems;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Localization;
 using Robust.Shared.Map;
@@ -233,7 +235,7 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitAssertion(() => Assert.That(CountPrototype("Brutepack1"), Is.EqualTo(2)));
     }
 
-    [TestCase("FrontlineFactoryMk58", 20, 10f, "WeaponPistolMk58")]
+    [TestCase("FrontlineFactoryMk58", 20, 10f, "FrontlineWeaponPistolMk58")]
     [TestCase("FrontlineFactoryMagazinePistol", 5, 5f, "MagazinePistol")]
     [TestCase("FrontlineFactorySupplyCrate", 10, 5f, "FrontlineSupplyCrate")]
     public async Task ProductionJobsSpawnExpectedPhysicalOutput(
@@ -257,6 +259,39 @@ public sealed class FrontlineFactoryTest : GameTest
         });
         await Pair.RunSeconds(duration + 0.1f);
         await server.WaitAssertion(() => Assert.That(CountPrototype(output), Is.EqualTo(before + 1)));
+    }
+
+    [Test]
+    public async Task FactoryMk58IsUnloadedAndAcceptsProducedLoadedMagazine()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var factorySystem = server.System<FrontlineFactorySystem>();
+        var stackSystem = server.System<StackSystem>();
+        var slotSystem = server.System<ItemSlotsSystem>();
+        var gunSystem = server.System<SharedGunSystem>();
+        EntityUid gun = default;
+        EntityUid magazine = default;
+
+        await server.WaitPost(() =>
+        {
+            var factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
+            var steel = stackSystem.SpawnAtPosition(25, "Steel", map.GridCoords);
+            Assert.That(factorySystem.TrySubmitJob(factory, "FrontlineFactoryMk58", new[] { steel }), Is.True);
+            Assert.That(factorySystem.TrySubmitJob(factory, "FrontlineFactoryMagazinePistol", new[] { steel }), Is.True);
+        });
+        await Pair.RunSeconds(15.2f);
+        await server.WaitAssertion(() =>
+        {
+            gun = FindPrototype("FrontlineWeaponPistolMk58");
+            magazine = FindPrototype("MagazinePistol");
+            Assert.That(gun, Is.Not.EqualTo(EntityUid.Invalid));
+            Assert.That(magazine, Is.Not.EqualTo(EntityUid.Invalid));
+            Assert.That(gunSystem.GetAmmoCount(gun), Is.Zero);
+            Assert.That(gunSystem.GetAmmoCount(magazine), Is.EqualTo(10));
+        });
+        await server.WaitPost(() => Assert.That(slotSystem.TryInsert(gun, "gun_magazine", magazine, null), Is.True));
+        await server.WaitAssertion(() => Assert.That(gunSystem.GetAmmoCount(gun), Is.EqualTo(10)));
     }
 
     [Test]
@@ -471,6 +506,18 @@ public sealed class FrontlineFactoryTest : GameTest
 
     private int CountPrototype(string id) => SEntMan.EntityQuery<MetaDataComponent>()
         .Count(meta => meta.EntityPrototype?.ID == id);
+
+    private EntityUid FindPrototype(string id)
+    {
+        var query = SEntMan.EntityQueryEnumerator<MetaDataComponent>();
+        while (query.MoveNext(out var uid, out var metadata))
+        {
+            if (metadata.EntityPrototype?.ID == id)
+                return uid;
+        }
+
+        return EntityUid.Invalid;
+    }
 
     private static int SumContained(EntityUid factory, string stackType, IEntityManager entMan) =>
         entMan.GetComponent<FrontlineFactoryComponent>(factory).InputContainer.ContainedEntities

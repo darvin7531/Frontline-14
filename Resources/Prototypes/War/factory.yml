@@ -3,7 +3,7 @@
   name: frontline-factory-recipe-mk58
   input:
     Steel: 20
-  output: WeaponPistolMk58
+  output: FrontlineWeaponPistolMk58
   outputAmount: 1
   duration: 10
 
@@ -59,3 +59,14 @@
   parent: CrateGenericSteel
   name: frontline supply crate
   description: A public crate for physically transporting frontline supplies.
+
+- type: entity
+  id: FrontlineWeaponPistolMk58
+  parent: WeaponPistolMk58
+  name: frontline Mk 58
+  description: A conventional Mk 58 issued without a magazine for frontline production.
+  components:
+  - type: ItemSlots
+    slots:
+      gun_magazine:
+        startingItem: null
