@@ -6,6 +6,8 @@ namespace Content.IntegrationTests.Tests.War;
 [TestFixture]
 public sealed class FrontlineEntityCategoryTest : GameTest
 {
+    private const string FrontlineCategory = "Frontline";
+
     private static readonly string[] InitialFrontlineAssets =
     [
         "FrontlineFactory",
@@ -19,7 +21,7 @@ public sealed class FrontlineEntityCategoryTest : GameTest
     {
         var prototypes = Pair.Server.ResolveDependency<IPrototypeManager>();
 
-        Assert.That(prototypes.TryIndex<EntityCategoryPrototype>("Frontline", out var category), Is.True);
+        Assert.That(prototypes.TryIndex<EntityCategoryPrototype>(FrontlineCategory, out var category), Is.True);
         Assert.That(category, Is.Not.Null);
 
         foreach (var id in InitialFrontlineAssets)
