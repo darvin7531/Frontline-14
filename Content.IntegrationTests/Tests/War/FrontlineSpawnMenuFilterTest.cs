@@ -24,55 +24,62 @@ public sealed class FrontlineSpawnMenuFilterTest : GameTest
         var ui = client.ResolveDependency<IUserInterfaceManager>();
         var cfg = client.ResolveDependency<IConfigurationManager>();
         var prototypes = client.ResolveDependency<IPrototypeManager>();
+        var spawnController = ui.GetUIController<EntitySpawningUIController>();
 
         await client.WaitPost(() =>
         {
+            spawnController.CloseWindow();
             cfg.SetCVar(CVars.EntitiesCategoryFilter, string.Empty);
-            ui.GetUIController<EntitySpawningUIController>().ToggleWindow();
+            spawnController.ToggleWindow();
         });
 
-        await client.WaitAssertion(() =>
+        try
         {
-            var window = ui.WindowRoot.Children.OfType<EntitySpawnWindow>().Single(control => control.IsOpen);
-            var row = Descendants(window).Single(control => control.Name == FilterControlName);
-            var mode = Descendants(row).OfType<OptionButton>().Single();
+            await client.WaitAssertion(() =>
+            {
+                var window = ui.WindowRoot.Children.OfType<EntitySpawnWindow>().Single(control => control.IsOpen);
+                var row = Descendants(window).Single(control => control.Name == FilterControlName);
+                var mode = Descendants(row).OfType<OptionButton>().Single();
 
-            Assert.That(mode.ItemCount, Is.EqualTo(2));
-            Assert.That(mode.SelectedId, Is.EqualTo(0));
-        });
+                Assert.That(mode.ItemCount, Is.EqualTo(2));
+                Assert.That(mode.SelectedId, Is.EqualTo(0));
+            });
 
-        await client.WaitPost(() =>
+            await client.WaitPost(() =>
+            {
+                var window = ui.WindowRoot.Children.OfType<EntitySpawnWindow>().Single(control => control.IsOpen);
+                cfg.SetCVar(CVars.EntitiesCategoryFilter, FrontlineCategory);
+
+                // Trigger the standard spawn controller's existing list rebuild path.
+                window.SearchBar.SetText(" ", true);
+                window.SearchBar.SetText(string.Empty, true);
+            });
+
+            await client.WaitAssertion(() =>
+            {
+                var window = ui.WindowRoot.Children.OfType<EntitySpawnWindow>().Single(control => control.IsOpen);
+
+                Assert.That(prototypes.TryIndex<EntityCategoryPrototype>(FrontlineCategory, out var category), Is.True);
+                Assert.That(category, Is.Not.Null);
+
+                var expected = prototypes.EnumeratePrototypes<EntityPrototype>()
+                    .Count(prototype =>
+                        !prototype.Abstract &&
+                        !prototype.HideSpawnMenu &&
+                        prototype.Categories.Contains(category!));
+
+                Assert.That(window.PrototypeList.TotalItemCount, Is.EqualTo(expected));
+                Assert.That(expected, Is.GreaterThan(0));
+            });
+        }
+        finally
         {
-            var window = ui.WindowRoot.Children.OfType<EntitySpawnWindow>().Single(control => control.IsOpen);
-            cfg.SetCVar(CVars.EntitiesCategoryFilter, FrontlineCategory);
-
-            // Trigger the standard spawn controller's existing list rebuild path.
-            window.SearchBar.SetText(" ", true);
-            window.SearchBar.SetText(string.Empty, true);
-        });
-
-        await client.WaitAssertion(() =>
-        {
-            var window = ui.WindowRoot.Children.OfType<EntitySpawnWindow>().Single(control => control.IsOpen);
-
-            Assert.That(prototypes.TryIndex<EntityCategoryPrototype>(FrontlineCategory, out var category), Is.True);
-            Assert.That(category, Is.Not.Null);
-
-            var expected = prototypes.EnumeratePrototypes<EntityPrototype>()
-                .Count(prototype =>
-                    !prototype.Abstract &&
-                    !prototype.HideSpawnMenu &&
-                    prototype.Categories.Contains(category!));
-
-            Assert.That(window.PrototypeList.TotalItemCount, Is.EqualTo(expected));
-            Assert.That(expected, Is.GreaterThan(0));
-        });
-
-        await client.WaitPost(() =>
-        {
-            cfg.SetCVar(CVars.EntitiesCategoryFilter, string.Empty);
-            ui.GetUIController<EntitySpawningUIController>().CloseWindow();
-        });
+            await client.WaitPost(() =>
+            {
+                cfg.SetCVar(CVars.EntitiesCategoryFilter, string.Empty);
+                spawnController.CloseWindow();
+            });
+        }
     }
 
     private static IEnumerable<Control> Descendants(Control parent)
