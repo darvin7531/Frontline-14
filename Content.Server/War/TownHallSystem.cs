@@ -99,7 +99,7 @@ public sealed partial class TownHallSystem : EntitySystem
             !TryComp<ActorComponent>(args.User, out var actor) ||
             !_factions.TryGetFaction(actor.PlayerSession.UserId, out var faction) ||
             _territories.GetState(new TerritoryId(ruin.Comp.TerritoryId), Transform(ruin).MapID) != TerritoryState.Neutral ||
-            !TryComp<StackComponent>(args.Used, out var stack) || stack.StackTypeId != "Steel")
+            !TryComp<StackComponent>(args.Used, out var stack) || stack.StackTypeId != "BasicMaterials")
             return;
 
         args.Handled = _doAfter.TryStartDoAfter(new DoAfterArgs(EntityManager, args.User, TimeSpan.FromSeconds(2),
@@ -114,12 +114,12 @@ public sealed partial class TownHallSystem : EntitySystem
             !_factions.TryGetFaction(actor.PlayerSession.UserId, out var faction) || faction.Id != args.FactionId ||
             !_prototypes.TryIndex<FrontlineFactionPrototype>(faction.Id, out var factionPrototype) ||
             _territories.GetState(territory, Transform(ruin).MapID) != TerritoryState.Neutral ||
-            !TryComp<StackComponent>(used, out var stack) || stack.StackTypeId != "Steel" ||
+            !TryComp<StackComponent>(used, out var stack) || stack.StackTypeId != "BasicMaterials" ||
             !_stack.TryUse((used, stack), 1))
             return;
 
-        ruin.Comp.DepositedSteel++;
-        if (ruin.Comp.DepositedSteel < ruin.Comp.RequiredSteel)
+        ruin.Comp.DepositedBasicMaterials++;
+        if (ruin.Comp.DepositedBasicMaterials < ruin.Comp.RequiredBasicMaterials)
         {
             Dirty(ruin);
             return;

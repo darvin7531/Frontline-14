@@ -76,7 +76,7 @@ public sealed class FrontlineFactoryTest : GameTest
             recipe.Duration > TimeSpan.Zero &&
             localization.HasString(recipe.Name)));
         Assert.That(recipes, Has.All.Matches<FrontlineFactoryRecipePrototype>(recipe =>
-            recipe.Input.Keys.Single().Id == "Steel"));
+            recipe.Input.Keys.Single().Id == "BasicMaterials"));
         Assert.That(recipes.Single(recipe => recipe.ID == "FrontlineFactoryMk58").Input.Values.Single(), Is.EqualTo(20));
         Assert.That(recipes.Single(recipe => recipe.ID == "FrontlineFactoryMagazinePistol").Input.Values.Single(), Is.EqualTo(5));
         Assert.That(recipes.Single(recipe => recipe.ID == "FrontlineFactoryBrutepack").Input.Values.Single(), Is.EqualTo(5));
@@ -109,7 +109,7 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            input = stacks.SpawnAtPosition(10, "Steel", map.GridCoords);
+            input = stacks.SpawnAtPosition(10, "BasicMaterials", map.GridCoords);
             var user = SEntMan.SpawnEntity("MobHuman", map.GridCoords.Offset(new Vector2i(10, 0)));
             Assert.That(hands.TryPickupAnyHand(user, input), Is.True);
             remote = system.TryInsertPlayerInput(factory, user, input);
@@ -134,7 +134,7 @@ public sealed class FrontlineFactoryTest : GameTest
         var system = server.System<FrontlineFactorySystem>();
         var stacks = server.System<StackSystem>();
         EntityUid factory = default;
-        EntityUid steel = default;
+        EntityUid materials = default;
         EntityUid outside = default;
         var outsideBefore = 0;
         bool accepted = false;
@@ -142,17 +142,17 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            steel = stacks.SpawnAtPosition(20, "Steel", map.GridCoords);
-            outside = stacks.SpawnAtPosition(100, "Steel", map.GridCoords);
+            materials = stacks.SpawnAtPosition(20, "BasicMaterials", map.GridCoords);
+            outside = stacks.SpawnAtPosition(100, "BasicMaterials", map.GridCoords);
             outsideBefore = SComp<StackComponent>(outside).Count;
-            Assert.That(system.TryInsertInput(factory, steel), Is.True);
+            Assert.That(system.TryInsertInput(factory, materials), Is.True);
             accepted = system.TrySubmitContainedJob(factory, "FrontlineFactoryMk58");
         });
 
         await server.WaitAssertion(() =>
         {
             Assert.That(accepted, Is.True);
-            Assert.That(SumContained(factory, "Steel", SEntMan), Is.Zero);
+            Assert.That(SumContained(factory, "BasicMaterials", SEntMan), Is.Zero);
             Assert.That(SComp<StackComponent>(outside).Count, Is.EqualTo(outsideBefore));
             Assert.That(system.GetJobs(factory), Has.Count.EqualTo(1));
         });
@@ -166,7 +166,7 @@ public sealed class FrontlineFactoryTest : GameTest
         var system = server.System<FrontlineFactorySystem>();
         var stacks = server.System<StackSystem>();
         EntityUid factory = default;
-        EntityUid steel = default;
+        EntityUid materials = default;
         EntityUid outside = default;
         EntityUid rawIron = default;
         EntityUid technologyAlloy = default;
@@ -177,12 +177,14 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            steel = stacks.SpawnAtPosition(1, "Steel", map.GridCoords);
-            outside = stacks.SpawnAtPosition(10, "Steel", map.GridCoords);
+            materials = stacks.SpawnAtPosition(1, "BasicMaterials", map.GridCoords);
+            outside = stacks.SpawnAtPosition(10, "BasicMaterials", map.GridCoords);
+            var vanillaSteel = stacks.SpawnAtPosition(5, "Steel", map.GridCoords);
             rawIron = stacks.SpawnAtPosition(5, "FrontlineRawIron", map.GridCoords);
             technologyAlloy = stacks.SpawnAtPosition(1, "TechnologyAlloy", map.GridCoords);
             user = SEntMan.SpawnEntity("MobHuman", map.GridCoords.Offset(new Vector2i(10, 0)));
-            Assert.That(system.TryInsertInput(factory, steel), Is.True);
+            Assert.That(system.TryInsertInput(factory, materials), Is.True);
+            Assert.That(system.TryInsertInput(factory, vanillaSteel), Is.False);
             Assert.That(system.TryInsertInput(factory, rawIron), Is.False);
             Assert.That(system.TryInsertInput(factory, technologyAlloy), Is.False);
             Assert.That(system.TrySubmitContainedJob(factory, "MissingFrontlineFactoryRecipe"), Is.False);
@@ -196,22 +198,22 @@ public sealed class FrontlineFactoryTest : GameTest
         {
             Assert.That(remoteSubmit, Is.False);
             Assert.That(remoteEject, Is.False);
-            Assert.That(SComp<StackComponent>(steel).Count, Is.EqualTo(1));
+            Assert.That(SComp<StackComponent>(materials).Count, Is.EqualTo(1));
             Assert.That(SComp<StackComponent>(outside).Count, Is.EqualTo(10));
-            Assert.That(SComp<FrontlineFactoryComponent>(factory).InputContainer.Contains(steel), Is.True);
+            Assert.That(SComp<FrontlineFactoryComponent>(factory).InputContainer.Contains(materials), Is.True);
             Assert.That(system.GetJobs(factory), Is.Empty);
         });
 
         await server.WaitPost(() =>
         {
             system.EjectInputs(factory);
-            Assert.That(SEntMan.EntityExists(steel), Is.True);
+            Assert.That(SEntMan.EntityExists(materials), Is.True);
         });
         await server.WaitAssertion(() =>
         {
             Assert.That(SComp<FrontlineFactoryComponent>(factory).InputContainer.ContainedEntities, Is.Empty);
-            Assert.That(SEntMan.EntityExists(steel), Is.True);
-            Assert.That(SComp<StackComponent>(steel).Count, Is.EqualTo(1));
+            Assert.That(SEntMan.EntityExists(materials), Is.True);
+            Assert.That(SComp<StackComponent>(materials).Count, Is.EqualTo(1));
         });
     }
 
@@ -226,8 +228,8 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             var factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            var steel = stacks.SpawnAtPosition(5, "Steel", map.GridCoords);
-            Assert.That(system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { steel }), Is.True);
+            var materials = stacks.SpawnAtPosition(5, "BasicMaterials", map.GridCoords);
+            Assert.That(system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { materials }), Is.True);
         });
         await Pair.RunSeconds(4.9f);
         await server.WaitAssertion(() => Assert.That(CountPrototype("Brutepack1"), Is.Zero));
@@ -254,8 +256,8 @@ public sealed class FrontlineFactoryTest : GameTest
         {
             before = CountPrototype(output);
             var factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            var steel = stacks.SpawnAtPosition(cost, "Steel", map.GridCoords);
-            Assert.That(system.TrySubmitJob(factory, recipe, new[] { steel }), Is.True);
+            var materials = stacks.SpawnAtPosition(cost, "BasicMaterials", map.GridCoords);
+            Assert.That(system.TrySubmitJob(factory, recipe, new[] { materials }), Is.True);
         });
         await Pair.RunSeconds(duration + 0.1f);
         await server.WaitAssertion(() => Assert.That(CountPrototype(output), Is.EqualTo(before + 1)));
@@ -276,9 +278,9 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             var factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            var steel = stackSystem.SpawnAtPosition(25, "Steel", map.GridCoords);
-            Assert.That(factorySystem.TrySubmitJob(factory, "FrontlineFactoryMk58", new[] { steel }), Is.True);
-            Assert.That(factorySystem.TrySubmitJob(factory, "FrontlineFactoryMagazinePistol", new[] { steel }), Is.True);
+            var materials = stackSystem.SpawnAtPosition(25, "BasicMaterials", map.GridCoords);
+            Assert.That(factorySystem.TrySubmitJob(factory, "FrontlineFactoryMk58", new[] { materials }), Is.True);
+            Assert.That(factorySystem.TrySubmitJob(factory, "FrontlineFactoryMagazinePistol", new[] { materials }), Is.True);
         });
         await Pair.RunSeconds(15.2f);
         await server.WaitAssertion(() =>
@@ -306,9 +308,9 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            var steel = stacks.SpawnAtPosition(10, "Steel", map.GridCoords);
-            Assert.That(system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { steel }), Is.True);
-            Assert.That(system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { steel }), Is.True);
+            var materials = stacks.SpawnAtPosition(10, "BasicMaterials", map.GridCoords);
+            Assert.That(system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { materials }), Is.True);
+            Assert.That(system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { materials }), Is.True);
         });
         await Pair.RunSeconds(1f);
         await server.WaitAssertion(() =>
@@ -333,9 +335,9 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             factory = SEntMan.SpawnEntity("TestTwoSlotFrontlineFactory", map.GridCoords);
-            var steel = stacks.SpawnAtPosition(15, "Steel", map.GridCoords);
+            var materials = stacks.SpawnAtPosition(15, "BasicMaterials", map.GridCoords);
             for (var i = 0; i < 3; i++)
-                Assert.That(system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { steel }), Is.True);
+                Assert.That(system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { materials }), Is.True);
             persisted = SEntMan.SpawnEntity("TestPersistedFrontlineFactory", map.GridCoords);
             SComp<FrontlineFactoryComponent>(persisted).Jobs.Insert(0, new FrontlineFactoryJob
             {
@@ -366,7 +368,7 @@ public sealed class FrontlineFactoryTest : GameTest
     }
 
     [Test]
-    public async Task ReentrantInputMutationRollsBackConsumedSteel()
+    public async Task ReentrantInputMutationRollsBackConsumedBasicMaterials()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -379,8 +381,8 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            var first = stacks.SpawnAtPosition(3, "Steel", map.GridCoords);
-            var second = stacks.SpawnAtPosition(2, "Steel", map.GridCoords);
+            var first = stacks.SpawnAtPosition(3, "BasicMaterials", map.GridCoords);
+            var second = stacks.SpawnAtPosition(2, "BasicMaterials", map.GridCoords);
             mutation.Target = second;
             mutation.Enabled = true;
             accepted = system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { first, second });
@@ -389,13 +391,13 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitAssertion(() =>
         {
             Assert.That(accepted, Is.False);
-            Assert.That(CountStacks("Steel"), Is.EqualTo(3));
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(3));
             Assert.That(system.GetJobs(factory), Is.Empty);
         });
     }
 
     [Test]
-    public async Task FinalInputEventTerminatingFactoryRollsBackSteel()
+    public async Task FinalInputEventTerminatingFactoryRollsBackBasicMaterials()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -407,16 +409,16 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             var factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            var steel = stacks.SpawnAtPosition(5, "Steel", map.GridCoords);
+            var materials = stacks.SpawnAtPosition(5, "BasicMaterials", map.GridCoords);
             mutation.Target = factory;
             mutation.Enabled = true;
-            accepted = system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { steel });
+            accepted = system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { materials });
         });
         await Pair.RunTicksSync(1);
         await server.WaitAssertion(() =>
         {
             Assert.That(accepted, Is.False);
-            Assert.That(CountStacks("Steel"), Is.EqualTo(5));
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
         });
     }
 
@@ -434,16 +436,16 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            var steel = stacks.SpawnAtPosition(5, "Steel", map.GridCoords);
+            var materials = stacks.SpawnAtPosition(5, "BasicMaterials", map.GridCoords);
             mutation.RestoreCurrent = true;
             mutation.Enabled = true;
-            accepted = system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { steel });
+            accepted = system.TrySubmitJob(factory, "FrontlineFactoryBrutepack", new[] { materials });
         });
         await Pair.RunTicksSync(1);
         await server.WaitAssertion(() =>
         {
             Assert.That(accepted, Is.False);
-            Assert.That(CountStacks("Steel"), Is.EqualTo(5));
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
             Assert.That(system.GetJobs(factory), Is.Empty);
         });
     }
@@ -460,8 +462,8 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitPost(() =>
         {
             factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
-            var steel = stacks.SpawnAtPosition(5, "Steel", map.GridCoords);
-            Assert.That(system.TryInsertInput(factory, steel), Is.True);
+            var materials = stacks.SpawnAtPosition(5, "BasicMaterials", map.GridCoords);
+            Assert.That(system.TryInsertInput(factory, materials), Is.True);
             Assert.That(system.TrySubmitContainedJob(factory, "FrontlineFactoryBrutepack"), Is.True);
         });
         await server.WaitAssertion(() =>
