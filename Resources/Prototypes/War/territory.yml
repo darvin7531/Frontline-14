@@ -141,8 +141,3 @@
     maxYield: 20
     harvestAmount: 5
     extractionTime: 1
-    bonusDrops:
-    - output: RawTechnologyMaterial
-      chance: 0.05
-      minAmount: 1
-      maxAmount: 1

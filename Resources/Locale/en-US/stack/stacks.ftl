@@ -118,6 +118,7 @@ stack-gold-ore = gold ore
 stack-rough-diamond = rough diamond
 stack-iron-ore = iron ore
 stack-frontline-raw-iron = frontline raw iron
+stack-basic-materials = basic materials
 stack-raw-technology-material = raw technology material
 stack-technology-alloy = technology alloy
 stack-plasma-ore = plasma ore

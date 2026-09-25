@@ -79,6 +79,13 @@
 
 - type: stack
   parent: BaseMediumStack
+  id: BasicMaterials
+  name: stack-basic-materials
+  icon: { sprite: /Textures/Objects/Materials/ore.rsi, state: silver }
+  spawn: BasicMaterials1
+
+- type: stack
+  parent: BaseMediumStack
   id: RawTechnologyMaterial
   name: stack-raw-technology-material
   icon: { sprite: /Textures/Objects/Materials/ore.rsi, state: uranium }

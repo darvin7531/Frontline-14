@@ -273,6 +273,7 @@ public sealed class FrontlineRefineryTest : GameTest
         var map = await Pair.CreateTestMap();
         var tagSystem = server.System<TagSystem>();
         EntityUid rawIron = default;
+        EntityUid basicMaterials = default;
         EntityUid rawTechnology = default;
         EntityUid technologyAlloy = default;
         EntityUid vanillaOre = default;
@@ -280,6 +281,7 @@ public sealed class FrontlineRefineryTest : GameTest
         await server.WaitPost(() =>
         {
             rawIron = SEntMan.SpawnEntity("FrontlineRawIron1", map.GridCoords);
+            basicMaterials = SEntMan.SpawnEntity("BasicMaterials1", map.GridCoords);
             rawTechnology = SEntMan.SpawnEntity("RawTechnologyMaterial1", map.GridCoords);
             technologyAlloy = SEntMan.SpawnEntity("TechnologyAlloy1", map.GridCoords);
             vanillaOre = SEntMan.SpawnEntity("SteelOre1", map.GridCoords);
@@ -290,6 +292,8 @@ public sealed class FrontlineRefineryTest : GameTest
             Assert.Multiple(() =>
             {
                 Assert.That(tagSystem.HasTag(rawIron, OreTag), Is.False);
+                Assert.That(tagSystem.HasTag(basicMaterials, OreTag), Is.False);
+                Assert.That(SComp<StackComponent>(basicMaterials).StackTypeId, Is.EqualTo("BasicMaterials"));
                 Assert.That(tagSystem.HasTag(rawTechnology, OreTag), Is.False);
                 Assert.That(tagSystem.HasTag(technologyAlloy, OreTag), Is.False);
                 Assert.That(tagSystem.HasTag(vanillaOre, OreTag), Is.True);
@@ -428,7 +432,7 @@ public sealed class FrontlineRefineryTest : GameTest
                 Assert.That(first, Is.True);
                 Assert.That(second, Is.False);
                 Assert.That(CountStacks("FrontlineRawIron"), Is.Zero);
-                Assert.That(CountStacks("Steel"), Is.EqualTo(5));
+                Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
             });
         });
     }
@@ -464,19 +468,19 @@ public sealed class FrontlineRefineryTest : GameTest
             var jobs = refinerySystem.GetJobs(refinery);
             Assert.That(jobs[0].Remaining.TotalSeconds, Is.EqualTo(2.5).Within(0.2));
             Assert.That(jobs[1].Remaining, Is.EqualTo(TimeSpan.FromSeconds(5)));
-            Assert.That(CountStacks("Steel"), Is.Zero);
+            Assert.That(CountStacks("BasicMaterials"), Is.Zero);
         });
 
         await Pair.RunSeconds(2.6f);
         await server.WaitAssertion(() =>
         {
-            Assert.That(CountStacks("Steel"), Is.EqualTo(5));
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
             var job = refinerySystem.GetJobs(refinery).Single();
             Assert.That(job.Remaining.TotalSeconds, Is.EqualTo(4.9).Within(0.2));
         });
 
         await Pair.RunSeconds(5f);
-        await server.WaitAssertion(() => Assert.That(CountStacks("Steel"), Is.EqualTo(10)));
+        await server.WaitAssertion(() => Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(10)));
     }
 
     [Test]
@@ -495,12 +499,12 @@ public sealed class FrontlineRefineryTest : GameTest
         });
 
         await Pair.RunSeconds(0.5f);
-        await server.WaitAssertion(() => Assert.That(CountStacks("Steel"), Is.Zero));
+        await server.WaitAssertion(() => Assert.That(CountStacks("BasicMaterials"), Is.Zero));
 
         await Pair.RunSeconds(0.6f);
         await server.WaitAssertion(() =>
         {
-            Assert.That(CountStacks("Steel"), Is.EqualTo(5));
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
             Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Is.Empty);
         });
     }
@@ -725,7 +729,7 @@ public sealed class FrontlineRefineryTest : GameTest
         await server.WaitAssertion(() =>
         {
             Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Is.Empty);
-            Assert.That(CountStacks("Steel"), Is.EqualTo(5));
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
         });
     }
 
@@ -750,14 +754,14 @@ public sealed class FrontlineRefineryTest : GameTest
         await Pair.RunSeconds(6f);
         await server.WaitAssertion(() =>
         {
-            Assert.That(CountStacks("Steel"), Is.Zero);
+            Assert.That(CountStacks("BasicMaterials"), Is.Zero);
             Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs.Single().Remaining,
                 Is.EqualTo(TimeSpan.FromSeconds(5)));
         });
 
         await server.WaitPost(() => mapSystem.SetPaused(map.MapId, false));
         await Pair.RunSeconds(5.1f);
-        await server.WaitAssertion(() => Assert.That(CountStacks("Steel"), Is.EqualTo(5)));
+        await server.WaitAssertion(() => Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5)));
     }
 
     private int CountStacks(string stackType)
