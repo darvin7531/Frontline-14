@@ -3,7 +3,6 @@ using Content.IntegrationTests.Fixtures;
 using Content.Server.War;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
-using Robust.Shared.Console;
 using Robust.Shared.Map;
 using Robust.Shared.Prototypes;
 
@@ -159,13 +158,13 @@ public sealed class TerritoryVictoryTest : GameTest
     }
 
     [Test]
-    public async Task CaptureTerritoryCommandReplacesObjective()
+    public async Task ForceCaptureReplacesObjective()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
         var war = server.System<WarStateSystem>();
         var territories = server.System<TerritorySystem>();
-        var console = server.ResolveDependency<IConsoleHost>();
+        var halls = server.System<TownHallSystem>();
         var territory = new TerritoryId("debug-territory");
         var factionOne = new FactionId("FrontlineFactionOne");
         var factionTwo = new FactionId("FrontlineFactionTwo");
@@ -181,7 +180,7 @@ public sealed class TerritoryVictoryTest : GameTest
             var duplicate = SEntMan.SpawnEntity(null, map.GridCoords);
             SEntMan.AddComponent<TownHallRuinComponent>(duplicate).TerritoryId = territory.Id;
 
-            console.ExecuteCommand($"captureterritory {territory.Id} {factionTwo.Id}");
+            Assert.That(halls.ForceCapture(territory, factionTwo, map.MapId), Is.True);
         });
 
         await server.WaitAssertion(() =>
