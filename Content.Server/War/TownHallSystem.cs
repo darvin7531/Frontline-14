@@ -39,7 +39,7 @@ public sealed partial class TownHallSystem : EntitySystem
         Comp<TownHallRuinComponent>(ruin).TerritoryId = hall.Comp.TerritoryId;
     }
 
-    public bool ForceCapture(TerritoryId territory, FactionId faction, MapId? mapId = null)
+    public bool ForceCapture(TerritoryId territory, FactionId faction, MapId mapId)
     {
         if (!_prototypes.TryIndex<FrontlineFactionPrototype>(faction.Id, out var factionPrototype))
             return false;
@@ -50,7 +50,7 @@ public sealed partial class TownHallSystem : EntitySystem
         while (halls.MoveNext(out var uid, out var hall, out var transform))
         {
             if (hall.TerritoryId != territory.Id ||
-                mapId is { } hallMap && transform.MapID != hallMap ||
+                transform.MapID != mapId ||
                 !_territories.Contains(territory, transform.Coordinates))
                 continue;
 
@@ -63,7 +63,7 @@ public sealed partial class TownHallSystem : EntitySystem
         while (ruins.MoveNext(out var uid, out var ruin, out var transform))
         {
             if (ruin.TerritoryId != territory.Id ||
-                mapId is { } ruinMap && transform.MapID != ruinMap ||
+                transform.MapID != mapId ||
                 !_territories.Contains(territory, transform.Coordinates))
                 continue;
 
@@ -98,7 +98,7 @@ public sealed partial class TownHallSystem : EntitySystem
         if (args.Handled || !args.CanReach ||
             !TryComp<ActorComponent>(args.User, out var actor) ||
             !_factions.TryGetFaction(actor.PlayerSession.UserId, out var faction) ||
-            _territories.GetState(new TerritoryId(ruin.Comp.TerritoryId)) != TerritoryState.Neutral ||
+            _territories.GetState(new TerritoryId(ruin.Comp.TerritoryId), Transform(ruin).MapID) != TerritoryState.Neutral ||
             !TryComp<StackComponent>(args.Used, out var stack) || stack.StackTypeId != "Steel")
             return;
 
@@ -113,7 +113,7 @@ public sealed partial class TownHallSystem : EntitySystem
             !TryComp<ActorComponent>(args.User, out var actor) ||
             !_factions.TryGetFaction(actor.PlayerSession.UserId, out var faction) || faction.Id != args.FactionId ||
             !_prototypes.TryIndex<FrontlineFactionPrototype>(faction.Id, out var factionPrototype) ||
-            _territories.GetState(territory) != TerritoryState.Neutral ||
+            _territories.GetState(territory, Transform(ruin).MapID) != TerritoryState.Neutral ||
             !TryComp<StackComponent>(used, out var stack) || stack.StackTypeId != "Steel" ||
             !_stack.TryUse((used, stack), 1))
             return;

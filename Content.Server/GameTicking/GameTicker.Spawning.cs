@@ -401,8 +401,8 @@ namespace Content.Server.GameTicking
                 return;
 
             if (IsPersistentWar &&
-                (!_warFactions.TryGetFaction(player.UserId, out var faction) ||
-                 _factionSpawns.GetAvailableSpawns(faction).Count == 0))
+                (!_map.MapExists(DefaultMap) || !_warFactions.TryGetFaction(player.UserId, out var faction) ||
+                 _factionSpawns.GetAvailableSpawns(faction, DefaultMap).Count == 0))
                 return;
 
             if (!_userDb.IsLoadComplete(player))

@@ -76,8 +76,12 @@ public sealed class PersistentWarRuleTest : GameTest
     {
         UnassignedTerritory,
         FourTerritories,
+        UnknownTerritory,
+        InvalidTerritoryBounds,
         MissingSpawn,
+        UnknownSpawnTerritory,
         WrongHallFaction,
+        UnknownHallTerritory,
         ObjectiveOutsideBounds,
         DuplicateObjective,
         WrongObjectiveComposition,
@@ -191,6 +195,16 @@ public sealed class PersistentWarRuleTest : GameTest
             atmosphere.SetMapSpace(map, false, atmos);
         });
 
+        await Server.WaitPost(() =>
+        {
+            var firstMarker = FindMapEntity<TerritoryComponent>(ticker.DefaultMap,
+                territory => territory.TerritoryId == "frontline-one");
+            var secondArea = SSpawnAtPosition(null, SComp<TransformComponent>(firstMarker).Coordinates);
+            SEntMan.AddComponent<TerritoryComponent>(secondArea)
+                .Configure(new TerritoryId("frontline-one"), new Vector2(-1f), new Vector2(1f));
+        });
+        await Server.WaitAssertion(() => Assert.DoesNotThrow(() => Server.System<PersistentWarMapValidatorSystem>().Validate(map)));
+
         await Pair.RunUntilSynced();
         await Pair.Client.WaitAssertion(() =>
         {
@@ -242,7 +256,7 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(error!.Message, Does.Contain("PersistentWar map must include MapAtmosphere."));
             Assert.That(error.Message, Does.Contain("PersistentWar map must include MapLight."));
             Assert.That(error.Message, Does.Contain("PersistentWar map must include LightCycle."));
-            Assert.That(error.Message, Does.Contain("PersistentWar map must define exactly five territories (found 0)."));
+            Assert.That(error.Message, Does.Contain("PersistentWar map territory 'frontline-one' must have at least one area."));
             Assert.That(error.Message, Does.Contain("PersistentWar map must include a town hall or ruin for each territory."));
             Assert.That(error.Message, Does.Contain("PersistentWar map must include a faction spawn point for each territory."));
             Assert.That(error.Message, Does.Contain("PersistentWar map must include exactly one starting town hall for FrontlineFactionOne"));
@@ -253,17 +267,25 @@ public sealed class PersistentWarRuleTest : GameTest
     [TestCase(InvalidMapCase.UnassignedTerritory,
         "PersistentWar map territory markers must not use Unassigned.")]
     [TestCase(InvalidMapCase.FourTerritories,
-        "PersistentWar map must define exactly five territories (found 4).")]
+        "PersistentWar map territory 'frontline-five' must have at least one area.")]
+    [TestCase(InvalidMapCase.UnknownTerritory,
+        "PersistentWar map references unknown territory 'unlisted'.")]
+    [TestCase(InvalidMapCase.InvalidTerritoryBounds,
+        "PersistentWar map territory 'frontline-one' has invalid bounds.")]
     [TestCase(InvalidMapCase.MissingSpawn,
         "PersistentWar map territory 'frontline-one' must include a faction spawn point within its bounds.")]
+    [TestCase(InvalidMapCase.UnknownSpawnTerritory,
+        "PersistentWar map faction spawn references unknown or non-containing territory 'unlisted'.")]
     [TestCase(InvalidMapCase.WrongHallFaction,
         "PersistentWar map must include exactly one starting town hall for FrontlineFactionOne")]
+    [TestCase(InvalidMapCase.UnknownHallTerritory,
+        "PersistentWar map town hall references unknown or non-containing territory 'unlisted'.")]
     [TestCase(InvalidMapCase.ObjectiveOutsideBounds,
         "PersistentWar map territory 'frontline-one' must include exactly one objective within its bounds")]
     [TestCase(InvalidMapCase.DuplicateObjective,
         "PersistentWar map territory 'frontline-one' must include exactly one objective within its bounds")]
     [TestCase(InvalidMapCase.WrongObjectiveComposition,
-        "PersistentWar map must include exactly two town halls and three ruins")]
+        "PersistentWar map must include exactly one starting town hall for FrontlineFactionOne")]
     [TestCase(InvalidMapCase.InvalidResourceField,
         "PersistentWar resource field 'invalid-field' must have MaxActiveNodes greater than zero.")]
     [TestCase(InvalidMapCase.ResourceFieldWithoutSpawnPoints,
@@ -310,13 +332,29 @@ public sealed class PersistentWarRuleTest : GameTest
                     SEntMan.DeleteEntity(FindMapEntity<TerritoryComponent>(mapId,
                         territory => territory.TerritoryId == "frontline-five"));
                     break;
+                case InvalidMapCase.UnknownTerritory:
+                    SComp<TerritoryComponent>(FindMapEntity<TerritoryComponent>(mapId,
+                        territory => territory.TerritoryId == "frontline-five")).TerritoryId = "unlisted";
+                    break;
+                case InvalidMapCase.InvalidTerritoryBounds:
+                    SComp<TerritoryComponent>(FindMapEntity<TerritoryComponent>(mapId,
+                        territory => territory.TerritoryId == "frontline-one")).BoundsMin = new Vector2(100f);
+                    break;
                 case InvalidMapCase.MissingSpawn:
                     SEntMan.DeleteEntity(FindMapEntity<FactionSpawnPointComponent>(mapId,
                         spawn => spawn.TerritoryId == "frontline-one"));
                     break;
+                case InvalidMapCase.UnknownSpawnTerritory:
+                    SComp<FactionSpawnPointComponent>(FindMapEntity<FactionSpawnPointComponent>(mapId,
+                        spawn => spawn.TerritoryId == "frontline-one")).TerritoryId = "unlisted";
+                    break;
                 case InvalidMapCase.WrongHallFaction:
                     SComp<TownHallComponent>(FindMapEntity<TownHallComponent>(mapId,
                         hall => hall.FactionId == "FrontlineFactionOne")).FactionId = "FrontlineFactionTwo";
+                    break;
+                case InvalidMapCase.UnknownHallTerritory:
+                    SComp<TownHallComponent>(FindMapEntity<TownHallComponent>(mapId,
+                        hall => hall.FactionId == "FrontlineFactionOne")).TerritoryId = "unlisted";
                     break;
                 case InvalidMapCase.ObjectiveOutsideBounds:
                     var territory = SComp<TerritoryComponent>(FindMapEntity<TerritoryComponent>(mapId,

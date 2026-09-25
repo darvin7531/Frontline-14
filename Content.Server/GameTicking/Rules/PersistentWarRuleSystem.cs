@@ -107,7 +107,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
 
     private bool TrySpawnPlayer(ICommonSession player, HumanoidCharacterProfile profile, FactionId faction)
     {
-        var spawns = _factionSpawns.GetAvailableSpawns(faction);
+        var spawns = _factionSpawns.GetAvailableSpawns(faction, GameTicker.DefaultMap);
         if (spawns.Count == 0)
             return false;
 

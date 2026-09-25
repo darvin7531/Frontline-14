@@ -122,31 +122,62 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
     private void ValidateTerritories(EntityUid map, List<string> errors)
     {
         var mapId = Comp<MapComponent>(map).MapId;
-        var territories = new Dictionary<string, Entity<TerritoryComponent, TransformComponent>>();
+        if (!_prototypes.TryIndex<FrontlineWarPrototype>(FrontlineWarPrototype.MainWar, out var war))
+        {
+            errors.Add("PersistentWar map has no war definition.");
+            return;
+        }
+
+        var configured = new HashSet<string>();
+        long totalPoints = 0;
+        foreach (var id in war.Territories)
+        {
+            if (!configured.Add(id.Id))
+                errors.Add($"PersistentWar war definition duplicates territory '{id}'.");
+            if (!_prototypes.TryIndex<FrontlineTerritoryPrototype>(id, out var prototype))
+                errors.Add($"PersistentWar war definition references unknown territory '{id}'.");
+            else if (prototype.VictoryPoints <= 0)
+                errors.Add($"PersistentWar territory '{id}' must have positive victory points.");
+            else
+                totalPoints += prototype.VictoryPoints;
+        }
+
+        if (war.Territories.Count == 0 || war.RequiredVictoryPoints <= totalPoints / 2 || war.RequiredVictoryPoints > totalPoints)
+            errors.Add("PersistentWar war definition must have territories and a victory threshold above half the available points.");
+
+        var territories = new HashSet<string>();
         var markers = EntityQueryEnumerator<TerritoryComponent, TransformComponent>();
         while (markers.MoveNext(out var uid, out var territory, out var xform))
         {
             if (TerminatingOrDeleted(uid) || xform.MapID != mapId)
                 continue;
 
-            if (territory.TerritoryId == "Unassigned")
+            if (string.IsNullOrWhiteSpace(territory.TerritoryId) || territory.TerritoryId == "Unassigned")
             {
                 errors.Add("PersistentWar map territory markers must not use Unassigned.");
                 continue;
             }
 
-            if (!territories.TryAdd(territory.TerritoryId, (uid, territory, xform)))
-                errors.Add($"PersistentWar map territory '{territory.TerritoryId}' is duplicated.");
+            if (!configured.Contains(territory.TerritoryId))
+                errors.Add($"PersistentWar map references unknown territory '{territory.TerritoryId}'.");
+            if (!float.IsFinite(territory.BoundsMin.X) || !float.IsFinite(territory.BoundsMin.Y) ||
+                !float.IsFinite(territory.BoundsMax.X) || !float.IsFinite(territory.BoundsMax.Y) ||
+                territory.BoundsMin.X > territory.BoundsMax.X || territory.BoundsMin.Y > territory.BoundsMax.Y)
+                errors.Add($"PersistentWar map territory '{territory.TerritoryId}' has invalid bounds.");
+            territories.Add(territory.TerritoryId);
         }
-
-        if (territories.Count != 5)
-            errors.Add($"PersistentWar map must define exactly five territories (found {territories.Count}).");
 
         var halls = GetMapEntities<TownHallComponent>(mapId);
         var ruins = GetMapEntities<TownHallRuinComponent>(mapId);
         var spawns = GetMapEntities<FactionSpawnPointComponent>(mapId);
-        foreach (var id in territories.Keys)
+        foreach (var id in configured)
         {
+            if (!territories.Contains(id))
+            {
+                errors.Add($"PersistentWar map territory '{id}' must have at least one area.");
+                continue;
+            }
+
             var objectives = CountContained(halls, id) + CountContained(ruins, id);
             if (objectives != 1)
                 errors.Add($"PersistentWar map territory '{id}' must include exactly one objective within its bounds (found {objectives}).");
@@ -155,8 +186,25 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
                 errors.Add($"PersistentWar map territory '{id}' must include a faction spawn point within its bounds.");
         }
 
-        if (halls.Count != 2 || ruins.Count != 3)
-            errors.Add($"PersistentWar map must include exactly two town halls and three ruins (found {halls.Count} halls and {ruins.Count} ruins).");
+        foreach (var hall in halls)
+        {
+            if (!configured.Contains(hall.Comp1.TerritoryId) || !_territories.Contains(new TerritoryId(hall.Comp1.TerritoryId), hall.Comp2.Coordinates))
+                errors.Add($"PersistentWar map town hall references unknown or non-containing territory '{hall.Comp1.TerritoryId}'.");
+            if (!_prototypes.HasIndex<FrontlineFactionPrototype>(hall.Comp1.FactionId))
+                errors.Add($"PersistentWar map town hall references unknown faction '{hall.Comp1.FactionId}'.");
+        }
+
+        foreach (var ruin in ruins)
+        {
+            if (!configured.Contains(ruin.Comp1.TerritoryId) || !_territories.Contains(new TerritoryId(ruin.Comp1.TerritoryId), ruin.Comp2.Coordinates))
+                errors.Add($"PersistentWar map ruin references unknown or non-containing territory '{ruin.Comp1.TerritoryId}'.");
+        }
+
+        foreach (var spawn in spawns)
+        {
+            if (!configured.Contains(spawn.Comp1.TerritoryId) || !_territories.Contains(new TerritoryId(spawn.Comp1.TerritoryId), spawn.Comp2.Coordinates))
+                errors.Add($"PersistentWar map faction spawn references unknown or non-containing territory '{spawn.Comp1.TerritoryId}'.");
+        }
 
         if (territories.Count == 0)
         {
@@ -164,8 +212,8 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
             errors.Add("PersistentWar map must include a faction spawn point for each territory.");
         }
 
-        ValidateStartingHall(territories, halls, "FrontlineFactionOne", errors);
-        ValidateStartingHall(territories, halls, "FrontlineFactionTwo", errors);
+        foreach (var faction in _prototypes.EnumeratePrototypes<FrontlineFactionPrototype>())
+            ValidateStartingHall(territories, halls, faction.ID, errors);
     }
 
     private List<Entity<T, TransformComponent>> GetMapEntities<T>(MapId mapId) where T : IComponent
@@ -205,7 +253,7 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
     }
 
     private void ValidateStartingHall(
-        Dictionary<string, Entity<TerritoryComponent, TransformComponent>> territories,
+        HashSet<string> territories,
         List<Entity<TownHallComponent, TransformComponent>> halls,
         string faction,
         List<string> errors)
@@ -213,8 +261,8 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         var count = 0;
         foreach (var hall in halls)
         {
-            if (hall.Comp1.FactionId == faction && territories.TryGetValue(hall.Comp1.TerritoryId, out var territory) &&
-                _territories.Contains(new TerritoryId(territory.Comp1.TerritoryId), hall.Comp2.Coordinates))
+            if (hall.Comp1.FactionId == faction && territories.Contains(hall.Comp1.TerritoryId) &&
+                _territories.Contains(new TerritoryId(hall.Comp1.TerritoryId), hall.Comp2.Coordinates))
                 count++;
         }
 
