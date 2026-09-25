@@ -48,7 +48,7 @@ public sealed class WarVictoryWindow : DefaultWindow
         ContentsContainer.RemoveAllChildren();
         var contents = new BoxContainer { Orientation = LayoutOrientation.Vertical };
         contents.AddChild(new Label { Text = Loc.GetString("frontline-victory-faction", ("faction", faction)) });
-        contents.AddChild(new Label { Text = Loc.GetString("frontline-victory-territories", ("owned", victory.TerritoriesHeld), ("total", 5)) });
+        contents.AddChild(new Label { Text = Loc.GetString("frontline-victory-territories", ("owned", victory.TerritoriesHeld), ("total", victory.TotalTerritories)) });
         contents.AddChild(new Label { Text = Loc.GetString("frontline-victory-duration", ("days", victory.Duration.Days), ("hours", victory.Duration.Hours)) });
         Return.Text = Loc.GetString("frontline-victory-return-lobby");
         contents.AddChild(Return);

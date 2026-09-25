@@ -6,9 +6,9 @@ namespace Content.Server.War;
 
 public sealed partial class TerritorySystem : EntitySystem
 {
-    public int CountOwned(FactionId faction)
+    public int CountOwned(FactionId faction, MapId? mapId = null)
     {
-        return GetTerritories().Count(territory => TryGetOwner(territory, out var owner) && owner == faction);
+        return GetTerritories(mapId).Count(territory => TryGetOwner(territory, out var owner, mapId) && owner == faction);
     }
 
     public HashSet<TerritoryId> GetTerritories(MapId? mapId = null)
@@ -24,13 +24,14 @@ public sealed partial class TerritorySystem : EntitySystem
         return territoryIds;
     }
 
-    public TerritoryState GetState(TerritoryId territory)
+    public TerritoryState GetState(TerritoryId territory, MapId? mapId = null)
     {
         var owners = new HashSet<FactionId>();
         var halls = EntityQueryEnumerator<TownHallComponent, TransformComponent>();
         while (halls.MoveNext(out var uid, out var hall, out var xform))
         {
-            if (TerminatingOrDeleted(uid) || hall.TerritoryId != territory.Id || !Contains(territory, xform.Coordinates))
+            if (TerminatingOrDeleted(uid) || hall.TerritoryId != territory.Id ||
+                mapId is { } map && xform.MapID != map || !Contains(territory, xform.Coordinates))
                 continue;
 
             owners.Add(new FactionId(hall.FactionId));
@@ -41,13 +42,14 @@ public sealed partial class TerritorySystem : EntitySystem
         return owners.Count == 1 ? TerritoryState.Owned : TerritoryState.Neutral;
     }
 
-    public bool TryGetOwner(TerritoryId territory, out FactionId faction)
+    public bool TryGetOwner(TerritoryId territory, out FactionId faction, MapId? mapId = null)
     {
         faction = default;
         var halls = EntityQueryEnumerator<TownHallComponent, TransformComponent>();
         while (halls.MoveNext(out var uid, out var hall, out var xform))
         {
-            if (TerminatingOrDeleted(uid) || hall.TerritoryId != territory.Id || !Contains(territory, xform.Coordinates))
+            if (TerminatingOrDeleted(uid) || hall.TerritoryId != territory.Id ||
+                mapId is { } map && xform.MapID != map || !Contains(territory, xform.Coordinates))
                 continue;
 
             var owner = new FactionId(hall.FactionId);
@@ -68,7 +70,8 @@ public sealed partial class TerritorySystem : EntitySystem
             if (TerminatingOrDeleted(uid) || definition.TerritoryId != territory.Id || xform.GridUid != coordinates.EntityId)
                 continue;
 
-            return definition.Contains(coordinates.Position - xform.Coordinates.Position);
+            if (definition.Contains(coordinates.Position - xform.Coordinates.Position))
+                return true;
         }
 
         return false;

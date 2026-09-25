@@ -242,8 +242,9 @@ namespace Content.Client.Lobby
                 : Loc.GetString("frontline-faction-unselected");
             Lobby!.FactionStatus.Text = Loc.GetString("frontline-faction-status", ("faction", factionName));
             Lobby.WarStatus.Text = Loc.GetString("frontline-war-status", ("warId", _gameTicker.WarId), ("status", Loc.GetString(_gameTicker.WarEnded ? "frontline-war-ended" : "frontline-war-active")));
-            Lobby.TerritoryStatus.Text = Loc.GetString("frontline-territory-status", ("owned", _gameTicker.FactionTerritories), ("total", 5));
-            Lobby.VictoryStatus.Text = Loc.GetString("frontline-victory-status", ("required", 4), ("total", 5));
+            var warDefinition = _protoMan.TryIndex<FrontlineWarPrototype>(FrontlineWarPrototype.MainWar, out var war) ? war : null;
+            Lobby.TerritoryStatus.Text = Loc.GetString("frontline-territory-status", ("owned", _gameTicker.FactionTerritories), ("total", warDefinition?.Territories.Count ?? 0));
+            Lobby.VictoryStatus.Text = Loc.GetString("frontline-victory-status", ("required", warDefinition?.RequiredVictoryPoints ?? 0));
             Lobby.ChooseFactionButton.Visible = frontline && !_gameTicker.WarEnded && _gameTicker.Faction == null;
             Lobby.DeployUnavailable.Visible = frontline && _gameTicker.Faction == null;
             Lobby.DeployUnavailable.Text = Loc.GetString("frontline-deploy-unavailable");

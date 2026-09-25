@@ -1,0 +1,39 @@
+- type: frontlineWar
+  id: MainWar
+  territories:
+  - frontline-one
+  - frontline-two
+  - frontline-three
+  - frontline-four
+  - frontline-five
+  requiredVictoryPoints: 4
+
+- type: frontlineTerritory
+  id: frontline-one
+  name: frontline-territory-one-name
+  description: frontline-territory-one-description
+  victoryPoints: 1
+
+- type: frontlineTerritory
+  id: frontline-two
+  name: frontline-territory-two-name
+  description: frontline-territory-two-description
+  victoryPoints: 1
+
+- type: frontlineTerritory
+  id: frontline-three
+  name: frontline-territory-three-name
+  description: frontline-territory-three-description
+  victoryPoints: 2
+
+- type: frontlineTerritory
+  id: frontline-four
+  name: frontline-territory-four-name
+  description: frontline-territory-four-description
+  victoryPoints: 1
+
+- type: frontlineTerritory
+  id: frontline-five
+  name: frontline-territory-five-name
+  description: frontline-territory-five-description
+  victoryPoints: 1

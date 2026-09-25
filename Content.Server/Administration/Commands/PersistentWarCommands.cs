@@ -45,6 +45,7 @@ public sealed partial class WarStateCommand : IConsoleCommand
 public sealed partial class TerritoriesCommand : IConsoleCommand
 {
     [Dependency] private IEntityManager _entities = default!;
+    [Dependency] private IPrototypeManager _prototypes = default!;
 
     public string Command => "territories";
     public string Description => "Lists territory ownership on the active map.";
@@ -69,8 +70,11 @@ public sealed partial class TerritoriesCommand : IConsoleCommand
         var territories = _entities.System<TerritorySystem>();
         foreach (var territory in territories.GetTerritories(mapComponent.MapId).OrderBy(id => id.Id))
         {
-            var owner = territories.TryGetOwner(territory, out var faction) ? faction.Id : "neutral";
-            shell.WriteLine($"{territory.Id}: {territories.GetState(territory)} ({owner})");
+            var owner = territories.TryGetOwner(territory, out var faction, mapComponent.MapId) ? faction.Id : "neutral";
+            var name = _prototypes.TryIndex<FrontlineTerritoryPrototype>(territory.Id, out var prototype)
+                ? Loc.GetString(prototype.Name)
+                : territory.Id;
+            shell.WriteLine($"{name} [{territory.Id}]: {territories.GetState(territory, mapComponent.MapId)} ({owner})");
         }
     }
 
@@ -99,8 +103,13 @@ public sealed partial class CaptureTerritoryCommand : IConsoleCommand
         var faction = new FactionId(args[1]);
         var ticker = _entities.System<GameTicker>();
         var maps = _entities.System<SharedMapSystem>();
-        var mapId = maps.MapExists(ticker.DefaultMap) ? ticker.DefaultMap : (MapId?) null;
-        if (!_entities.System<TownHallSystem>().ForceCapture(territory, faction, mapId))
+        if (!maps.MapExists(ticker.DefaultMap))
+        {
+            shell.WriteError("No active map.");
+            return;
+        }
+
+        if (!_entities.System<TownHallSystem>().ForceCapture(territory, faction, ticker.DefaultMap))
         {
             shell.WriteError("Unknown territory, faction, or objective.");
             return;

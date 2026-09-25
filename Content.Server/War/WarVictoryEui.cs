@@ -5,9 +5,9 @@ using Content.Shared.War;
 
 namespace Content.Server.War;
 
-public sealed class WarVictoryEui(int warId, FactionId winner, int territoriesHeld, TimeSpan duration) : BaseEui
+public sealed class WarVictoryEui(int warId, FactionId winner, int territoriesHeld, int totalTerritories, TimeSpan duration) : BaseEui
 {
-    public override EuiStateBase GetNewState() => new WarVictoryEuiState(warId, winner, territoriesHeld, duration);
+    public override EuiStateBase GetNewState() => new WarVictoryEuiState(warId, winner, territoriesHeld, totalTerritories, duration);
 
     public override void HandleMessage(EuiMessageBase msg)
     {
