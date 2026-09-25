@@ -298,7 +298,7 @@ public sealed class FrontlineRefineryTest : GameTest
     }
 
     [Test]
-    public async Task IronJobConsumesInputAndProducesSteelAfterDelay()
+    public async Task IronJobConsumesInputAndProducesBasicMaterialsAfterDelay()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -320,17 +320,18 @@ public sealed class FrontlineRefineryTest : GameTest
         {
             Assert.That(accepted, Is.True);
             Assert.That(SEntMan.EntityExists(input), Is.False);
-            Assert.That(CountStacks("Steel"), Is.Zero);
+            Assert.That(CountStacks("BasicMaterials"), Is.Zero);
             Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Has.Count.EqualTo(1));
         });
 
         await Pair.RunSeconds(4.9f);
-        await server.WaitAssertion(() => Assert.That(CountStacks("Steel"), Is.Zero));
+        await server.WaitAssertion(() => Assert.That(CountStacks("BasicMaterials"), Is.Zero));
 
         await Pair.RunSeconds(0.2f);
         await server.WaitAssertion(() =>
         {
-            Assert.That(CountStacks("Steel"), Is.EqualTo(5));
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
+            Assert.That(CountStacks("Steel"), Is.Zero);
             Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Is.Empty);
         });
     }
