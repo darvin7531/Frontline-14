@@ -1,3 +1,4 @@
+#nullable enable
 using Content.IntegrationTests.Fixtures;
 using Content.Shared.War;
 using Content.Shared.Storage;
@@ -13,11 +14,13 @@ namespace Content.IntegrationTests.Tests.War;
 [TestFixture]
 public sealed class FrontlineSupplyCrateTest : GameTest
 {
+    private static readonly EntProtoId SupplyCrate = "FrontlineSupplyCrate";
+
     [Test]
     public void SupplyCrateDeclaresProductMetadata()
     {
         var prototypes = Pair.Server.ResolveDependency<IPrototypeManager>();
-        var crate = prototypes.Index<EntityPrototype>("FrontlineSupplyCrate");
+        var crate = prototypes.Index(SupplyCrate);
         Assert.That(crate.Components.ContainsKey("FrontlineSupplyCrate"), Is.True);
     }
 
