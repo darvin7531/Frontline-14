@@ -21,6 +21,8 @@ public sealed class FrontlineEntityCategoryTest : GameTest
         "FrontlineWeaponPistolMk58",
         "FrontlineRefinery",
         "FrontlineRawIron",
+        "BasicMaterials",
+        "BasicMaterials1",
         "RawTechnologyMaterial",
         "TechnologyAlloy",
         "FrontlineResourceField",

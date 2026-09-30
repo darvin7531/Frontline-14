@@ -401,6 +401,29 @@
     count: 1
 
 - type: entity
+  parent: FrontlineRefinedMaterialBase
+  id: BasicMaterials
+  name: basic materials
+  description: Refined material for Frontline production and reconstruction.
+  suffix: Full
+  categories: [ Frontline ]
+  components:
+  - type: Stack
+    stackType: BasicMaterials
+  - type: Sprite
+    state: silver
+  - type: Item
+    heldPrefix: silver
+
+- type: entity
+  parent: BasicMaterials
+  id: BasicMaterials1
+  suffix: Single
+  components:
+  - type: Stack
+    count: 1
+
+- type: entity
   parent: FrontlineRawMaterialBase
   id: RawTechnologyMaterial
   name: raw technology material

@@ -12,6 +12,7 @@ using Content.Server.GameTicking;
 using Content.Server.GameTicking.Presets;
 using Content.Server.GameTicking.Rules.Components;
 using Content.Server.Mind;
+using Content.Server.Stack;
 using Content.Server.War;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.Components;
@@ -19,6 +20,9 @@ using Content.Shared.CCVar;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Light.Components;
 using Content.Shared.Light.EntitySystems;
+using Content.Shared.Hands.EntitySystems;
+using Content.Shared.Interaction;
+using Content.Shared.Stacks;
 using Content.Shared.War;
 
 using Robust.Shared.ContentPack;
@@ -523,6 +527,70 @@ public sealed class PersistentWarRuleTest : GameTest
         });
 
         ticker.SetGamePreset((GamePresetPrototype) null);
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task RuinRepairUsesBasicMaterialsInsteadOfSteel()
+    {
+        var ticker = Server.System<GameTicker>();
+        var factions = Server.System<WarFactionSystem>();
+        var stacks = Server.System<StackSystem>();
+        var hands = Server.System<SharedHandsSystem>();
+        var interaction = Server.System<SharedInteractionSystem>();
+        var territory = new TerritoryId("frontline-three");
+        var faction = new FactionId("FrontlineFactionOne");
+        EntityUid ruin = default;
+        EntityUid body = default;
+        EntityUid materials = default;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+
+        await Server.WaitPost(() =>
+        {
+            factions.ClearFaction(ServerSession!.UserId);
+            Assert.That(factions.TrySelectFaction(ServerSession.UserId, faction), Is.True);
+            ticker.MakeJoinGame(ServerSession, EntityUid.Invalid, silent: true);
+            body = ServerSession.AttachedEntity!.Value;
+            ruin = FindMapEntity<TownHallRuinComponent>(ticker.DefaultMap, entry => entry.TerritoryId == territory.Id);
+            var coordinates = SComp<TransformComponent>(ruin).Coordinates;
+            SEntMan.System<SharedTransformSystem>().SetCoordinates(body, coordinates);
+            SComp<TownHallRuinComponent>(ruin).RequiredBasicMaterials = 2;
+
+            var steel = stacks.SpawnAtPosition(2, "Steel", coordinates);
+            Assert.That(interaction.InteractDoAfter(body, steel, ruin, coordinates, true), Is.False);
+
+            materials = stacks.SpawnAtPosition(2, "BasicMaterials", coordinates);
+            Assert.That(hands.TryPickupAnyHand(body, materials), Is.True);
+            Assert.That(interaction.InteractDoAfter(body, materials, ruin, coordinates, true), Is.True);
+        });
+
+        await Pair.RunSeconds(2.1f);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SComp<TownHallRuinComponent>(ruin).DepositedBasicMaterials, Is.EqualTo(1));
+            Assert.That(SComp<StackComponent>(materials).Count, Is.EqualTo(1));
+        });
+
+        await Server.WaitPost(() =>
+        {
+            var coordinates = SComp<TransformComponent>(ruin).Coordinates;
+            Assert.That(interaction.InteractDoAfter(body, materials, ruin, coordinates, true), Is.True);
+        });
+        await Pair.RunSeconds(2.1f);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.EntityExists(ruin), Is.False);
+            var hall = FindMapEntity<TownHallComponent>(ticker.DefaultMap, entry => entry.TerritoryId == territory.Id);
+            Assert.That(SComp<TownHallComponent>(hall).FactionId, Is.EqualTo(faction.Id));
+        });
     }
 
     [Test]

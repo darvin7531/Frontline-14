@@ -4,7 +4,7 @@
   input:
     FrontlineRawIron: 5
   output:
-    Steel: 5
+    BasicMaterials: 5
   duration: 5
 
 - type: frontlineRefineryRecipe

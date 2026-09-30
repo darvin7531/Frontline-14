@@ -7,6 +7,7 @@ using Content.Server.War;
 using Content.Shared.DoAfter;
 using Content.Shared.Hands.Components;
 using Content.Shared.Hands.EntitySystems;
+using Content.Shared.Interaction;
 using Content.Shared.Stacks;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
@@ -104,7 +105,7 @@ public sealed class FrontlineResourceFieldTest : GameTest
         """;
 
     [Test]
-    public async Task ProductionNodeUsesFrontlineRawIronAndTechnologyBonus()
+    public async Task ProductionNodeUsesOnlyFrontlineRawIron()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -119,7 +120,35 @@ public sealed class FrontlineResourceFieldTest : GameTest
         {
             var node = SEntMan.GetComponent<FrontlineResourceNodeComponent>(iron);
             Assert.That(node.Output.Id, Is.EqualTo("FrontlineRawIron"));
-            Assert.That(node.BonusDrops.Single().Output.Id, Is.EqualTo("RawTechnologyMaterial"));
+            Assert.That(node.BonusDrops, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task PickaxeInteractionExtractsFromProductionNode()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var hands = server.System<SharedHandsSystem>();
+        var interaction = server.System<SharedInteractionSystem>();
+
+        await server.WaitPost(() =>
+        {
+            var node = SEntMan.SpawnEntity("FrontlineIronResourceNode", map.GridCoords);
+            var user = SEntMan.SpawnEntity("TestFrontlineHarvester", map.GridCoords);
+            var tool = SEntMan.SpawnEntity("TestFrontlinePickaxe", map.GridCoords);
+            hands.AddHand(user, "hand", HandLocation.Left);
+            Assert.That(hands.TryPickupAnyHand(user, tool), Is.True);
+            Assert.That(interaction.InteractDoAfter(user, tool, node, map.GridCoords, true), Is.True);
+        });
+
+        await Pair.RunSeconds(1.1f);
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.EntityQuery<StackComponent>()
+                .Single(stack => stack.StackTypeId == "FrontlineRawIron").Count, Is.EqualTo(5));
+            Assert.That(SEntMan.EntityQuery<StackComponent>()
+                .Any(stack => stack.StackTypeId == "RawTechnologyMaterial"), Is.False);
         });
     }
 

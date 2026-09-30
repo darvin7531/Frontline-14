@@ -76,9 +76,9 @@ public sealed partial class TownHallRuinComponent : Component
     public string TerritoryId = string.Empty;
 
     [DataField]
-    public int RequiredSteel = 20;
+    public int RequiredBasicMaterials = 20;
 
-    public int DepositedSteel;
+    public int DepositedBasicMaterials;
 }
 
 [RegisterComponent]
