@@ -2,7 +2,6 @@ using System.Linq;
 using Content.IntegrationTests.Fixtures;
 using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.Stack;
-using Content.Server.Storage.EntitySystems;
 using Content.Server.War;
 using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Containers.ItemSlots;
@@ -478,31 +477,34 @@ public sealed class FrontlineFactoryTest : GameTest
     }
 
     [Test]
-    public async Task SupplyCrateStoresAndReturnsPhysicalSupplies()
+    public async Task SupplyCrateIsPortableWithoutPhysicalContents()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
-        var storage = server.System<EntityStorageSystem>();
+        var hands = server.System<SharedHandsSystem>();
         EntityUid crate = default;
-        EntityUid item = default;
+        EntityUid user = default;
 
         await server.WaitPost(() =>
         {
             crate = SEntMan.SpawnEntity("FrontlineSupplyCrate", map.GridCoords);
-            item = SEntMan.SpawnEntity("WeaponPistolMk58", map.GridCoords);
-            Assert.That(storage.Insert(item, crate), Is.True);
+            user = SEntMan.SpawnEntity("MobHuman", map.GridCoords);
         });
         await server.WaitAssertion(() =>
         {
-            var contents = SComp<EntityStorageComponent>(crate).Contents.ContainedEntities;
-            Assert.That(contents, Is.EqualTo(new[] { item }));
-            Assert.That(SEntMan.EntityExists(item), Is.True);
+            Assert.That(SEntMan.HasComponent<EntityStorageComponent>(crate), Is.False);
+            Assert.That(SEntMan.HasComponent<Content.Shared.Storage.StorageComponent>(crate), Is.False);
         });
-        await server.WaitPost(() => Assert.That(storage.Remove(item, crate), Is.True));
+        await server.WaitPost(() =>
+        {
+            Assert.That(hands.TryPickupAnyHand(user, crate), Is.True);
+            Assert.That(hands.TryDrop(user, crate), Is.True);
+        });
         await server.WaitAssertion(() =>
         {
-            Assert.That(SComp<EntityStorageComponent>(crate).Contents.ContainedEntities, Is.Empty);
-            Assert.That(SEntMan.EntityExists(item), Is.True);
+            Assert.That(SEntMan.EntityExists(crate), Is.True);
+            Assert.That(SEntMan.System<SharedTransformSystem>().GetMapCoordinates(crate).MapId,
+                Is.EqualTo(map.MapId));
         });
     }
 
