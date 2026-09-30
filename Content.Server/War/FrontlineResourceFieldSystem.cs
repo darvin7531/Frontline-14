@@ -30,7 +30,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
         SubscribeLocalEvent<FrontlineResourceFieldComponent, ExaminedEvent>(OnFieldExamined);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, EntityTerminatingEvent>(OnNodeTerminating);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, MapInitEvent>(OnNodeMapInit);
-        SubscribeLocalEvent<FrontlineResourceNodeComponent, AfterInteractEvent>(OnNodeInteract);
+        SubscribeLocalEvent<FrontlineResourceNodeComponent, AfterInteractUsingEvent>(OnNodeInteract);
         SubscribeLocalEvent<FrontlineResourceNodeComponent, FrontlineResourceExtractionDoAfterEvent>(OnExtractionComplete);
     }
 
@@ -61,7 +61,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
             node.Comp.RemainingYield = node.Comp.MaxYield;
     }
 
-    private void OnNodeInteract(Entity<FrontlineResourceNodeComponent> node, ref AfterInteractEvent args)
+    private void OnNodeInteract(Entity<FrontlineResourceNodeComponent> node, ref AfterInteractUsingEvent args)
     {
         if (args.Handled || !args.CanReach)
             return;

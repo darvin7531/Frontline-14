@@ -22,7 +22,7 @@ public sealed partial class TownHallSystem : EntitySystem
     public override void Initialize()
     {
         SubscribeLocalEvent<TownHallComponent, EntityTerminatingEvent>(OnTownHallTerminating);
-        SubscribeLocalEvent<TownHallRuinComponent, AfterInteractEvent>(OnRuinInteract);
+        SubscribeLocalEvent<TownHallRuinComponent, AfterInteractUsingEvent>(OnRuinInteract);
         SubscribeLocalEvent<TownHallRuinComponent, TownHallRepairDoAfterEvent>(OnRepairComplete);
     }
 
@@ -93,7 +93,7 @@ public sealed partial class TownHallSystem : EntitySystem
         return true;
     }
 
-    private void OnRuinInteract(Entity<TownHallRuinComponent> ruin, ref AfterInteractEvent args)
+    private void OnRuinInteract(Entity<TownHallRuinComponent> ruin, ref AfterInteractUsingEvent args)
     {
         if (args.Handled || !args.CanReach ||
             !TryComp<ActorComponent>(args.User, out var actor) ||
@@ -121,7 +121,6 @@ public sealed partial class TownHallSystem : EntitySystem
         ruin.Comp.DepositedBasicMaterials++;
         if (ruin.Comp.DepositedBasicMaterials < ruin.Comp.RequiredBasicMaterials)
         {
-            Dirty(ruin);
             return;
         }
 
