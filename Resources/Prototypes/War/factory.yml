@@ -57,10 +57,22 @@
 
 - type: entity
   id: FrontlineSupplyCrate
-  parent: CrateGenericSteel
+  parent: BaseItem
   name: frontline supply crate
-  description: A public crate for physically transporting frontline supplies.
+  description: A sealed batch of five soldier supplies for a base stockpile.
   categories: [ Frontline ]
+  components:
+  - type: Item
+    size: Huge
+  - type: Sprite
+    sprite: Structures/Storage/Crates/generic.rsi
+    state: icon
+  - type: Icon
+    sprite: Structures/Storage/Crates/generic.rsi
+    state: icon
+  - type: FrontlineSupplyCrate
+    product: SoldierSupplies
+    amount: 5
 
 - type: entity
   id: FrontlineWeaponPistolMk58

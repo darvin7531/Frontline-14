@@ -18,6 +18,9 @@ public sealed class FrontlineEntityCategoryTest : GameTest
     [
         "FrontlineFactory",
         "FrontlineSupplyCrate",
+        "FrontlineWeaponCrate",
+        "FrontlineAmmoCrate",
+        "FrontlineMedicalCrate",
         "FrontlineWeaponPistolMk58",
         "FrontlineRefinery",
         "FrontlineRawIron",

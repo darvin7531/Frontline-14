@@ -1,0 +1,48 @@
+- type: frontlineSupplyProduct
+  id: SoldierSupplies
+  name: frontline-supply-product-soldier-supplies
+
+- type: frontlineSupplyProduct
+  id: FrontlineWeaponPistolMk58
+  name: frontline-supply-product-mk58
+  entity: FrontlineWeaponPistolMk58
+
+- type: frontlineSupplyProduct
+  id: MagazinePistol
+  name: frontline-supply-product-magazine-pistol
+  entity: MagazinePistol
+
+- type: frontlineSupplyProduct
+  id: Brutepack1
+  name: frontline-supply-product-brutepack
+  entity: Brutepack1
+
+- type: entity
+  id: FrontlineWeaponCrate
+  parent: FrontlineSupplyCrate
+  name: frontline weapon crate
+  description: A sealed batch of five unloaded Mk 58 pistols for a base stockpile.
+  components:
+  - type: FrontlineSupplyCrate
+    product: FrontlineWeaponPistolMk58
+    amount: 5
+
+- type: entity
+  id: FrontlineAmmoCrate
+  parent: FrontlineSupplyCrate
+  name: frontline ammo crate
+  description: A sealed batch of five loaded pistol magazines for a base stockpile.
+  components:
+  - type: FrontlineSupplyCrate
+    product: MagazinePistol
+    amount: 5
+
+- type: entity
+  id: FrontlineMedicalCrate
+  parent: FrontlineSupplyCrate
+  name: frontline medical crate
+  description: A sealed batch of five trauma treatment packs for a base stockpile.
+  components:
+  - type: FrontlineSupplyCrate
+    product: Brutepack1
+    amount: 5
