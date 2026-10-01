@@ -392,6 +392,9 @@ public sealed partial class AntagSelectionSystem
     [PublicAPI]
     public void SpawnGhostRole(Entity<AntagSelectionComponent> gameRule, AntagSpecifierPrototype proto, bool assert = false)
     {
+        if (!GameTicker.IsGameRuleAdded(gameRule))
+            return;
+
         if (proto.SpawnerPrototype is not { } spawnerPrototype)
         {
             Debug.Assert(!assert, $"Tried to spawn a ghost role for {proto.ID}, but it had no prototype!");

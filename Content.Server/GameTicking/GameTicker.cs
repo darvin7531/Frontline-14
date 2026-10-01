@@ -78,6 +78,11 @@ namespace Content.Server.GameTicking
 
         public bool IsPersistentWar => (CurrentPreset ?? Preset)?.ID == "PersistentWar";
 
+        public override TimeSpan RoundDuration()
+        {
+            return RunLevel == GameRunLevel.PreRoundLobby ? TimeSpan.Zero : base.RoundDuration();
+        }
+
         private ISawmill _sawmill = default!;
 
         private bool _randomizeCharacters;
