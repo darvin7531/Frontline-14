@@ -55,7 +55,7 @@ namespace Content.Shared.GameTicking
             }
         }
 
-        public TimeSpan RoundDuration()
+        public virtual TimeSpan RoundDuration()
         {
             return _gameTiming.CurTime.Subtract(RoundStartTimeSpan);
         }

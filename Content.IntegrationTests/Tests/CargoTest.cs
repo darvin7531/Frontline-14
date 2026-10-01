@@ -5,6 +5,9 @@ using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.Cargo.Components;
 using Content.Server.Cargo.Systems;
 using Content.Shared.Cargo.Prototypes;
+using Content.Shared.Containers;
+using Content.Shared.EntityTable;
+using Content.Shared.EntityTable.EntitySelectors;
 using Content.Shared.Mobs.Components;
 using Content.Shared.Prototypes;
 using Content.Shared.Stacks;
@@ -12,6 +15,9 @@ using Content.Shared.Storage;
 using Content.Shared.Tools.Components;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Random;
+using Robust.Shared.Serialization.Manager;
+using Robust.Shared.Serialization.Markdown.Mapping;
 
 namespace Content.IntegrationTests.Tests;
 
@@ -93,6 +99,89 @@ public sealed class CargoTest : GameTest
                     SDeleteNow(ent);
                 }
             }
+        });
+    }
+
+    [Test]
+    public async Task RandomInstrumentCrateCannotProfitFromPercussionBounty()
+    {
+        ProtoId<CargoProductPrototype> productId = "FunInstrumentsRandom";
+        ProtoId<CargoBountyPrototype> bountyId = "BountyPercussion";
+        var map = await Pair.CreateTestMap();
+        EntityUid crate = default;
+        EntProtoId[] spawns = [];
+
+        await Server.WaitPost(() =>
+        {
+            var product = SProtoMan.Index(productId);
+            Assert.That(SProtoMan.Index(product.Product).TryComp<EntityTableContainerFillComponent>(out var fill, _sCompFact), Is.True);
+            var random = new RobustRandom();
+            random.SetSeed(231);
+            spawns = Server.System<EntityTableSystem>().GetSpawns(fill.Containers["entity_storage"], random).ToArray();
+
+            // Freeze an actual production-table roll before MapInit; never alter shared tables or server RNG.
+            var serialization = Server.ResolveDependency<ISerializationManager>();
+            EntityTableSelector pinned = new AllSelector
+            {
+                Children = spawns.Select(id => (EntityTableSelector) new EntSelector { Id = id }).ToList(),
+            };
+            var pinnedFill = serialization.Read<EntityTableContainerFillComponent>(new MappingDataNode()
+                .Add("containers", new MappingDataNode().Add("entity_storage", serialization.WriteValue(pinned)))
+                .Add("sort", serialization.WriteValue(fill.Sort)));
+            var overrides = new ComponentRegistry { ["EntityTableContainerFill"] = new(pinnedFill) };
+            crate = SEntMan.SpawnAtPosition(product.Product, map.GridCoords, overrides);
+        });
+
+        await Server.WaitAssertion(() =>
+        {
+            EntProtoId[] expected =
+            [
+                "GlockenspielInstrument", "TromboneInstrument", "ViolaInstrument", "ClarinetInstrument",
+                "GlockenspielInstrument", "MusicBoxInstrument", "XylophoneInstrument",
+            ];
+            Assert.That(spawns, Is.EqualTo(expected), "The pinned roll must remain production-possible.");
+            var bounty = SProtoMan.Index(bountyId);
+            Assert.That(_sCargo.IsBountyComplete(crate, bounty), Is.True);
+            Assert.That(SProtoMan.Index(productId).Cost, Is.GreaterThanOrEqualTo(bounty.Reward));
+        });
+    }
+
+    [Test]
+    public async Task JanitorialCrateCannotProfitFromRareSoapResale()
+    {
+        ProtoId<CargoProductPrototype> productId = "JanitorialSupplies";
+        EntProtoId rareSoap = "SlipocalypseClusterSoap";
+        var map = await Pair.CreateTestMap();
+        EntityUid crate = default;
+        EntProtoId[] spawns = [];
+
+        await Server.WaitPost(() =>
+        {
+            var product = SProtoMan.Index(productId);
+            Assert.That(SProtoMan.Index(product.Product).TryComp<EntityTableContainerFillComponent>(out var fill, _sCompFact), Is.True);
+            var random = new RobustRandom();
+            random.SetSeed(1595);
+            spawns = Server.System<EntityTableSystem>().GetSpawns(fill.Containers["entity_storage"], random).ToArray();
+
+            // Freeze an actual production-table roll, including all ordinary supplies, for the real fill system.
+            var serialization = Server.ResolveDependency<ISerializationManager>();
+            EntityTableSelector pinned = new AllSelector
+            {
+                Children = spawns.Select(id => (EntityTableSelector) new EntSelector { Id = id }).ToList(),
+            };
+            var pinnedFill = serialization.Read<EntityTableContainerFillComponent>(new MappingDataNode()
+                .Add("containers", new MappingDataNode().Add("entity_storage", serialization.WriteValue(pinned)))
+                .Add("sort", serialization.WriteValue(fill.Sort)));
+            var overrides = new ComponentRegistry { ["EntityTableContainerFill"] = new(pinnedFill) };
+            crate = SEntMan.SpawnAtPosition(product.Product, map.GridCoords, overrides);
+        });
+
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(spawns, Does.Contain(rareSoap), "The pinned rare soap must come from the production table.");
+            var price = _sPricing.GetPrice(crate);
+            Assert.That(price, Is.EqualTo(1192).Within(0.001));
+            Assert.That(price, Is.AtMost(SProtoMan.Index(productId).Cost));
         });
     }
 
