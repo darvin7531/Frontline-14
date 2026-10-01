@@ -1,4 +1,9 @@
 - type: frontlineSupplyProduct
+  id: BasicMaterials
+  name: frontline-supply-product-basic-materials
+  entity: BasicMaterials1
+
+- type: frontlineSupplyProduct
   id: SoldierSupplies
   name: frontline-supply-product-soldier-supplies
 
