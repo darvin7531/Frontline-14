@@ -28,6 +28,7 @@ public sealed partial class FrontlineFactoryBoundUserInterface : BoundUserInterf
         _window = this.CreateWindowCenteredRight<FrontlineFactoryWindow>();
         _window.Submit += recipe => SendMessage(new FrontlineFactorySubmitMessage(recipe));
         _window.Eject += () => SendMessage(new FrontlineFactoryEjectMessage());
+        _window.TakeOutput += () => SendMessage(new FrontlineFactoryTakeOutputMessage());
     }
 
     protected override void UpdateState(BoundUserInterfaceState state)
@@ -63,6 +64,7 @@ public sealed class FrontlineFactoryWindow : DefaultWindow
 {
     public event Action<ProtoId<FrontlineFactoryRecipePrototype>>? Submit;
     public event Action? Eject;
+    public event Action? TakeOutput;
 
     public FrontlineFactoryWindow()
     {
@@ -99,6 +101,27 @@ public sealed class FrontlineFactoryWindow : DefaultWindow
         var eject = new Button { Text = Loc.GetString("frontline-factory-eject-all") };
         eject.OnPressed += _ => Eject?.Invoke();
         contents.AddChild(eject);
+
+        contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-output-heading") });
+        if (state.Outputs.Length == 0)
+            contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-output-empty") });
+        foreach (var output in state.Outputs)
+        {
+            contents.AddChild(new Label
+            {
+                Text = Loc.GetString("frontline-factory-stack-line",
+                    ("name", entityName(output.Prototype)),
+                    ("amount", output.Count)),
+            });
+        }
+        var takeOutput = new Button
+        {
+            Name = "TakeOutput",
+            Text = Loc.GetString("frontline-factory-take-output"),
+            Disabled = state.Outputs.Length == 0,
+        };
+        takeOutput.OnPressed += _ => TakeOutput?.Invoke();
+        contents.AddChild(takeOutput);
 
         contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-recipes-heading") });
         foreach (var recipe in state.Recipes)

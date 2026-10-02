@@ -3,7 +3,7 @@
   name: frontline-factory-recipe-mk58
   input:
     BasicMaterials: 20
-  output: FrontlineWeaponPistolMk58
+  output: FrontlineFactoryWeaponCrate
   outputAmount: 1
   duration: 10
 
@@ -12,7 +12,7 @@
   name: frontline-factory-recipe-magazine-pistol
   input:
     BasicMaterials: 5
-  output: MagazinePistol
+  output: FrontlineFactoryAmmoCrate
   outputAmount: 1
   duration: 5
 
@@ -21,8 +21,8 @@
   name: frontline-factory-recipe-brutepack
   input:
     BasicMaterials: 5
-  output: Brutepack1
-  outputAmount: 2
+  output: FrontlineFactoryMedicalCrate
+  outputAmount: 1
   duration: 5
 
 - type: frontlineFactoryRecipe
@@ -54,6 +54,7 @@
   - type: ContainerContainer
     containers:
       inputContainer: !type:Container
+      outputContainer: !type:Container
 
 - type: entity
   id: FrontlineSupplyCrate
@@ -73,6 +74,33 @@
   - type: FrontlineSupplyCrate
     product: SoldierSupplies
     amount: 5
+
+- type: entity
+  id: FrontlineFactoryWeaponCrate
+  parent: FrontlineWeaponCrate
+  name: frontline factory weapon crate
+  description: A sealed batch of one unloaded Mk 58 pistol for a base stockpile.
+  components:
+  - type: FrontlineSupplyCrate
+    amount: 1
+
+- type: entity
+  id: FrontlineFactoryAmmoCrate
+  parent: FrontlineAmmoCrate
+  name: frontline factory ammo crate
+  description: A sealed batch of one loaded pistol magazine for a base stockpile.
+  components:
+  - type: FrontlineSupplyCrate
+    amount: 1
+
+- type: entity
+  id: FrontlineFactoryMedicalCrate
+  parent: FrontlineMedicalCrate
+  name: frontline factory medical crate
+  description: A sealed batch of two trauma treatment packs for a base stockpile.
+  components:
+  - type: FrontlineSupplyCrate
+    amount: 2
 
 - type: entity
   id: FrontlineWeaponPistolMk58

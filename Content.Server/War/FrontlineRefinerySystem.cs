@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Linq;
 using Content.Server.Stack;
 using Content.Shared.Hands.EntitySystems;
@@ -25,6 +26,8 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
 
     private readonly HashSet<EntityUid> _active = new();
     private readonly HashSet<EntityUid> _submitting = new();
+    private readonly HashSet<EntityUid> _completing = new();
+    private readonly HashSet<EntityUid> _taking = new();
     private float _uiUpdateAccumulator;
 
     public override void Initialize()
@@ -36,8 +39,10 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         SubscribeLocalEvent<FrontlineRefineryComponent, BeforeActivatableUIOpenEvent>(OnBeforeUiOpen);
         SubscribeLocalEvent<FrontlineRefineryComponent, FrontlineRefinerySubmitMessage>(OnSubmitMessage);
         SubscribeLocalEvent<FrontlineRefineryComponent, FrontlineRefineryEjectMessage>(OnEjectMessage);
+        SubscribeLocalEvent<FrontlineRefineryComponent, FrontlineRefineryTakeOutputMessage>(OnTakeOutputMessage);
         SubscribeLocalEvent<FrontlineRefineryComponent, EntInsertedIntoContainerMessage>(OnContainerChanged);
         SubscribeLocalEvent<FrontlineRefineryComponent, EntRemovedFromContainerMessage>(OnContainerChanged);
+        SubscribeLocalEvent<TransformComponent, StackCountChangedEvent>(OnOutputCountChanged);
     }
 
     private void OnStartup(Entity<FrontlineRefineryComponent> refinery, ref ComponentStartup args)
@@ -45,6 +50,9 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         refinery.Comp.InputContainer = _containers.EnsureContainer<Container>(
             refinery,
             FrontlineRefineryComponent.InputContainerId);
+        refinery.Comp.OutputContainer = _containers.EnsureContainer<Container>(
+            refinery,
+            FrontlineRefineryComponent.OutputContainerId);
     }
 
     private void OnMapInit(Entity<FrontlineRefineryComponent> refinery, ref MapInitEvent args)
@@ -92,15 +100,132 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
             UpdateUi(refinery);
     }
 
+    private void OnTakeOutputMessage(Entity<FrontlineRefineryComponent> refinery, ref FrontlineRefineryTakeOutputMessage args)
+    {
+        TryTakePlayerOutput(refinery.Owner, args.Actor);
+    }
+
+    /// <summary>
+    /// Public take-next operation: the server selects the retained stack, never a client entity ID.
+    /// </summary>
+    public bool TryTakePlayerOutput(EntityUid refineryUid, EntityUid playerUid)
+    {
+        if (!IsCompletionEntityAlive(refineryUid) || !IsCompletionEntityAlive(playerUid) ||
+            _completing.Contains(refineryUid) ||
+            !TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
+            !_taking.Add(refineryUid))
+            return false;
+
+        EntityUid? output = null;
+        StackComponent? stack = null;
+        var count = 0;
+        var taken = false;
+        var container = refinery.OutputContainer;
+        try
+        {
+            var hand = _hands.GetActiveHand(playerUid);
+            if (hand == null || !CanAccessOutput() || _hands.GetActiveItem(playerUid) != null)
+                return false;
+
+            foreach (var uid in container.ContainedEntities)
+            {
+                if (!IsCompletionEntityAlive(uid) ||
+                    !TryComp<StackComponent>(uid, out var candidate) || candidate.Unlimited || candidate.Count <= 0)
+                    continue;
+
+                output = uid;
+                stack = candidate;
+                count = candidate.Count;
+                break;
+            }
+
+            if (output is not { } item || stack == null)
+                return false;
+
+            var type = stack.StackTypeId;
+            if (!_hands.CanPickupToHand(playerUid, item, hand) ||
+                !CanAccessOutput() || _hands.GetActiveHand(playerUid) != hand ||
+                _hands.GetActiveItem(playerUid) != null || !container.Contains(item) || !StackUnchanged())
+                return false;
+
+            // TryPickup repeats native permission checks and dispatches equip/container callbacks.
+            taken = _hands.TryPickup(playerUid, item, hand, animate: false) &&
+                    CanAccessOutput() && StackUnchanged() &&
+                    _hands.GetActiveHand(playerUid) == hand &&
+                    _hands.GetActiveItem(playerUid) == item && !container.Contains(item);
+            return taken;
+
+            bool StackUnchanged() => IsCompletionEntityAlive(item) &&
+                TryComp<StackComponent>(item, out var current) && current == stack &&
+                !current.Unlimited && current.StackTypeId == type && current.Count == count;
+        }
+        finally
+        {
+            try
+            {
+                if (!taken && output is { } item && stack != null &&
+                    IsCompletionEntityAlive(item) && CanRestoreOutput())
+                {
+                    if (stack.Count != count)
+                        _stack.SetCount((item, stack), count);
+
+                    // Restore the same entity, not a replacement or a floor drop.
+                    if (IsCompletionEntityAlive(item) && CanRestoreOutput() &&
+                        !container.Contains(item))
+                    {
+                        if (_containers.TryGetContainingContainer(item, out var current))
+                            _containers.Remove(item, current, reparent: false, force: true);
+
+                        if (IsCompletionEntityAlive(item) && CanRestoreOutput() &&
+                            (!_containers.Insert(item, container, force: true) || !container.Contains(item)))
+                            Log.Error($"Failed to restore retained refinery output {item} to {refineryUid}.");
+                    }
+                }
+            }
+            finally
+            {
+                _taking.Remove(refineryUid);
+                if (IsCompletionEntityAlive(refineryUid) &&
+                    TryComp<FrontlineRefineryComponent>(refineryUid, out var current) && current == refinery)
+                    UpdateUi((refineryUid, refinery));
+            }
+        }
+
+        bool CanAccessOutput() => IsCompletionEntityAlive(refineryUid) && IsCompletionEntityAlive(playerUid) &&
+            !_completing.Contains(refineryUid) && _interaction.InRangeUnobstructed(playerUid, refineryUid) &&
+            IsCompletionEntityAlive(refineryUid) && IsCompletionEntityAlive(playerUid) &&
+            TryComp<FrontlineRefineryComponent>(refineryUid, out var current) && current == refinery &&
+            _containers.TryGetContainer(refineryUid, FrontlineRefineryComponent.OutputContainerId, out var retained) &&
+            retained == container;
+
+        // A queued machine still owns its outputs until termination; restore, never hand them out.
+        bool CanRestoreOutput() => !TerminatingOrDeleted(refineryUid) &&
+            TryComp<FrontlineRefineryComponent>(refineryUid, out var current) && current == refinery &&
+            _containers.TryGetContainer(refineryUid, FrontlineRefineryComponent.OutputContainerId, out var retained) &&
+            retained == container;
+    }
+
+    private void OnOutputCountChanged(Entity<TransformComponent> stack, ref StackCountChangedEvent args)
+    {
+        if (_containers.TryGetContainingContainer(stack.Owner, out var container) &&
+            container.ID == FrontlineRefineryComponent.OutputContainerId &&
+            IsCompletionEntityAlive(container.Owner) &&
+            TryComp<FrontlineRefineryComponent>(container.Owner, out var refinery) &&
+            refinery.OutputContainer == container)
+            UpdateUi((container.Owner, refinery));
+    }
+
     private void OnContainerChanged(Entity<FrontlineRefineryComponent> refinery, ref EntInsertedIntoContainerMessage args)
     {
-        if (args.Container.ID == FrontlineRefineryComponent.InputContainerId)
+        if (args.Container.ID == FrontlineRefineryComponent.InputContainerId ||
+            args.Container.ID == FrontlineRefineryComponent.OutputContainerId)
             UpdateUi(refinery);
     }
 
     private void OnContainerChanged(Entity<FrontlineRefineryComponent> refinery, ref EntRemovedFromContainerMessage args)
     {
-        if (args.Container.ID == FrontlineRefineryComponent.InputContainerId)
+        if (args.Container.ID == FrontlineRefineryComponent.InputContainerId ||
+            args.Container.ID == FrontlineRefineryComponent.OutputContainerId)
             UpdateUi(refinery);
     }
 
@@ -151,7 +276,24 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
             .Select((job, index) => new FrontlineRefineryJobState(job.Recipe, job.Remaining, index < processing))
             .ToArray();
 
-        return new FrontlineRefineryUiState(inputs, recipes, jobs);
+        var outputAmounts = new Dictionary<ProtoId<StackPrototype>, int>();
+        var outputStackCount = 0;
+        if (!_completing.Contains(refineryUid))
+        {
+            foreach (var uid in refinery.OutputContainer.ContainedEntities)
+            {
+                if (!IsCompletionEntityAlive(uid) ||
+                    !TryComp<StackComponent>(uid, out var stack) || stack.Unlimited || stack.Count <= 0)
+                    continue;
+
+                outputAmounts[stack.StackTypeId] = outputAmounts.GetValueOrDefault(stack.StackTypeId) + stack.Count;
+                outputStackCount++;
+            }
+        }
+
+        return new FrontlineRefineryUiState(inputs, recipes, jobs,
+            outputAmounts.Select(entry => new FrontlineRefineryInputState(entry.Key, entry.Value)).ToImmutableArray(),
+            outputStackCount);
     }
 
     private void UpdateUi(Entity<FrontlineRefineryComponent> refinery)
@@ -342,6 +484,109 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         return true;
     }
 
+    private bool IsCompletionEntityAlive(EntityUid uid) =>
+        !TerminatingOrDeleted(uid) && !EntityManager.IsQueuedForDeletion(uid);
+
+    private bool TryCompleteJob(EntityUid uid,
+        FrontlineRefineryComponent refinery,
+        FrontlineRefineryJob job,
+        FrontlineRefineryRecipePrototype recipe)
+    {
+        if (!_completing.Add(uid))
+            return false;
+
+        var outputs = new Dictionary<EntityUid, (ProtoId<StackPrototype> Type, int Count)>();
+        var completed = false;
+        try
+        {
+            if (!IsCompletionEntityAlive(uid) ||
+                !_containers.TryGetContainer(uid, FrontlineRefineryComponent.OutputContainerId, out var container) ||
+                container != refinery.OutputContainer)
+                return false;
+
+            foreach (var (stackType, amount) in recipe.Output)
+            {
+                var prototype = _prototypes.Index(stackType);
+                var remaining = amount;
+                while (remaining > 0)
+                {
+                    if (!IsCompletionEntityAlive(uid))
+                        return false;
+
+                    // Spawn in nullspace and track before eventful count/insertion APIs.
+                    // The entity manager cleans up initialization failures inside Spawn.
+                    var output = Spawn(prototype.Spawn);
+                    outputs.Add(output, (stackType, 0));
+                    if (!IsCompletionEntityAlive(output) ||
+                        !TryComp<StackComponent>(output, out var stack) ||
+                        stack.Unlimited || stack.StackTypeId != stackType)
+                        return false;
+
+                    var maxCount = _stack.GetMaxCount(stack);
+                    if (maxCount <= 0)
+                        return false;
+
+                    var count = Math.Min(remaining, maxCount);
+                    outputs[output] = (stackType, count);
+                    _stack.SetCount((output, stack), count);
+                    if (!IsCompletionEntityAlive(uid) || !IsCompletionEntityAlive(output) ||
+                        !_containers.Insert(output, container))
+                        return false;
+
+                    remaining -= count;
+                }
+            }
+
+            // Later callbacks can invalidate any earlier staged stack, not just the last one.
+            if (!IsCompletionEntityAlive(uid) ||
+                !TryComp<FrontlineRefineryComponent>(uid, out var current) || current != refinery ||
+                !_containers.TryGetContainer(uid, FrontlineRefineryComponent.OutputContainerId, out var retained) ||
+                retained != container ||
+                outputs.Any(entry => !IsCompletionEntityAlive(entry.Key) ||
+                    !retained.Contains(entry.Key) ||
+                    !TryComp<StackComponent>(entry.Key, out var stack) || stack.Unlimited ||
+                    stack.StackTypeId != entry.Value.Type || stack.Count != entry.Value.Count))
+                return false;
+
+            completed = refinery.Jobs.Remove(job);
+            return completed;
+        }
+        finally
+        {
+            try
+            {
+                if (!completed)
+                {
+                    // Queue all first so a deletion callback exception cannot orphan later outputs.
+                    foreach (var output in outputs.Keys)
+                    {
+                        if (TerminatingOrDeleted(output))
+                            continue;
+
+                        try
+                        {
+                            QueueDel(output);
+                        }
+                        catch (Exception e)
+                        {
+                            // QueueDeleteEntity queues before notifying callbacks; finish the rest.
+                            Log.Error($"Exception queuing refinery output cleanup for {output}: {e}");
+                        }
+                    }
+                    foreach (var output in outputs.Keys)
+                    {
+                        if (!TerminatingOrDeleted(output))
+                            Del(output);
+                    }
+                }
+            }
+            finally
+            {
+                _completing.Remove(uid);
+            }
+        }
+    }
+
     public override void Update(float frameTime)
     {
         base.Update(frameTime);
@@ -359,7 +604,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
                 continue;
             }
 
-            if (MetaData(uid).EntityPaused)
+            if (MetaData(uid).EntityPaused || _completing.Contains(uid))
                 continue;
 
             var jobsBefore = refinery.Jobs.Count;
@@ -382,13 +627,13 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
                 if (job.Remaining > TimeSpan.Zero)
                     continue;
 
-                refinery.Jobs.RemoveAt(i);
-                foreach (var (stackType, amount) in recipe.Output)
-                {
-                    foreach (var output in _stack.SpawnMultipleAtPosition(stackType, amount, Transform(uid).Coordinates))
-                        _stack.TryMergeToContacts(output);
-                }
+                TryCompleteJob(uid, refinery, job, recipe);
+                if (!IsCompletionEntityAlive(uid))
+                    break;
             }
+
+            if (!IsCompletionEntityAlive(uid))
+                continue;
 
             if (refinery.Jobs.Count == 0)
                 _active.Remove(uid);

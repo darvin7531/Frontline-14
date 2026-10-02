@@ -36,3 +36,4 @@
   - type: ContainerContainer
     containers:
       inputContainer: !type:Container
+      outputContainer: !type:Container

@@ -28,6 +28,7 @@ public sealed partial class FrontlineRefineryBoundUserInterface : BoundUserInter
         _window = this.CreateWindowCenteredRight<FrontlineRefineryWindow>();
         _window.Submit += recipe => SendMessage(new FrontlineRefinerySubmitMessage(recipe));
         _window.Eject += () => SendMessage(new FrontlineRefineryEjectMessage());
+        _window.TakeOutput += () => SendMessage(new FrontlineRefineryTakeOutputMessage());
     }
 
     protected override void UpdateState(BoundUserInterfaceState state)
@@ -54,6 +55,7 @@ public sealed class FrontlineRefineryWindow : DefaultWindow
 {
     public event Action<ProtoId<FrontlineRefineryRecipePrototype>>? Submit;
     public event Action? Eject;
+    public event Action? TakeOutput;
 
     public FrontlineRefineryWindow()
     {
@@ -89,6 +91,27 @@ public sealed class FrontlineRefineryWindow : DefaultWindow
         var eject = new Button { Text = Loc.GetString("frontline-refinery-eject-all") };
         eject.OnPressed += _ => Eject?.Invoke();
         contents.AddChild(eject);
+
+        contents.AddChild(new Label { Text = Loc.GetString("frontline-refinery-output-heading") });
+        if (state.OutputStackCount == 0)
+            contents.AddChild(new Label { Text = Loc.GetString("frontline-refinery-output-empty") });
+        foreach (var output in state.Outputs)
+        {
+            contents.AddChild(new Label
+            {
+                Text = Loc.GetString("frontline-refinery-stack-line",
+                    ("name", stackName(output.Stack)),
+                    ("amount", output.Amount)),
+            });
+        }
+        var takeOutput = new Button
+        {
+            Name = "TakeOutput",
+            Text = Loc.GetString("frontline-refinery-take-output"),
+            Disabled = state.OutputStackCount == 0,
+        };
+        takeOutput.OnPressed += _ => TakeOutput?.Invoke();
+        contents.AddChild(takeOutput);
 
         contents.AddChild(new Label { Text = Loc.GetString("frontline-refinery-recipes-heading") });
         foreach (var recipe in state.Recipes)
