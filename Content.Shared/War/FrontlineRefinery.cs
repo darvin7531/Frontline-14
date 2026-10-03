@@ -37,9 +37,13 @@ public sealed partial class FrontlineRefineryJob
 public sealed partial class FrontlineRefineryComponent : Component
 {
     public const string InputContainerId = "inputContainer";
+    public const string OutputContainerId = "outputContainer";
 
     [ViewVariables]
     public Container InputContainer = default!;
+
+    [ViewVariables]
+    public Container OutputContainer = default!;
 
     [DataField]
     public List<FrontlineRefineryJob> Jobs = new();

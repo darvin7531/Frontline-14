@@ -1,12 +1,19 @@
+using System.Collections.Generic;
 using System.Linq;
+using Content.Client.War;
+using Content.IntegrationTests.Tests.Interaction;
+using Robust.Client.UserInterface.Controls;
 using Content.IntegrationTests.Fixtures;
 using Content.IntegrationTests.Fixtures.Attributes;
 using Content.Server.Stack;
 using Content.Server.War;
+using Content.Shared.Hands.EntitySystems;
+using Content.Shared.Interaction;
 using Content.Shared.Stacks;
 using Content.Shared.Tag;
 using Content.Shared.UserInterface;
 using Content.Shared.War;
+using Robust.Shared.Containers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Localization;
 using Robust.Shared.Map;
@@ -337,6 +344,57 @@ public sealed class FrontlineRefineryTest : GameTest
             Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
             Assert.That(CountStacks("Steel"), Is.Zero);
             Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task IronJobRetainsBasicMaterialsInOutputContainerAfterDelay()
+    {
+        var server = Pair.Server;
+        var map = await Pair.CreateTestMap();
+        var refinerySystem = server.System<FrontlineRefinerySystem>();
+        var stackSystem = server.System<StackSystem>();
+        var containers = server.System<SharedContainerSystem>();
+        EntityUid refinery = default;
+        EntityUid input = default;
+
+        await server.WaitPost(() =>
+        {
+            refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            input = stackSystem.SpawnAtPosition(5, "FrontlineRawIron", map.GridCoords);
+            Assert.That(refinerySystem.TryInsertInput(refinery, input), Is.True);
+            Assert.That(refinerySystem.TrySubmitContainedJob(refinery, "FrontlineSteel"), Is.True);
+        });
+
+        await Pair.RunTicksSync(1);
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.EntityExists(input), Is.False);
+            Assert.That(CountStacks("FrontlineRawIron"), Is.Zero);
+            Assert.That(refinerySystem.GetJobs(refinery), Has.Count.EqualTo(1));
+            Assert.That(CountStacks("BasicMaterials"), Is.Zero);
+        });
+
+        await Pair.RunSeconds(4.9f);
+        await server.WaitAssertion(() => Assert.That(CountStacks("BasicMaterials"), Is.Zero));
+
+        await Pair.RunSeconds(0.2f);
+        await server.WaitAssertion(() =>
+        {
+            Assert.That(refinerySystem.GetJobs(refinery), Is.Empty);
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
+            Assert.That(containers.TryGetContainer(refinery, "outputContainer", out var output), Is.True,
+                "Completed BasicMaterials must be retained in refinery outputContainer.");
+            Assert.That(output.ContainedEntities, Has.Count.EqualTo(1));
+            var stack = SComp<StackComponent>(output.ContainedEntities.Single());
+            Assert.That(stack.StackTypeId, Is.EqualTo("BasicMaterials"));
+            Assert.That(stack.Count, Is.EqualTo(5));
+            var query = SEntMan.EntityQueryEnumerator<StackComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out var candidate, out var transform))
+            {
+                if (candidate.StackTypeId == "BasicMaterials" && transform.MapID == map.MapId)
+                    Assert.That(containers.IsEntityInContainer(uid), Is.True, "Material output must not be loose on the floor.");
+            }
         });
     }
 
@@ -762,6 +820,178 @@ public sealed class FrontlineRefineryTest : GameTest
         await server.WaitPost(() => mapSystem.SetPaused(map.MapId, false));
         await Pair.RunSeconds(5.1f);
         await server.WaitAssertion(() => Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5)));
+    }
+
+    public sealed class OutputBuiTest : InteractionTest
+    {
+        [Test]
+        public async Task SevenPaidIronJobsConserveMaterialsThroughPlayerWithdrawal()
+        {
+            await SpawnTarget("FrontlineRefinery");
+            var refinery = STarget!.Value;
+            var system = Server.System<FrontlineRefinerySystem>();
+            var containers = Server.System<SharedContainerSystem>();
+            BaseContainer output = default!;
+            Robust.Shared.Containers.Container collected = default!;
+            EntityUid floorStack = default;
+            EntityUid blocker = default;
+            EntityUid[] paidOutputs = default!;
+            int[] paidCounts = default!;
+            var playerCoords = SEntMan.GetCoordinates(PlayerCoords);
+
+            await Server.WaitPost(() =>
+            {
+                var carrier = SEntMan.SpawnEntity(null, playerCoords);
+                collected = containers.EnsureContainer<Robust.Shared.Containers.Container>(carrier, "cargo");
+                floorStack = Stack.SpawnAtPosition(3, "BasicMaterials", playerCoords);
+                blocker = SEntMan.SpawnEntity("Screwdriver", playerCoords);
+                for (var job = 0; job < 7; job++)
+                {
+                    var input = Stack.SpawnAtPosition(5, "FrontlineRawIron", playerCoords);
+                    Assert.That(system.TryInsertInput(refinery, input), Is.True);
+                    Assert.That(system.TrySubmitContainedJob(refinery, "FrontlineSteel"), Is.True);
+                    Assert.That(SComp<StackComponent>(input).Count, Is.Zero);
+                }
+                Assert.That(system.GetJobs(refinery), Has.Count.EqualTo(7));
+            });
+            await Pair.RunSeconds(35.5f);
+            await Server.WaitPost(() =>
+            {
+                Assert.That(system.GetJobs(refinery), Is.Empty);
+                Assert.That(containers.TryGetContainer(refinery, "outputContainer", out output), Is.True);
+                paidOutputs = output.ContainedEntities.ToArray();
+                paidCounts = paidOutputs.Select(uid => SComp<StackComponent>(uid).Count).ToArray();
+                Assert.That(paidCounts.Sum(), Is.EqualTo(35));
+                Assert.That(system.BuildUiState(refinery).Outputs.Single().Amount, Is.EqualTo(35));
+                Assert.That(HandSys.GetActiveItem(SPlayer), Is.Null);
+                AssertConserved();
+
+                Assert.That(HandSys.TryPickupAnyHand(SPlayer, blocker), Is.True);
+                Assert.That(system.TryTakePlayerOutput(refinery, SPlayer), Is.False);
+                Assert.That(HandSys.GetActiveItem(SPlayer), Is.EqualTo(blocker));
+                Assert.That(output.ContainedEntities, Is.EqualTo(paidOutputs));
+                Assert.That(paidOutputs.Select(uid => SComp<StackComponent>(uid).Count), Is.EqualTo(paidCounts));
+                AssertConserved();
+                Assert.That(HandSys.TryDropIntoContainer(SPlayer, blocker, collected), Is.True);
+
+                Transform.SetCoordinates(SPlayer, playerCoords.Offset(new Vector2i(10, 0)));
+                Assert.That(HandSys.GetActiveItem(SPlayer), Is.Null);
+                Assert.That(system.TryTakePlayerOutput(refinery, SPlayer), Is.False);
+                Assert.That(HandSys.GetActiveItem(SPlayer), Is.Null);
+                Assert.That(output.ContainedEntities, Is.EqualTo(paidOutputs));
+                Assert.That(paidOutputs.Select(uid => SComp<StackComponent>(uid).Count), Is.EqualTo(paidCounts));
+                AssertConserved();
+                Transform.SetCoordinates(SPlayer, playerCoords);
+
+                foreach (var expected in paidOutputs)
+                {
+                    Assert.That(HandSys.GetActiveItem(SPlayer), Is.Null);
+                    Assert.That(system.TryTakePlayerOutput(refinery, SPlayer), Is.True);
+                    Assert.That(HandSys.GetActiveItem(SPlayer), Is.EqualTo(expected));
+                    Assert.That(output.Contains(expected), Is.False);
+                    AssertConserved();
+                    Assert.That(HandSys.TryDropIntoContainer(SPlayer, expected, collected), Is.True);
+                    Assert.That(collected.Contains(expected), Is.True);
+                    Assert.That(HandSys.GetActiveItem(SPlayer), Is.Null);
+                    AssertConserved();
+                }
+                Assert.That(system.TryTakePlayerOutput(refinery, SPlayer), Is.False);
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(output.ContainedEntities, Is.Empty);
+                Assert.That(system.BuildUiState(refinery).Outputs, Is.Empty);
+                Assert.That(collected.ContainedEntities.Where(uid => uid != blocker), Is.EquivalentTo(paidOutputs));
+                Assert.That(paidOutputs.Select(uid => SComp<StackComponent>(uid).Count), Is.EqualTo(paidCounts));
+                AssertConserved();
+            });
+
+            void AssertConserved()
+            {
+                var retained = output.ContainedEntities.Sum(uid => SComp<StackComponent>(uid).Count);
+                var stored = collected.ContainedEntities.Where(uid => uid != blocker)
+                    .Sum(uid => SComp<StackComponent>(uid).Count);
+                var held = HandSys.GetActiveItem(SPlayer);
+                var heldCount = held is { } item && item != blocker ? SComp<StackComponent>(item).Count : 0;
+                Assert.That(heldCount + retained + stored, Is.EqualTo(35));
+                Assert.That(system.BuildUiState(refinery).Outputs.Sum(entry => entry.Amount), Is.EqualTo(retained));
+                Assert.That(SEntMan.EntityExists(floorStack), Is.True);
+                Assert.That(SComp<StackComponent>(floorStack).Count, Is.EqualTo(3));
+                Assert.That(containers.IsEntityInContainer(floorStack), Is.False);
+                var query = SEntMan.EntityQueryEnumerator<StackComponent, TransformComponent>();
+                while (query.MoveNext(out var uid, out var stack, out var transform))
+                {
+                    if (stack.StackTypeId != "BasicMaterials" || transform.MapID != MapId)
+                        continue;
+                    if (uid != floorStack)
+                        Assert.That(containers.IsEntityInContainer(uid), Is.True, "Production must not spill onto the floor.");
+                }
+                foreach (var uid in paidOutputs)
+                {
+                    Assert.That(SEntMan.EntityExists(uid), Is.True);
+                    Assert.That(SComp<StackComponent>(uid).StackTypeId, Is.EqualTo("BasicMaterials"));
+                }
+            }
+        }
+
+        [Test]
+        public async Task ConnectedPlayerTakesCompletedMaterialStackThroughNativeButtonWithoutDuplication()
+        {
+            await SpawnTarget("FrontlineRefinery");
+            var refinery = STarget!.Value;
+            var system = Server.System<FrontlineRefinerySystem>();
+            var containers = Server.System<SharedContainerSystem>();
+            BaseContainer output = default!;
+            EntityUid materials = default;
+            await Server.WaitPost(() =>
+            {
+                var input = Stack.SpawnAtPosition(5, "FrontlineRawIron", SEntMan.GetCoordinates(PlayerCoords));
+                Assert.That(system.TryInsertInput(refinery, input), Is.True);
+                Assert.That(system.TrySubmitContainedJob(refinery, "FrontlineSteel"), Is.True);
+            });
+            await Pair.RunSeconds(5.1f);
+            await Server.WaitPost(() =>
+            {
+                Assert.That(system.GetJobs(refinery), Is.Empty);
+                Assert.That(containers.TryGetContainer(refinery, "outputContainer", out output), Is.True);
+                Assert.That(output.ContainedEntities, Has.Count.EqualTo(1));
+                materials = output.ContainedEntities.Single();
+                Assert.That(SComp<StackComponent>(materials).StackTypeId, Is.EqualTo("BasicMaterials"));
+                Assert.That(SComp<StackComponent>(materials).Count, Is.EqualTo(5));
+                Assert.That(HandSys.GetActiveItem(SPlayer), Is.Null);
+            });
+            await Interact();
+            await Pair.RunUntilSynced();
+            Assert.That(TryGetBui(FrontlineRefineryUiKey.Key, out _), Is.True);
+            for (var click = 0; click < 2; click++)
+            {
+                Button take = default!;
+                await Client.WaitAssertion(() =>
+                {
+                    var window = GetWindow<FrontlineRefineryWindow>();
+                    Assert.That(TryGetControlFromChildren<Button>(button => button.Name == "TakeOutput", window, out take),
+                        Is.True, "Refinery production BUI must expose a button named TakeOutput.");
+                    if (click == 0)
+                        Assert.That(take.Disabled, Is.False);
+                });
+                await ClickControl(take);
+                await Pair.RunUntilSynced();
+                await Server.WaitAssertion(() =>
+                {
+                    Assert.That(HandSys.GetActiveItem(SPlayer), Is.EqualTo(materials));
+                    Assert.That(output.ContainedEntities, Is.Empty);
+                    Assert.That(SEntMan.EntityExists(materials), Is.True);
+                    Assert.That(SComp<StackComponent>(materials).StackTypeId, Is.EqualTo("BasicMaterials"));
+                    Assert.That(SComp<StackComponent>(materials).Count, Is.EqualTo(5));
+                    var stacks = SEntMan.EntityQuery<StackComponent, TransformComponent>()
+                        .Where(entity => entity.Item1.StackTypeId == "BasicMaterials" && entity.Item2.MapID == MapId)
+                        .ToArray();
+                    Assert.That(stacks, Has.Length.EqualTo(1));
+                    Assert.That(stacks.Sum(entity => entity.Item1.Count), Is.EqualTo(5));
+                });
+            }
+            await CloseBui(FrontlineRefineryUiKey.Key);
+        }
     }
 
     private int CountStacks(string stackType)

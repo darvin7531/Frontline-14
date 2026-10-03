@@ -14,11 +14,20 @@ public enum FrontlineFactoryUiKey
 public sealed class FrontlineFactoryUiState(
     FrontlineFactoryInputState[] inputs,
     FrontlineFactoryRecipeState[] recipes,
-    FrontlineFactoryJobState[] jobs) : BoundUserInterfaceState
+    FrontlineFactoryJobState[] jobs,
+    FrontlineFactoryOutputState[]? outputs = null) : BoundUserInterfaceState
 {
     public readonly FrontlineFactoryInputState[] Inputs = inputs;
     public readonly FrontlineFactoryRecipeState[] Recipes = recipes;
     public readonly FrontlineFactoryJobState[] Jobs = jobs;
+    public readonly FrontlineFactoryOutputState[] Outputs = outputs ?? [];
+}
+
+[Serializable, NetSerializable]
+public sealed class FrontlineFactoryOutputState(EntProtoId prototype, int count)
+{
+    public readonly EntProtoId Prototype = prototype;
+    public readonly int Count = count;
 }
 
 [Serializable, NetSerializable]
@@ -65,3 +74,6 @@ public sealed class FrontlineFactorySubmitMessage(ProtoId<FrontlineFactoryRecipe
 
 [Serializable, NetSerializable]
 public sealed class FrontlineFactoryEjectMessage : BoundUserInterfaceMessage;
+
+[Serializable, NetSerializable]
+public sealed class FrontlineFactoryTakeOutputMessage : BoundUserInterfaceMessage;

@@ -27,6 +27,8 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
     private readonly HashSet<EntityUid> _active = new();
     private readonly HashSet<EntityUid> _submitting = new();
+    private readonly HashSet<EntityUid> _completing = new();
+    private readonly HashSet<EntityUid> _takingOutput = new();
     private float _uiUpdateAccumulator;
 
     public override void Initialize()
@@ -38,6 +40,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         SubscribeLocalEvent<FrontlineFactoryComponent, BeforeActivatableUIOpenEvent>(OnBeforeUiOpen);
         SubscribeLocalEvent<FrontlineFactoryComponent, FrontlineFactorySubmitMessage>(OnSubmitMessage);
         SubscribeLocalEvent<FrontlineFactoryComponent, FrontlineFactoryEjectMessage>(OnEjectMessage);
+        SubscribeLocalEvent<FrontlineFactoryComponent, FrontlineFactoryTakeOutputMessage>(OnTakeOutputMessage);
         SubscribeLocalEvent<FrontlineFactoryComponent, EntInsertedIntoContainerMessage>(OnContainerChanged);
         SubscribeLocalEvent<FrontlineFactoryComponent, EntRemovedFromContainerMessage>(OnContainerChanged);
     }
@@ -47,6 +50,9 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         factory.Comp.InputContainer = _containers.EnsureContainer<Container>(
             factory,
             FrontlineFactoryComponent.InputContainerId);
+        factory.Comp.OutputContainer = _containers.EnsureContainer<Container>(
+            factory,
+            FrontlineFactoryComponent.OutputContainerId);
     }
 
     private void OnMapInit(Entity<FrontlineFactoryComponent> factory, ref MapInitEvent args)
@@ -94,15 +100,88 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             UpdateUi(factory);
     }
 
+    private void OnTakeOutputMessage(Entity<FrontlineFactoryComponent> factory, ref FrontlineFactoryTakeOutputMessage args)
+    {
+        TryTakePlayerOutput(factory.Owner, args.Actor);
+    }
+
+    public bool TryTakePlayerOutput(EntityUid factoryUid, EntityUid playerUid)
+    {
+        if (!IsOutputEntityAlive(factoryUid) || !IsOutputEntityAlive(playerUid) ||
+            !TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) ||
+            _completing.Contains(factoryUid) || !_takingOutput.Add(factoryUid))
+            return false;
+
+        EntityUid? output = null;
+        var taken = false;
+        try
+        {
+            if (!_interaction.InRangeUnobstructed(playerUid, factoryUid) ||
+                !_containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var container) ||
+                container != factory.OutputContainer || container.ContainedEntities.Count == 0)
+                return false;
+
+            output = container.ContainedEntities[0];
+            var hand = _hands.GetActiveHand(playerUid);
+            if (hand == null || !_hands.ActiveHandIsEmpty(playerUid) ||
+                !IsOutputEntityAlive(output.Value) ||
+                !_hands.CanPickupToHand(playerUid, output.Value, hand))
+                return false;
+
+            // Permission events may change the actor, hand or retained output.
+            if (!IsOutputEntityAlive(factoryUid) || !IsOutputEntityAlive(playerUid) ||
+                !IsOutputEntityAlive(output.Value) ||
+                !_interaction.InRangeUnobstructed(playerUid, factoryUid) ||
+                _hands.GetActiveHand(playerUid) != hand || !_hands.ActiveHandIsEmpty(playerUid) ||
+                !_containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var current) ||
+                current != container || !container.Contains(output.Value))
+                return false;
+
+            _hands.TryPickup(playerUid, output.Value, hand);
+            // TryPickup can return true even when DoPickup did not insert the item.
+            taken = IsOutputEntityAlive(factoryUid) && IsOutputEntityAlive(playerUid) &&
+                    IsOutputEntityAlive(output.Value) &&
+                    _interaction.InRangeUnobstructed(playerUid, factoryUid) &&
+                    _hands.GetActiveHand(playerUid) == hand &&
+                    _hands.GetActiveItem(playerUid) == output.Value &&
+                    _containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out current) &&
+                    current == container && !container.Contains(output.Value);
+            return taken;
+        }
+        finally
+        {
+            try
+            {
+                if (!taken && output is { } retained && IsOutputEntityAlive(retained) &&
+                    !TerminatingOrDeleted(factoryUid) &&
+                    _containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var container) &&
+                    container == factory.OutputContainer && !container.Contains(retained))
+                {
+                    // Roll back an eventful failed pickup, never eject the output to the floor.
+                    if (_containers.TryGetContainingContainer((retained, null, null), out var previous))
+                        _containers.Remove(retained, previous, reparent: false, force: true);
+                    if (!TerminatingOrDeleted(factoryUid) && IsOutputEntityAlive(retained) &&
+                        (!_containers.Insert(retained, container, force: true) || !container.Contains(retained)))
+                        Log.Error($"Failed to retain factory output {ToPrettyString(retained)} in {ToPrettyString(factoryUid)}.");
+                }
+            }
+            finally
+            {
+                _takingOutput.Remove(factoryUid);
+                UpdateUi((factoryUid, factory));
+            }
+        }
+    }
+
     private void OnContainerChanged(Entity<FrontlineFactoryComponent> factory, ref EntInsertedIntoContainerMessage args)
     {
-        if (args.Container.ID == FrontlineFactoryComponent.InputContainerId)
+        if (args.Container.ID is FrontlineFactoryComponent.InputContainerId or FrontlineFactoryComponent.OutputContainerId)
             UpdateUi(factory);
     }
 
     private void OnContainerChanged(Entity<FrontlineFactoryComponent> factory, ref EntRemovedFromContainerMessage args)
     {
-        if (args.Container.ID == FrontlineFactoryComponent.InputContainerId)
+        if (args.Container.ID is FrontlineFactoryComponent.InputContainerId or FrontlineFactoryComponent.OutputContainerId)
             UpdateUi(factory);
     }
 
@@ -153,11 +232,22 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             .Select((job, index) => new FrontlineFactoryJobState(job.Recipe, job.Remaining, index < processing))
             .ToArray();
 
-        return new FrontlineFactoryUiState(inputs, recipes, jobs);
+        var outputs = factory.OutputContainer.ContainedEntities
+            .Where(uid => !TerminatingOrDeleted(uid))
+            .Select(uid => MetaData(uid).EntityPrototype?.ID)
+            .Where(id => id != null)
+            .GroupBy(id => id!)
+            .Select(group => new FrontlineFactoryOutputState(new EntProtoId(group.Key), group.Count()))
+            .ToArray();
+
+        return new FrontlineFactoryUiState(inputs, recipes, jobs, outputs);
     }
 
     private void UpdateUi(Entity<FrontlineFactoryComponent> factory)
     {
+        if (TerminatingOrDeleted(factory) || _completing.Contains(factory) || _takingOutput.Contains(factory))
+            return;
+
         _ui.SetUiState(factory.Owner, FrontlineFactoryUiKey.Key, BuildUiState(factory.Owner));
     }
 
@@ -354,6 +444,76 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         return true;
     }
 
+    private bool IsOutputEntityAlive(EntityUid uid) =>
+        !TerminatingOrDeleted(uid) && !EntityManager.IsQueuedForDeletion(uid);
+
+    private bool TryCompleteJob(EntityUid uid,
+        FrontlineFactoryComponent factory,
+        FrontlineFactoryJob job,
+        FrontlineFactoryRecipePrototype recipe)
+    {
+        var outputs = new EntityUid?[recipe.OutputAmount];
+        if (_takingOutput.Contains(uid) || !_completing.Add(uid))
+            return false;
+
+        var completed = false;
+        try
+        {
+            for (var i = 0; i < outputs.Length; i++)
+            {
+                if (!IsOutputEntityAlive(uid) ||
+                    !TrySpawnInContainer(recipe.Output, uid, FrontlineFactoryComponent.OutputContainerId, out outputs[i]))
+                    return false;
+            }
+
+            if (!IsOutputEntityAlive(uid) ||
+                !_containers.TryGetContainer(uid, FrontlineFactoryComponent.OutputContainerId, out var container) ||
+                container != factory.OutputContainer ||
+                outputs.Any(output => output == null || !IsOutputEntityAlive(output.Value) || !container.Contains(output.Value)))
+                return false;
+
+            completed = factory.Jobs.Remove(job);
+            return completed;
+        }
+        finally
+        {
+            try
+            {
+                if (!completed)
+                {
+                    // TrySpawnInContainer leaves its out UID assigned if insertion throws.
+                    // Spawn failures themselves are cleaned up by the entity manager.
+                    // Queue all first so a deletion callback exception cannot orphan later outputs.
+                    foreach (var output in outputs)
+                    {
+                        if (output == null || TerminatingOrDeleted(output.Value))
+                            continue;
+
+                        try
+                        {
+                            QueueDel(output.Value);
+                        }
+                        catch (Exception e)
+                        {
+                            // QueueDeleteEntity queues before notifying callbacks; finish the rest.
+                            Log.Error($"Exception queuing factory output cleanup for {output.Value}: {e}");
+                        }
+                    }
+                    foreach (var output in outputs)
+                    {
+                        if (output != null && !TerminatingOrDeleted(output.Value))
+                            Del(output.Value);
+                    }
+                }
+            }
+            finally
+            {
+                _completing.Remove(uid);
+                UpdateUi((uid, factory));
+            }
+        }
+    }
+
     public override void Update(float frameTime)
     {
         base.Update(frameTime);
@@ -371,7 +531,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 continue;
             }
 
-            if (MetaData(uid).EntityPaused)
+            if (MetaData(uid).EntityPaused || _completing.Contains(uid) || _takingOutput.Contains(uid))
                 continue;
 
             var jobsBefore = factory.Jobs.Count;
@@ -394,10 +554,13 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 if (job.Remaining > TimeSpan.Zero)
                     continue;
 
-                factory.Jobs.RemoveAt(i);
-                for (var output = 0; output < recipe.OutputAmount; output++)
-                    Spawn(recipe.Output, Transform(uid).Coordinates);
+                TryCompleteJob(uid, factory, job, recipe);
+                if (TerminatingOrDeleted(uid))
+                    break;
             }
+
+            if (TerminatingOrDeleted(uid))
+                continue;
 
             if (factory.Jobs.Count == 0)
                 _active.Remove(uid);

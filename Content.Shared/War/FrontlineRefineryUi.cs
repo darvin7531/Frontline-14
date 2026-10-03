@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Content.Shared.Stacks;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization;
@@ -14,11 +15,15 @@ public enum FrontlineRefineryUiKey
 public sealed class FrontlineRefineryUiState(
     FrontlineRefineryInputState[] inputs,
     FrontlineRefineryRecipeState[] recipes,
-    FrontlineRefineryJobState[] jobs) : BoundUserInterfaceState
+    FrontlineRefineryJobState[] jobs,
+    ImmutableArray<FrontlineRefineryInputState> outputs = default,
+    int outputStackCount = 0) : BoundUserInterfaceState
 {
     public readonly FrontlineRefineryInputState[] Inputs = inputs;
     public readonly FrontlineRefineryRecipeState[] Recipes = recipes;
     public readonly FrontlineRefineryJobState[] Jobs = jobs;
+    public readonly ImmutableArray<FrontlineRefineryInputState> Outputs = outputs.IsDefault ? [] : outputs;
+    public readonly int OutputStackCount = outputStackCount;
 }
 
 [Serializable, NetSerializable]
@@ -63,3 +68,6 @@ public sealed class FrontlineRefinerySubmitMessage(ProtoId<FrontlineRefineryReci
 
 [Serializable, NetSerializable]
 public sealed class FrontlineRefineryEjectMessage : BoundUserInterfaceMessage;
+
+[Serializable, NetSerializable]
+public sealed class FrontlineRefineryTakeOutputMessage : BoundUserInterfaceMessage;
