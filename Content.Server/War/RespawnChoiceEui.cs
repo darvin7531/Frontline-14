@@ -13,7 +13,9 @@ public sealed class RespawnChoiceEui : BaseEui
         _lifecycle = IoCManager.Resolve<IEntitySystemManager>().GetEntitySystem<WarPlayerLifecycleSystem>();
     }
 
-    public override EuiStateBase GetNewState() => new RespawnChoiceEuiState();
+    public override void Opened() => StateDirty();
+
+    public override EuiStateBase GetNewState() => new RespawnChoiceEuiState(_lifecycle.GetRespawnChoices(Player.UserId));
 
     public override void Closed()
     {
@@ -22,8 +24,13 @@ public sealed class RespawnChoiceEui : BaseEui
 
     public override void HandleMessage(EuiMessageBase msg)
     {
-        if (msg is RespawnNowMessage && _lifecycle.RequestRespawn(Player.UserId))
+        if (msg is RespawnNowMessage respawn)
+        {
+            if (string.IsNullOrWhiteSpace(respawn.TerritoryId) ||
+                !_lifecycle.RequestRespawn(Player.UserId, new TerritoryId(respawn.TerritoryId)))
+                StateDirty();
             return;
+        }
 
         base.HandleMessage(msg);
     }
