@@ -233,6 +233,9 @@ entities:
     - type: TownHall
       territory: frontline-one
       faction: FrontlineFactionOne
+    - type: FrontlineStockpile
+      counts:
+        SoldierSupplies: 20
 - proto: TownHallRuin
   entities:
   - uid: 174
@@ -266,6 +269,9 @@ entities:
     - type: TownHall
       territory: frontline-five
       faction: FrontlineFactionTwo
+    - type: FrontlineStockpile
+      counts:
+        SoldierSupplies: 20
 - proto: FactionSpawnPoint
   entities:
   - uid: 178
