@@ -23,15 +23,14 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         var errors = new List<string>();
         ValidateEnvironment(map, errors);
         ValidateTerritories(map, errors);
-        ValidateResourceFields(map, errors);
+        ValidateResourceFields(Comp<MapComponent>(map).MapId, errors);
 
         if (errors.Count != 0)
             throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
     }
 
-    private void ValidateResourceFields(EntityUid map, List<string> errors)
+    internal void ValidateResourceFields(MapId mapId, List<string> errors)
     {
-        var mapId = Comp<MapComponent>(map).MapId;
         var fields = new Dictionary<string, FrontlineResourceFieldComponent>();
         var fieldQuery = EntityQueryEnumerator<FrontlineResourceFieldComponent, TransformComponent>();
         while (fieldQuery.MoveNext(out _, out var field, out var xform))
@@ -53,12 +52,15 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         }
 
         var spawnCounts = new Dictionary<string, int>();
+        var slotIds = new HashSet<(string FieldId, string SlotId)>();
         var spawnQuery = EntityQueryEnumerator<FrontlineResourceSpawnPointComponent, TransformComponent>();
         while (spawnQuery.MoveNext(out _, out var spawn, out var xform))
         {
             if (xform.MapID != mapId)
                 continue;
 
+            if (string.IsNullOrWhiteSpace(spawn.SlotId) || !slotIds.Add((spawn.FieldId, spawn.SlotId)))
+                errors.Add($"PersistentWar resource slot '{spawn.FieldId}/{spawn.SlotId}' is missing or duplicated.");
             if (!fields.ContainsKey(spawn.FieldId))
                 errors.Add($"PersistentWar resource spawn point references unknown field '{spawn.FieldId}'.");
             else
@@ -75,10 +77,10 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         }
     }
 
-    private void ValidateResourceNodePrototype(string fieldId, EntProtoId prototype, string kind, List<string> errors)
+    internal void ValidateResourceNodePrototype(string fieldId, EntProtoId prototype, string kind, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(prototype.Id) ||
-            !_prototypes.TryIndex<EntityPrototype>(prototype, out var entity) ||
+            !_prototypes.TryIndex<EntityPrototype>(prototype, out var entity) || entity.Abstract ||
             !entity.TryGetComponent<FrontlineResourceNodeComponent>(out var node, EntityManager.ComponentFactory))
         {
             errors.Add($"PersistentWar resource field '{fieldId}' {kind} node prototype '{prototype}' is invalid.");

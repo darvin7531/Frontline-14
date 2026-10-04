@@ -162,6 +162,7 @@ entities:
       pos: 20,-7
     - type: FrontlineResourceSpawnPoint
       fieldId: frontline-test-iron
+      slotId: iron-west
   - uid: 166
     components:
     - type: Transform
@@ -169,6 +170,7 @@ entities:
       pos: 25,-7
     - type: FrontlineResourceSpawnPoint
       fieldId: frontline-test-iron
+      slotId: iron-center
   - uid: 167
     components:
     - type: Transform
@@ -176,6 +178,7 @@ entities:
       pos: 30,-7
     - type: FrontlineResourceSpawnPoint
       fieldId: frontline-test-iron
+      slotId: iron-east
 - proto: TerritoryMarker
   entities:
   - uid: 168

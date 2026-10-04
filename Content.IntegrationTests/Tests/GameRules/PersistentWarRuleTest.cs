@@ -107,6 +107,8 @@ public sealed class PersistentWarRuleTest : GameTest
         InvalidResourceField,
         ResourceFieldWithoutSpawnPoints,
         UnknownResourceFieldReference,
+        MissingResourceSlotId,
+        DuplicateResourceSlotId,
         EmptyResourceFieldId,
         ZeroResourceReserve,
         TooManyActiveResourceNodes,
@@ -345,6 +347,10 @@ public sealed class PersistentWarRuleTest : GameTest
         "PersistentWar resource field 'orphan-field' must have at least one spawn point.")]
     [TestCase(InvalidMapCase.UnknownResourceFieldReference,
         "PersistentWar resource spawn point references unknown field 'missing-field'.")]
+    [TestCase(InvalidMapCase.MissingResourceSlotId,
+        "PersistentWar resource slot 'frontline-test-iron/' is missing or duplicated.")]
+    [TestCase(InvalidMapCase.DuplicateResourceSlotId,
+        "PersistentWar resource slot 'frontline-test-iron/iron-west' is missing or duplicated.")]
     [TestCase(InvalidMapCase.EmptyResourceFieldId,
         "PersistentWar resource field ID must not be empty.")]
     [TestCase(InvalidMapCase.ZeroResourceReserve,
@@ -444,6 +450,14 @@ public sealed class PersistentWarRuleTest : GameTest
                     break;
                 case InvalidMapCase.EmptyResourceFieldId:
                     SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true)).FieldId = "";
+                    break;
+                case InvalidMapCase.MissingResourceSlotId:
+                    SComp<FrontlineResourceSpawnPointComponent>(FindMapEntity<FrontlineResourceSpawnPointComponent>(mapId,
+                        component => component.SlotId == "iron-west")).SlotId = "";
+                    break;
+                case InvalidMapCase.DuplicateResourceSlotId:
+                    SComp<FrontlineResourceSpawnPointComponent>(FindMapEntity<FrontlineResourceSpawnPointComponent>(mapId,
+                        component => component.SlotId == "iron-east")).SlotId = "iron-west";
                     break;
                 case InvalidMapCase.ZeroResourceReserve:
                     SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
@@ -778,6 +792,18 @@ public sealed class PersistentWarRuleTest : GameTest
             await Pair.RunTicksSync(1);
             await Server.WaitAssertion(() => Assert.Multiple(() =>
             {
+                using var stream = Server.ResolveDependency<IResourceManager>().UserData.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                var savedField = saved.Resources.Single(entry => entry.FieldId == fieldId);
+                Assert.That(savedField.RemainingReserveNodes, Is.EqualTo(reserveBefore));
+                Assert.That(savedField.FieldInitialized, Is.True);
+                Assert.That(savedField.State, Is.EqualTo(stateBefore));
+                Assert.That(savedField.Nodes.Select(entry => entry.RemainingYield),
+                    Is.EquivalentTo(nodesBefore.Values.Select(entry => entry.Yield)));
+                Assert.That(savedField.Nodes.Select(entry => entry.SlotId).Distinct().Count(), Is.EqualTo(nodesBefore.Count));
+                Assert.That(savedField.Nodes.All(entry => entry.Prototype == "FrontlineIronResourceNode"), Is.True);
                 Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
                 Assert.That(war.State, Is.EqualTo(beforeRestart));
                 Assert.That(SEntMan.EntityExists(oldMap), Is.False);
@@ -803,6 +829,10 @@ public sealed class PersistentWarRuleTest : GameTest
                     Assert.That(component.Field, Is.EqualTo(restored));
                     Assert.That(SComp<FrontlineResourceSpawnPointComponent>(component.SpawnPoint).FieldId,
                         Is.EqualTo(fieldId));
+                    Assert.That(component.SlotId,
+                        Is.EqualTo(SComp<FrontlineResourceSpawnPointComponent>(component.SpawnPoint).SlotId));
+                    Assert.That(savedField.Nodes.Single(entry => entry.SlotId == component.SlotId).RemainingYield,
+                        Is.EqualTo(component.RemainingYield));
                     Assert.That(point.MapID, Is.EqualTo(ticker.DefaultMap));
                     Assert.That(transform.ParentUid, Is.EqualTo(point.ParentUid));
                     Assert.That(point.ParentUid, Is.EqualTo(SComp<TransformComponent>(restored).ParentUid));
@@ -1091,8 +1121,11 @@ public sealed class PersistentWarRuleTest : GameTest
     }
 
     [TestCase(2, 0)]
+    [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 0)]
     [TestCase(1, 41)]
-    [TestCase(3, 41)]
+    [TestCase(2, 41)]
+    [TestCase(4, 41)]
+    [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 42)]
     public async Task MalformedStrategicHeaderCannotBypassValidationAsAnotherWar(int version, int savedWarId)
     {
         const int currentWarId = 42;
@@ -1119,9 +1152,15 @@ public sealed class PersistentWarRuleTest : GameTest
                             hall ? SComp<FrontlineStockpileComponent>(entry.Value).Counts
                                 .ToDictionary(count => count.Key.Id, count => count.Value) : new Dictionary<string, int>());
                     }).ToList();
+                    var resourceEntries = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(map.MapId);
+                    if (version == WarStrategicSnapshotSystem.SnapshotVersion && savedWarId == currentWarId)
+                        resourceEntries[0] = resourceEntries[0] with { FieldId = "unknown-field" };
                     data.Delete(WarStrategicSnapshotSystem.BackupPath);
                     using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
-                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(version, savedWarId, bases));
+                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(version, savedWarId, bases)
+                        {
+                            Resources = resourceEntries,
+                        });
                     Assert.Multiple(() =>
                     {
                         Assert.Throws<InvalidDataException>(() => snapshot.Restore(map.MapUid, currentWarId));
@@ -1140,7 +1179,10 @@ public sealed class PersistentWarRuleTest : GameTest
                     foreach (var entry in bases.Where(entry => entry.ObjectiveKind == "hall"))
                         entry.Counts["SoldierSupplies"] = 7;
                     using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
-                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, currentWarId, bases));
+                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, currentWarId, bases)
+                        {
+                            Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(map.MapId),
+                        });
                     snapshot.Restore(map.MapUid, currentWarId);
                     foreach (var entry in bases)
                     {

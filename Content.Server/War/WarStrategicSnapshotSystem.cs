@@ -22,10 +22,37 @@ using Robust.Shared.Utility;
 namespace Content.Server.War;
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record WarStrategicSnapshot(int SnapshotVersion, int WarId, List<WarBaseSnapshot> Bases);
+public sealed record WarStrategicSnapshot(
+    [property: JsonRequired] int SnapshotVersion,
+    [property: JsonRequired] int WarId,
+    [property: JsonRequired] List<WarBaseSnapshot> Bases)
+{
+    [JsonRequired]
+    public List<WarResourceFieldSnapshot> Resources { get; init; } = new();
+}
+
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record WarBaseSnapshot(string TerritoryId, string ObjectiveKind, string Prototype,
-    string? FactionId, Dictionary<string, int> Counts)
+public sealed record WarResourceFieldSnapshot(
+    [property: JsonRequired] string FieldId,
+    [property: JsonRequired] int RemainingReserveNodes,
+    [property: JsonRequired] bool FieldInitialized,
+    [property: JsonRequired] FrontlineResourceFieldState State,
+    [property: JsonRequired] long ReplacementRemainingTicks,
+    [property: JsonRequired] long ReplenishmentRemainingTicks,
+    [property: JsonRequired] List<WarResourceNodeSnapshot> Nodes);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record WarResourceNodeSnapshot(
+    [property: JsonRequired] string SlotId,
+    [property: JsonRequired] string Prototype,
+    [property: JsonRequired] int RemainingYield);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record WarBaseSnapshot(
+    [property: JsonRequired] string TerritoryId,
+    [property: JsonRequired] string ObjectiveKind,
+    [property: JsonRequired] string Prototype,
+    [property: JsonRequired] string? FactionId,
+    [property: JsonRequired] Dictionary<string, int> Counts)
 {
     // Constructor defaults support fresh synthetic snapshots, not missing fields in persisted JSON.
     [JsonRequired]
@@ -35,11 +62,11 @@ public sealed record WarBaseSnapshot(string TerritoryId, string ObjectiveKind, s
     public int RuinMaterialDeposited { get; init; }
 }
 
-/// <summary>Technical-restart persistence for objectives and virtual stockpiles only.</summary>
+/// <summary>Technical-restart persistence for objectives, stockpiles and resource fields.</summary>
 public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 {
-    // Version 1 omitted damage/progress; refuse it rather than silently healing paid state.
-    public const int SnapshotVersion = 2;
+    // Earlier versions omitted damage/progress or resources; never mint omitted paid state.
+    public const int SnapshotVersion = 3;
     public static readonly ResPath SavePath = new("/persistent-war-strategic.json");
     public static readonly ResPath TemporaryPath = new("/persistent-war-strategic.json.tmp");
     public static readonly ResPath BackupPath = new("/persistent-war-strategic.json.bak");
@@ -51,6 +78,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     [Dependency] private TownHallSystem _halls = default!;
     [Dependency] private FrontlineStockpileSystem _stockpiles = default!;
     [Dependency] private DamageableSystem _damage = default!;
+    [Dependency] private FrontlineResourceFieldSystem _resourceFields = default!;
 
     private EntityUid? _loadedMap;
     private int _loadedWarId;
@@ -88,7 +116,8 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 
     private static void ValidateHeader(WarStrategicSnapshot snapshot)
     {
-        if (snapshot.SnapshotVersion != SnapshotVersion || snapshot.WarId <= 0 || snapshot.Bases == null)
+        if (snapshot.SnapshotVersion != SnapshotVersion || snapshot.WarId <= 0 ||
+            snapshot.Bases == null || snapshot.Resources == null)
             throw new InvalidDataException("Invalid strategic snapshot header.");
     }
 
@@ -161,6 +190,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             return;
         var mapId = Comp<MapComponent>(map).MapId;
         var staged = new List<EntityUid>();
+        var stagedNodes = new List<EntityUid>();
         var accepted = true;
         try
         {
@@ -179,6 +209,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
                 return; // Explicit newwar never inherits the old map's inventory.
             var objectives = GetObjectives(mapId);
             Validate(snapshot, objectives); // All entries preflight before spawning or removing anything.
+            _resourceFields.ValidateSnapshot(mapId, snapshot.Resources);
             foreach (var entry in snapshot.Bases)
             {
                 var replacement = _halls.StageRestoredObjective(new EntProtoId(entry.Prototype),
@@ -202,9 +233,12 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
                         .SequenceEqual(entry.DamageHundredths.OrderBy(pair => pair.Key)))
                     throw new InvalidDataException("Restored objective did not retain its exact live damage.");
             }
-            // All replacements are ready; fresh YAML objectives remain untouched on preflight/staging failure.
+            _resourceFields.StageSnapshot(mapId, snapshot.Resources, stagedNodes);
+            // Stage both slices before deleting fresh YAML entities. Resource staging has no field ownership.
             if (staged.Any(uid => !Usable(uid)))
                 throw new InvalidDataException("Restored objective was lost before commit.");
+            _resourceFields.CommitSnapshot(mapId, snapshot.Resources, stagedNodes);
+            stagedNodes.Clear();
             staged.Clear();
             foreach (var objective in objectives.Values)
                 _halls.DeleteObjective(objective);
@@ -217,6 +251,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         }
         finally
         {
+            _resourceFields.DeleteStagedNodes(stagedNodes);
             foreach (var objective in staged)
                 _halls.DeleteObjective(objective);
             if (accepted)
@@ -235,7 +270,8 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             _loadedMap = null;
             return;
         }
-        var objectives = GetObjectives(Comp<MapComponent>(map).MapId);
+        var mapId = Comp<MapComponent>(map).MapId;
+        var objectives = GetObjectives(mapId);
         var bases = new List<WarBaseSnapshot>();
         foreach (var (territory, uid) in objectives)
         {
@@ -252,7 +288,10 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             });
         }
         // StartNewWar may already have changed WarState. This map still belongs to its loaded war.
-        var snapshot = new WarStrategicSnapshot(SnapshotVersion, _loadedWarId, bases);
+        var snapshot = new WarStrategicSnapshot(SnapshotVersion, _loadedWarId, bases)
+        {
+            Resources = _resourceFields.CaptureSnapshot(mapId),
+        };
         Validate(snapshot, objectives);
         // Propagate failure before native entity flush, retaining this map for a later retry.
         Save(snapshot);
