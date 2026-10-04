@@ -13,6 +13,7 @@ namespace Content.Client.War;
 public sealed class RespawnChoiceEui : BaseEui
 {
     private readonly RespawnChoiceWindow _window = new();
+    private readonly BoxContainer _bases = new() { Orientation = LayoutOrientation.Vertical };
 
     public RespawnChoiceEui()
     {
@@ -22,9 +23,7 @@ public sealed class RespawnChoiceEui : BaseEui
         var wait = new Button { Text = Loc.GetString("frontline-respawn-choice-wait") };
         wait.OnPressed += _ => SendMessage(new CloseEuiMessage());
         contents.AddChild(wait);
-        var respawn = new Button { Text = Loc.GetString("frontline-respawn-choice-respawn") };
-        respawn.OnPressed += _ => SendMessage(new RespawnNowMessage());
-        contents.AddChild(respawn);
+        contents.AddChild(_bases);
         _window.SetContents(contents);
     }
 
@@ -34,6 +33,22 @@ public sealed class RespawnChoiceEui : BaseEui
 
     public override void HandleState(EuiStateBase state)
     {
+        if (state is not RespawnChoiceEuiState choice)
+            return;
+
+        _bases.RemoveAllChildren();
+        foreach (var option in choice.Bases)
+        {
+            var respawn = new Button
+            {
+                Name = $"Respawn:{option.TerritoryId}",
+                Text = Loc.GetString("frontline-respawn-choice-base",
+                    ("base", Loc.GetString(option.Name)), ("count", option.Count)),
+                Disabled = option.Count <= 0,
+            };
+            respawn.OnPressed += _ => SendMessage(new RespawnNowMessage(option.TerritoryId));
+            _bases.AddChild(respawn);
+        }
     }
 }
 

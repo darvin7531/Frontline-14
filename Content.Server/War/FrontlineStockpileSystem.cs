@@ -22,6 +22,7 @@ public sealed partial class FrontlineStockpileSystem : EntitySystem
     [Dependency] private UserInterfaceSystem _ui = default!;
     private static readonly ProtoId<StackPrototype> MaterialsStack = "BasicMaterials";
     private static readonly ProtoId<FrontlineSupplyProductPrototype> MaterialsProduct = "BasicMaterials";
+    private static readonly ProtoId<FrontlineSupplyProductPrototype> SoldierSupplies = "SoldierSupplies";
 
     private readonly HashSet<EntityUid> _operating = new();
 
@@ -100,6 +101,42 @@ public sealed partial class FrontlineStockpileSystem : EntitySystem
                 stockpile.Counts.GetValueOrDefault(product.ID),
                 product.Entity != null && stockpile.Counts.GetValueOrDefault(product.ID) > 0))
             .ToArray());
+    }
+
+    /// <summary>Trusted server operation; true commits the spawn and its one-supply charge.</summary>
+    public bool TrySpendSoldierSupply(EntityUid core, Func<bool> operation)
+    {
+        if (TerminatingOrDeleted(core) || EntityManager.IsQueuedForDeletion(core) ||
+            !TryComp<FrontlineStockpileComponent>(core, out var stockpile) || !_operating.Add(core))
+            return false;
+
+        var committed = false;
+        var reserved = false;
+        var before = stockpile.Counts.GetValueOrDefault(SoldierSupplies);
+        try
+        {
+            if (before <= 0)
+                return false;
+            stockpile.Counts[SoldierSupplies] = before - 1;
+            reserved = true;
+            committed = operation();
+            return committed;
+        }
+        finally
+        {
+            if (reserved && !committed)
+                stockpile.Counts[SoldierSupplies] = before;
+            _operating.Remove(core);
+            // UI publication is not part of the paid spawn commit and cannot undo it.
+            try
+            {
+                UpdateUi(core);
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Failed to refresh soldier supply stockpile {core}: {e}");
+            }
+        }
     }
 
     public bool TrySubmitHeld(EntityUid core, EntityUid actor)

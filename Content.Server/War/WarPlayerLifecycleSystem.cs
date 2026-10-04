@@ -10,6 +10,7 @@ using Robust.Server.Player;
 using Robust.Shared.Enums;
 using Robust.Shared.Network;
 using Robust.Shared.Player;
+using Robust.Shared.Prototypes;
 
 namespace Content.Server.War;
 
@@ -20,9 +21,18 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
     [Dependency] private MindSystem _mind = default!;
     [Dependency] private IPlayerManager _players = default!;
     [Dependency] private PersistentWarRuleSystem _persistentWar = default!;
+    [Dependency] private WarStateSystem _war = default!;
+    [Dependency] private WarFactionSystem _factions = default!;
+    [Dependency] private TerritorySystem _territories = default!;
+    [Dependency] private FactionSpawnSystem _factionSpawns = default!;
+    [Dependency] private IPrototypeManager _prototypes = default!;
 
+    private static readonly ProtoId<FrontlineSupplyProductPrototype> SoldierSupplies = "SoldierSupplies";
+
+    private readonly HashSet<NetUserId> _respawning = new();
     private readonly Dictionary<NetUserId, EntityUid> _waiting = new();
     private readonly Dictionary<NetUserId, RespawnChoiceEui> _choices = new();
+    private float _choiceUpdateAccumulator;
 
     public override void Initialize()
     {
@@ -34,6 +44,22 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
     {
         _players.PlayerStatusChanged -= OnPlayerStatusChanged;
         base.Shutdown();
+    }
+
+    public override void Update(float frameTime)
+    {
+        base.Update(frameTime);
+
+        if (_choices.Count == 0)
+            return;
+
+        _choiceUpdateAccumulator += frameTime;
+        if (_choiceUpdateAccumulator < 1f)
+            return;
+        _choiceUpdateAccumulator = 0f;
+
+        foreach (var choice in _choices.Values)
+            choice.RefreshState();
     }
 
     private void OnMobStateChanged(MobStateChangedEvent args)
@@ -59,23 +85,104 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
             OpenChoice(args.Session);
     }
 
-    public bool RequestRespawn(NetUserId account)
+    public RespawnBaseOption[] GetRespawnChoices(NetUserId account)
     {
-        if (!_waiting.TryGetValue(account, out _) ||
-            !_players.TryGetSessionById(account, out var session) ||
-            !_mind.TryGetMind(account, out var mindId, out var mind) ||
-            mindId is not { } mindEntity ||
-            mind.CurrentEntity is not { } body ||
-            !TryComp<MobStateComponent>(body, out var state) ||
-            state.CurrentState != MobState.Dead)
-            return false;
+        var choices = new List<RespawnBaseOption>();
+        if (!_persistentWar.IsPersistentWarActive() ||
+            _war.State is not { Status: WarStatus.Active } ||
+            !_factions.TryGetFaction(account, out var faction))
+            return choices.ToArray();
 
-        _waiting.Remove(account);
-        CloseChoice(account);
-        _mind.TransferTo(mindEntity, null, createGhost: false, mind: mind);
-        Del(body);
-        _ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
-        return true;
+        foreach (var territory in _territories.GetTerritories(_ticker.DefaultMap))
+        {
+            if (string.IsNullOrWhiteSpace(territory.Id))
+                continue;
+            ProtoId<FrontlineTerritoryPrototype> id = territory.Id;
+            if (!_prototypes.TryIndex(id, out var prototype) ||
+                !_factionSpawns.TryGetRespawnBase(faction, territory, _ticker.DefaultMap,
+                    out var core, out _, out _))
+                continue;
+
+            choices.Add(new RespawnBaseOption(territory.Id, prototype.Name,
+                Comp<FrontlineStockpileComponent>(core).Counts.GetValueOrDefault(SoldierSupplies)));
+        }
+        choices.Sort((left, right) => string.CompareOrdinal(left.TerritoryId, right.TerritoryId));
+        return choices.ToArray();
+    }
+
+    // Trusted server callers may retain automatic funded-base selection.
+    public bool RequestRespawn(NetUserId account) => RequestRespawn(account, null);
+
+    public bool RequestRespawn(NetUserId account, TerritoryId territory) =>
+        RequestRespawn(account, (TerritoryId?) territory);
+
+    private bool RequestRespawn(NetUserId account, TerritoryId? selected)
+    {
+        if (!_respawning.Add(account))
+            return false;
+        try
+        {
+            if (!_persistentWar.IsPersistentWarActive() ||
+                _war.State is not { Status: WarStatus.Active } ||
+                !_factions.TryGetFaction(account, out var faction) ||
+                !_waiting.TryGetValue(account, out var body) ||
+                !_players.TryGetSessionById(account, out var session) ||
+                !_mind.TryGetMind(account, out var mindId, out var mind) ||
+                mindId is not { } mindEntity || mind.UserId != account ||
+                mind.OwnedEntity != body || mind.CurrentEntity != body || session.AttachedEntity != body ||
+                TerminatingOrDeleted(body) || EntityManager.IsQueuedForDeletion(body) ||
+                !TryComp<MobStateComponent>(body, out var state) || state.CurrentState != MobState.Dead)
+                return false;
+
+            TerritoryId territory;
+            if (selected is { } requested)
+            {
+                if (string.IsNullOrWhiteSpace(requested.Id))
+                    return false;
+                ProtoId<FrontlineTerritoryPrototype> id = requested.Id;
+                if (!_prototypes.HasIndex(id))
+                    return false;
+                territory = requested;
+            }
+            else if (!HasSuppliedSpawn(faction, out territory))
+                return false;
+
+            if (!_persistentWar.TryRespawnPlayer(session, faction, territory, body, mindEntity,
+                    () => _waiting.TryGetValue(account, out var recorded) && recorded == body))
+                return false;
+
+            // The replacement and charge are committed. Corpse cleanup cannot refund them.
+            _waiting.Remove(account);
+            try
+            {
+                CloseChoice(account);
+            }
+            finally
+            {
+                if (!TerminatingOrDeleted(body))
+                    Del(body);
+            }
+            return true;
+        }
+        finally
+        {
+            _respawning.Remove(account);
+        }
+    }
+
+    private bool HasSuppliedSpawn(FactionId faction, out TerritoryId territory)
+    {
+        territory = default;
+        foreach (var candidate in _territories.GetTerritories(_ticker.DefaultMap))
+        {
+            if (!_factionSpawns.TryGetRespawnBase(faction, candidate, _ticker.DefaultMap,
+                    out var core, out _, out _) ||
+                Comp<FrontlineStockpileComponent>(core).Counts.GetValueOrDefault(SoldierSupplies) <= 0)
+                continue;
+            territory = candidate;
+            return true;
+        }
+        return false;
     }
 
     public void ChoiceClosed(NetUserId account, RespawnChoiceEui choice)

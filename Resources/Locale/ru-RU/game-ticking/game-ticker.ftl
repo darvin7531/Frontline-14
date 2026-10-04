@@ -122,6 +122,7 @@ frontline-factory-insufficient-input = В приёмной камере недо
 frontline-respawn-choice-title = Вы погибли
 frontline-respawn-choice-wait = Ждите воскрешения. Ваше тело ещё можно воскресить.
 frontline-respawn-choice-respawn = Возродиться
+frontline-respawn-choice-base = Возродиться на базе «{$base}» — солдатское снабжение: {$count}
 frontline-resource-field-examine = Состояние: {$state}; резерв: {$reserve}; активные узлы: {$active}; пополнение через: {$seconds} с.
 game-ticker-player-no-jobs-available-when-joining = При попытке присоединиться к игре ни одной роли не было доступно.
 
