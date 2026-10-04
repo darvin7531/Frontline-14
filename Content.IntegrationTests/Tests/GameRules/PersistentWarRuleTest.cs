@@ -1122,8 +1122,60 @@ public sealed class PersistentWarRuleTest : GameTest
     }
 
     [Test]
+    public async Task PausedMapCapturePreservesResourceFieldsNodesAndSlots()
+    {
+        var fields = Server.System<FrontlineResourceFieldSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var map = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        Exception failure = null;
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    var field = FindMapEntity<FrontlineResourceFieldComponent>(map.MapId, _ => true);
+                    var component = SComp<FrontlineResourceFieldComponent>(field);
+                    component.RemainingReserveNodes = 2;
+                    var partial = component.ActiveNodes.Single(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId == "iron-west");
+                    SComp<FrontlineResourceNodeComponent>(partial).RemainingYield = 15;
+                    var before = JsonSerializer.Serialize(fields.CaptureSnapshot(map.MapId));
+                    maps.SetPaused(map.MapId, true);
+                    Assert.That(SComp<MetaDataComponent>(field).EntityPaused, Is.True);
+                    foreach (var node in component.ActiveNodes)
+                    {
+                        Assert.That(SComp<MetaDataComponent>(node).EntityPaused, Is.True);
+                        Assert.That(SComp<MetaDataComponent>(SComp<FrontlineResourceNodeComponent>(node).SpawnPoint).EntityPaused,
+                            Is.True);
+                    }
+                    var saved = fields.CaptureSnapshot(map.MapId);
+                    Assert.That(saved, Has.Count.EqualTo(1), "Paused controllers still own durable resource claims.");
+                    Assert.That(saved.Single().Nodes, Has.Count.EqualTo(3), "Paused nodes and their mapper slots must remain covered.");
+                    Assert.That(JsonSerializer.Serialize(saved), Is.EqualTo(before));
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+                finally
+                {
+                    maps.SetPaused(map.MapId, false);
+                }
+            });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
+        }
+        finally
+        {
+            await Server.WaitPost(() => SEntMan.DeleteEntity(map.MapUid));
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
-    public async Task QueuedDepletedResourceControllerBlocksRestartBeforeEntityFlush()
+    public async Task QueuedDepletedResourceControllerBlocksRestartBeforeEntityFlush(bool paused)
     {
         var ticker = Server.System<GameTicker>();
         var war = Server.System<WarStateSystem>();
@@ -1171,6 +1223,19 @@ public sealed class PersistentWarRuleTest : GameTest
                 using (var before = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
                     saved = new StreamReader(before).ReadToEnd();
 
+                if (paused)
+                {
+                    // Leave objectives live; pause the controller and its slots so omission cannot hide behind an orphan-slot error.
+                    var metadata = Server.System<MetaDataSystem>();
+                    metadata.SetEntityPaused(field, true);
+                    foreach (var slot in SEntMan.EntityQuery<FrontlineResourceSpawnPointComponent>().Where(slot =>
+                                 slot.FieldId == component.FieldId && SComp<TransformComponent>(slot.Owner).MapID == ticker.DefaultMap).ToArray())
+                    {
+                        metadata.SetEntityPaused(slot.Owner, true);
+                        Assert.That(SComp<MetaDataComponent>(slot.Owner).EntityPaused, Is.True);
+                    }
+                    Assert.That(SComp<MetaDataComponent>(field).EntityPaused, Is.True);
+                }
                 // Do not yield: capture must see the native queue before deletion settles.
                 SEntMan.QueueDeleteEntity(field);
                 Assert.That(SEntMan.IsQueuedForDeletion(field), Is.True);
@@ -1198,8 +1263,9 @@ public sealed class PersistentWarRuleTest : GameTest
             throw failure;
     }
 
-    [Test]
-    public async Task OldResourceNodeTerminationCannotCommitQueuedStagedNode()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task OldEntityTerminationCannotCommitInvalidResourceSnapshot(bool spawnExtraNode)
     {
         const int warId = 42;
         const string fieldId = "frontline-test-iron";
@@ -1266,21 +1332,27 @@ public sealed class PersistentWarRuleTest : GameTest
             {
                 try
                 {
-                    probe.OldNode = FindMapEntity<FrontlineResourceNodeComponent>(fresh.MapId,
-                        node => node.FieldId == fieldId && node.SlotId == "iron-west");
+                    probe.SpawnExtraNode = spawnExtraNode;
+                    probe.OldNode = spawnExtraNode
+                        ? FindMapEntity<TownHallComponent>(fresh.MapId, hall => hall.TerritoryId == "frontline-one")
+                        : FindMapEntity<FrontlineResourceNodeComponent>(fresh.MapId,
+                            node => node.FieldId == fieldId && node.SlotId == "iron-west");
                     Assert.That(SEntMan.HasComponent<TagComponent>(probe.OldNode), Is.True);
-                    Assert.That(SComp<FrontlineResourceNodeComponent>(probe.OldNode).RemainingYield, Is.EqualTo(20));
+                    if (!spawnExtraNode)
+                        Assert.That(SComp<FrontlineResourceNodeComponent>(probe.OldNode).RemainingYield, Is.EqualTo(20));
                     probe.Enabled = true;
                     Assert.Multiple(() =>
                     {
                         // Abort startup is allowed; retaining the original entity IDs is not required.
                         Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId),
-                            "Native old-node deletion invalidated the staged paid node after preflight; restore must fail closed.");
+                            "Native old-entity deletion changed the map's resource claims after preflight; restore must fail closed.");
                         Assert.That(probe.Fired, Is.True, "The observer must run on real EntityTerminatingEvent, not a synthetic event.");
                         Assert.That(probe.StagedNode, Is.Not.EqualTo(EntityUid.Invalid));
                         Assert.That(probe.DetachedDuringCallback, Is.True);
-                        Assert.That(probe.QueuedDuringCallback, Is.True);
-                        Assert.That(probe.YieldDuringCallback, Is.EqualTo(15));
+                        Assert.That(probe.QueuedDuringCallback, Is.EqualTo(!spawnExtraNode));
+                        Assert.That(probe.YieldDuringCallback, Is.EqualTo(spawnExtraNode ? 20 : 15));
+                        Assert.That(SEntMan.EntityExists(fresh.MapUid), Is.False, "Reject the entire unaccepted map after commit started.");
+                        Assert.That(SEntMan.EntityExists(probe.StagedNode), Is.False, "No extra or staged yield may survive refusal.");
                         Assert.That(Server.UnhandledException, Is.Null);
                         using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
                         Assert.That(new StreamReader(stream).ReadToEnd(), Is.EqualTo(saved));
@@ -1331,6 +1403,15 @@ public sealed class PersistentWarRuleTest : GameTest
                     Assert.That(node.RemainingYield, Is.EqualTo(node.SlotId == "iron-west" ? 15 : 20));
                 }
                 Assert.That(fields.CaptureSnapshot(retry.MapId).Single().Nodes, Has.Count.EqualTo(3));
+                var mapNodes = new List<EntityUid>();
+                var query = SEntMan.AllEntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+                while (query.MoveNext(out var uid, out _, out var transform))
+                {
+                    if (transform.MapID == retry.MapId)
+                        mapNodes.Add(uid);
+                }
+                Assert.That(mapNodes, Is.EquivalentTo(component.ActiveNodes), "No detached or paused extra yield may survive retry.");
+                Assert.That(mapNodes.Sum(uid => SComp<FrontlineResourceNodeComponent>(uid).RemainingYield), Is.EqualTo(55));
                 foreach (var territory in new[] { "frontline-one", "frontline-five" })
                 {
                     var hall = FindMapEntity<TownHallComponent>(retry.MapId, objective => objective.TerritoryId == territory);
@@ -1353,6 +1434,8 @@ public sealed class PersistentWarRuleTest : GameTest
     {
         public bool Enabled;
         public bool Fired;
+        public bool SpawnExtraNode;
+        private static readonly EntProtoId ExtraNodePrototype = "FrontlineIronResourceNode";
         public EntityUid OldNode;
         public EntityUid StagedNode = EntityUid.Invalid;
         public bool DetachedDuringCallback;
@@ -1370,6 +1453,20 @@ public sealed class PersistentWarRuleTest : GameTest
             if (!Enabled || Fired || ent.Owner != OldNode)
                 return;
             Fired = true;
+            if (SpawnExtraNode)
+            {
+                // Runs after resource commit, during real old-base Del; no synthetic event or field ownership.
+                var coordinates = Transform(ent).Coordinates;
+                if (TerminatingOrDeleted(coordinates.EntityId))
+                    return;
+                StagedNode = Spawn(ExtraNodePrototype, coordinates);
+                var extra = Comp<FrontlineResourceNodeComponent>(StagedNode);
+                DetachedDuringCallback = extra.Field == EntityUid.Invalid && string.IsNullOrEmpty(extra.FieldId) &&
+                    extra.SpawnPoint == EntityUid.Invalid && string.IsNullOrEmpty(extra.SlotId);
+                YieldDuringCallback = extra.RemainingYield;
+                QueuedDuringCallback = EntityManager.IsQueuedForDeletion(StagedNode);
+                return;
+            }
             var old = Comp<FrontlineResourceNodeComponent>(ent);
             var mapId = Transform(ent).MapID;
             var query = EntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
