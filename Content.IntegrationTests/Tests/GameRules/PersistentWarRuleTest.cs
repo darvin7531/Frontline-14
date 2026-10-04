@@ -43,6 +43,7 @@ using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Player;
+using Robust.Shared.Utility;
 
 namespace Content.IntegrationTests.Tests.GameRules;
 
@@ -641,6 +642,209 @@ public sealed class PersistentWarRuleTest : GameTest
                     $"Base {baseTerritories[i]} must retain exact counts, including zero supplies, without a fresh 20-supply grant.");
             }
         });
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartSaveFailureRetainsLiveBasesForRetry()
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var territoryIds = new[] { "frontline-one", "frontline-three", "frontline-five" };
+        EntityUid oldMap = default;
+        EntityUid[] bases = default!;
+        Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>[] counts = default!;
+        WarState state = default!;
+        Exception failure = null;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            war.StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                // Post exceptions kill the server; retain assertion failures for the test thread.
+                try
+                {
+                    Assert.That(Server.System<TownHallSystem>().ForceCapture(new TerritoryId("frontline-three"),
+                        new FactionId("FrontlineFactionOne"), ticker.DefaultMap), Is.True);
+                    oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                    state = war.State!;
+                    bases = territoryIds.Select(id => FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                        hall => hall.TerritoryId == id)).ToArray();
+                    counts = bases.Select((uid, i) => new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                        { ["SoldierSupplies"] = i * 7, ["BasicMaterials"] = 11 + i * 12 }).ToArray();
+                    for (var i = 0; i < bases.Length; i++)
+                    {
+                        var live = SComp<FrontlineStockpileComponent>(bases[i]).Counts;
+                        live.Clear();
+                        foreach (var (product, count) in counts[i])
+                            live[product] = count;
+                    }
+                    data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                    data.CreateDir(WarStrategicSnapshotSystem.TemporaryPath);
+                    Assert.That(data.IsDir(WarStrategicSnapshotSystem.TemporaryPath), Is.True);
+                    // Native VirtualWritableDirProvider.Open(Create) rejects a directory with ArgumentException.
+                    Assert.Multiple(() =>
+                    {
+                        Assert.Throws<ArgumentException>(() => ticker.RestartRound(),
+                            "A failed save must escape native cleanup before FlushEntities.");
+                        Assert.That(Server.UnhandledException, Is.Null);
+                        Assert.That(SEntMan.EntityExists(oldMap), Is.True);
+                        Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(oldMap));
+                        Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby),
+                            "RestartRound changes RunLevel before cleanup; retry must work from this partial transition.");
+                        Assert.That(ticker.CurrentPreset?.ID, Is.EqualTo("PersistentWar"));
+                        Assert.That(war.State, Is.EqualTo(state));
+                        for (var i = 0; i < bases.Length; i++)
+                        {
+                            Assert.That(SEntMan.EntityExists(bases[i]), Is.True);
+                            if (SEntMan.EntityExists(bases[i]))
+                            {
+                                Assert.That(FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                                    hall => hall.TerritoryId == territoryIds[i]), Is.EqualTo(bases[i]));
+                                Assert.That(SComp<FrontlineStockpileComponent>(bases[i]).Counts, Is.EquivalentTo(counts[i]));
+                            }
+                        }
+                    });
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+                finally
+                {
+                    data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                }
+            });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
+
+            await Server.WaitPost(() =>
+            {
+                // A later successful cleanup must still track this map and save its current, not stale, counts.
+                counts[1]["BasicMaterials"] = 53;
+                SComp<FrontlineStockpileComponent>(bases[1]).Counts["BasicMaterials"] = 53;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(Server.UnhandledException, Is.Null);
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(state));
+                Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                for (var i = 0; i < bases.Length; i++)
+                {
+                    Assert.That(SEntMan.EntityExists(bases[i]), Is.False);
+                    var restored = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                        hall => hall.TerritoryId == territoryIds[i]);
+                    Assert.That(SComp<TownHallComponent>(restored).FactionId,
+                        Is.EqualTo(i == 2 ? "FrontlineFactionTwo" : "FrontlineFactionOne"));
+                    Assert.That(SComp<FrontlineStockpileComponent>(restored).Counts, Is.EquivalentTo(counts[i]));
+                }
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() => data.Delete(WarStrategicSnapshotSystem.TemporaryPath));
+        }
+    }
+
+    [TestCase(1, 0)]
+    [TestCase(2, 41)]
+    public async Task MalformedStrategicHeaderCannotBypassValidationAsAnotherWar(int version, int savedWarId)
+    {
+        const int currentWarId = 42;
+        var snapshot = Server.System<WarStrategicSnapshotSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var map = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        Exception failure = null;
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    Server.System<PersistentWarMapValidatorSystem>().Validate(map.MapUid);
+                    var objectives = Server.System<TerritorySystem>().GetTerritories(map.MapId).ToDictionary(id => id.Id,
+                        id => id.Id is "frontline-one" or "frontline-five"
+                            ? FindMapEntity<TownHallComponent>(map.MapId, hall => hall.TerritoryId == id.Id)
+                            : FindMapEntity<TownHallRuinComponent>(map.MapId, ruin => ruin.TerritoryId == id.Id));
+                    var bases = objectives.Select(entry =>
+                    {
+                        var hall = SEntMan.TryGetComponent<TownHallComponent>(entry.Value, out var component);
+                        return new WarBaseSnapshot(entry.Key, hall ? "hall" : "ruin",
+                            SComp<MetaDataComponent>(entry.Value).EntityPrototype!.ID, hall ? component!.FactionId : null,
+                            hall ? SComp<FrontlineStockpileComponent>(entry.Value).Counts
+                                .ToDictionary(count => count.Key.Id, count => count.Value) : new Dictionary<string, int>());
+                    }).ToList();
+                    data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                    using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
+                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(version, savedWarId, bases));
+                    Assert.Multiple(() =>
+                    {
+                        Assert.Throws<InvalidDataException>(() => snapshot.Restore(map.MapUid, currentWarId));
+                        foreach (var entry in bases)
+                        {
+                            var uid = entry.ObjectiveKind == "hall"
+                                ? FindMapEntity<TownHallComponent>(map.MapId, hall => hall.TerritoryId == entry.TerritoryId)
+                                : FindMapEntity<TownHallRuinComponent>(map.MapId, ruin => ruin.TerritoryId == entry.TerritoryId);
+                            Assert.That(uid, Is.EqualTo(objectives[entry.TerritoryId]));
+                            if (entry.ObjectiveKind == "hall")
+                                Assert.That(SComp<FrontlineStockpileComponent>(uid).Counts,
+                                    Is.EquivalentTo(entry.Counts.ToDictionary(count => new ProtoId<FrontlineSupplyProductPrototype>(count.Key), count => count.Value)));
+                        }
+                    });
+                    // Repaired JSON must be read on this same map: refusal must not set _loadedMap.
+                    foreach (var entry in bases.Where(entry => entry.ObjectiveKind == "hall"))
+                        entry.Counts["SoldierSupplies"] = 7;
+                    using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
+                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(1, currentWarId, bases));
+                    snapshot.Restore(map.MapUid, currentWarId);
+                    foreach (var entry in bases)
+                    {
+                        Assert.That(SEntMan.EntityExists(objectives[entry.TerritoryId]), Is.False);
+                        if (entry.ObjectiveKind == "hall")
+                        {
+                            var restored = FindMapEntity<TownHallComponent>(map.MapId, hall => hall.TerritoryId == entry.TerritoryId);
+                            Assert.That(SComp<FrontlineStockpileComponent>(restored).Counts,
+                                Is.EquivalentTo(entry.Counts.ToDictionary(count => new ProtoId<FrontlineSupplyProductPrototype>(count.Key), count => count.Value)));
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
+        }
+        finally
+        {
+            await Server.WaitPost(() =>
+            {
+                data.Delete(WarStrategicSnapshotSystem.SavePath);
+                data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                data.Delete(WarStrategicSnapshotSystem.BackupPath);
+            });
+        }
     }
 
     [Test]
