@@ -528,6 +528,103 @@ public sealed class PersistentWarRuleTest : GameTest
 
     [Test]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesOwnedBasesAndStockpileCounts()
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var territories = Server.System<TerritorySystem>();
+        var halls = Server.System<TownHallSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var faction = new FactionId("FrontlineFactionOne");
+        var capturedTerritory = new TerritoryId("frontline-three");
+        var baseTerritories = new[] { "frontline-one", capturedTerritory.Id, "frontline-five" };
+        WarState beforeRestart = default!;
+        EntityUid oldMap = default;
+        EntityUid[] oldBases = default!;
+        Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>[] countsBefore = default!;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            war.StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+            Assert.That(territories.GetState(capturedTerritory, ticker.DefaultMap), Is.EqualTo(TerritoryState.Neutral));
+        });
+
+        await Server.WaitPost(() =>
+        {
+            Assert.That(halls.ForceCapture(capturedTerritory, faction, ticker.DefaultMap), Is.True);
+            oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+            oldBases = baseTerritories.Select(territory => FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                hall => hall.TerritoryId == territory)).ToArray();
+            countsBefore = new[]
+            {
+                new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                    { ["SoldierSupplies"] = 0, ["BasicMaterials"] = 11 },
+                new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                    { ["SoldierSupplies"] = 7, ["BasicMaterials"] = 23 },
+                new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                    { ["SoldierSupplies"] = 13, ["BasicMaterials"] = 37 },
+            };
+            for (var i = 0; i < oldBases.Length; i++)
+            {
+                var counts = SComp<FrontlineStockpileComponent>(oldBases[i]).Counts;
+                counts.Clear();
+                foreach (var (product, count) in countsBefore[i])
+                    counts[product] = count;
+            }
+            beforeRestart = war.State!;
+        });
+        await Pair.RunTicksSync(1);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(territories.TryGetOwner(capturedTerritory, out var owner, ticker.DefaultMap), Is.True);
+            Assert.That(owner, Is.EqualTo(faction));
+            Assert.That(territories.CountOwned(faction, ticker.DefaultMap), Is.EqualTo(2));
+            Assert.That(war.State, Is.EqualTo(beforeRestart));
+            Assert.That(beforeRestart.Status, Is.EqualTo(WarStatus.Active), "One neutral capture must stay below victory.");
+        });
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(territories.TryGetOwner(capturedTerritory, out var owner, ticker.DefaultMap), Is.True,
+                "Technical restart must restore the captured base instead of reloading its neutral ruin.");
+            Assert.That(owner, Is.EqualTo(faction));
+            Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+            Assert.That(war.State, Is.EqualTo(beforeRestart));
+            Assert.That(territories.CountOwned(faction, ticker.DefaultMap), Is.EqualTo(2));
+            Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+            Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+            for (var i = 0; i < oldBases.Length; i++)
+            {
+                Assert.That(SEntMan.EntityExists(oldBases[i]), Is.False);
+                var restored = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                    hall => hall.TerritoryId == baseTerritories[i]);
+                Assert.That(SComp<TownHallComponent>(restored).FactionId,
+                    Is.EqualTo(i == 2 ? "FrontlineFactionTwo" : faction.Id));
+                Assert.That(SComp<FrontlineStockpileComponent>(restored).Counts, Is.EquivalentTo(countsBefore[i]),
+                    $"Base {baseTerritories[i]} must retain exact counts, including zero supplies, without a fresh 20-supply grant.");
+            }
+        });
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
     public async Task NewWarStartsNewPersistentDayNightPhase()
     {
         var ticker = Server.System<GameTicker>();
