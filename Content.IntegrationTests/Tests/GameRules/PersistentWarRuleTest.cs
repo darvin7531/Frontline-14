@@ -120,15 +120,46 @@ public sealed class PersistentWarRuleTest : GameTest
         InLobby = true,
     };
 
+    private GamePresetPrototype _originalPreset;
+
+    public override async Task DoSetup()
+    {
+        await base.DoSetup();
+        await Server.WaitPost(() => _originalPreset = Server.System<GameTicker>().Preset);
+    }
+
     public override async Task DoTeardown()
     {
-        await Server.WaitPost(() =>
+        try
         {
-            var resources = Server.ResolveDependency<IResourceManager>();
-            resources.UserData.Delete(WarStateSystem.SavePath);
-            resources.UserData.Delete(WarFactionSystem.SavePath);
-        });
-        await base.DoTeardown();
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    var resources = Server.ResolveDependency<IResourceManager>();
+                    resources.UserData.Delete(WarStateSystem.SavePath);
+                    resources.UserData.Delete(WarFactionSystem.SavePath);
+                }
+                finally
+                {
+                    // RestartRound clears CurrentPreset, but retains the selected next-round preset.
+                    Server.System<GameTicker>().SetGamePreset(_originalPreset);
+                }
+            });
+        }
+        finally
+        {
+            await base.DoTeardown();
+        }
+    }
+
+    [Test]
+    public async Task TeardownRestoresOriginalPresetBeforePoolReturn()
+    {
+        var ticker = Server.System<GameTicker>();
+        var originalPreset = ticker.Preset;
+        await Server.WaitPost(() => ticker.SetGamePreset("PersistentWar"));
+        PreFinalizeHook += () => Assert.That(ticker.Preset, Is.EqualTo(originalPreset));
     }
 
     [Test]
