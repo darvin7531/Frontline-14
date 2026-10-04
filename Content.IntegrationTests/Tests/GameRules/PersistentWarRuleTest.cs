@@ -32,6 +32,7 @@ using Content.Shared.Mobs.Systems;
 using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Interaction;
 using Content.Shared.Stacks;
+using Content.Shared.Tag;
 using Content.Shared.War;
 
 using Robust.Shared.ContentPack;
@@ -1117,6 +1118,273 @@ public sealed class PersistentWarRuleTest : GameTest
         finally
         {
             await Server.WaitPost(() => data.Delete(WarStrategicSnapshotSystem.TemporaryPath));
+        }
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task QueuedDepletedResourceControllerBlocksRestartBeforeEntityFlush()
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var fields = Server.System<FrontlineResourceFieldSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        Exception failure = null;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            war.StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunTicksSync(1);
+        // Produce a real committed save, then load its matching campaign map.
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunTicksSync(1);
+        await Server.WaitPost(() =>
+        {
+            try
+            {
+                var map = maps.GetMapOrInvalid(ticker.DefaultMap);
+                var field = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap, _ => true);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                // Valid owned depleted setup; native node termination schedules the cooldown.
+                component.RemainingReserveNodes = 0;
+                foreach (var node in component.ActiveNodes.ToArray())
+                    SEntMan.DeleteEntity(node);
+                Assert.That(component.State, Is.EqualTo(FrontlineResourceFieldState.Depleted));
+                Assert.That(component.ActiveNodes, Is.Empty);
+                Assert.That(fields.CaptureSnapshot(ticker.DefaultMap), Has.Count.EqualTo(1));
+                var objectives = SEntMan.EntityQuery<TownHallComponent>()
+                    .Where(hall => SComp<TransformComponent>(hall.Owner).MapID == ticker.DefaultMap)
+                    .Select(hall => hall.Owner).ToArray();
+                string saved;
+                using (var before = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
+                    saved = new StreamReader(before).ReadToEnd();
+
+                // Do not yield: capture must see the native queue before deletion settles.
+                SEntMan.QueueDeleteEntity(field);
+                Assert.That(SEntMan.IsQueuedForDeletion(field), Is.True);
+                Assert.Multiple(() =>
+                {
+                    Assert.Throws<InvalidDataException>(() => ticker.RestartRound(),
+                        "A queued controller must not be silently omitted from a supposedly complete save.");
+                    Assert.That(SEntMan.EntityExists(map), Is.True, "Capture refusal must precede FlushEntities.");
+                    Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(map));
+                    foreach (var objective in objectives)
+                        Assert.That(SEntMan.EntityExists(objective), Is.True);
+                    using var after = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                    Assert.That(new StreamReader(after).ReadToEnd(), Is.EqualTo(saved),
+                        "Do not replace the last restorable save with a snapshot missing its depleted field.");
+                });
+            }
+            catch (Exception e)
+            {
+                // Assertion failures belong on the test thread, not the server's unhandled boundary.
+                failure = e;
+            }
+        });
+        Assert.That(Server.UnhandledException, Is.Null);
+        if (failure != null)
+            throw failure;
+    }
+
+    [Test]
+    public async Task OldResourceNodeTerminationCannotCommitQueuedStagedNode()
+    {
+        const int warId = 42;
+        const string fieldId = "frontline-test-iron";
+        var snapshots = Server.System<WarStrategicSnapshotSystem>();
+        var fields = Server.System<FrontlineResourceFieldSystem>();
+        var probe = Server.System<QueueStagedResourceOnOldNodeTerminationSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var source = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        string saved = null;
+        Exception failure = null;
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    var field = FindMapEntity<FrontlineResourceFieldComponent>(source.MapId, _ => true);
+                    var component = SComp<FrontlineResourceFieldComponent>(field);
+                    Assert.That(component.ActiveNodes, Has.Count.EqualTo(3));
+                    component.RemainingReserveNodes = 2;
+                    var partial = component.ActiveNodes.Single(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId == "iron-west");
+                    SComp<FrontlineResourceNodeComponent>(partial).RemainingYield = 15;
+                    var bases = Server.System<TerritorySystem>().GetTerritories(source.MapId).Select(id =>
+                    {
+                        var hall = id.Id is "frontline-one" or "frontline-five";
+                        var uid = hall
+                            ? FindMapEntity<TownHallComponent>(source.MapId, objective => objective.TerritoryId == id.Id)
+                            : FindMapEntity<TownHallRuinComponent>(source.MapId, objective => objective.TerritoryId == id.Id);
+                        if (hall)
+                        {
+                            var counts = SComp<FrontlineStockpileComponent>(uid).Counts;
+                            counts.Clear();
+                            counts["SoldierSupplies"] = 7;
+                            counts["BasicMaterials"] = 11;
+                        }
+                        return new WarBaseSnapshot(id.Id, hall ? "hall" : "ruin",
+                            SComp<MetaDataComponent>(uid).EntityPrototype!.ID,
+                            hall ? SComp<TownHallComponent>(uid).FactionId : null,
+                            hall ? SComp<FrontlineStockpileComponent>(uid).Counts.ToDictionary(entry => entry.Key.Id, entry => entry.Value)
+                                : new Dictionary<string, int>());
+                    }).ToList();
+                    var resources = fields.CaptureSnapshot(source.MapId);
+                    Assert.That(resources.Single().RemainingReserveNodes, Is.EqualTo(2));
+                    Assert.That(resources.Single().Nodes.Select(node => node.RemainingYield), Is.EquivalentTo(new[] { 15, 20, 20 }));
+                    saved = JsonSerializer.Serialize(new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, warId, bases)
+                    {
+                        Resources = resources,
+                    });
+                    data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                    using var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath);
+                    using var writer = new StreamWriter(stream);
+                    writer.Write(saved);
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            });
+            if (failure != null)
+                throw failure;
+
+            var fresh = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    probe.OldNode = FindMapEntity<FrontlineResourceNodeComponent>(fresh.MapId,
+                        node => node.FieldId == fieldId && node.SlotId == "iron-west");
+                    Assert.That(SEntMan.HasComponent<TagComponent>(probe.OldNode), Is.True);
+                    Assert.That(SComp<FrontlineResourceNodeComponent>(probe.OldNode).RemainingYield, Is.EqualTo(20));
+                    probe.Enabled = true;
+                    Assert.Multiple(() =>
+                    {
+                        // Abort startup is allowed; retaining the original entity IDs is not required.
+                        Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId),
+                            "Native old-node deletion invalidated the staged paid node after preflight; restore must fail closed.");
+                        Assert.That(probe.Fired, Is.True, "The observer must run on real EntityTerminatingEvent, not a synthetic event.");
+                        Assert.That(probe.StagedNode, Is.Not.EqualTo(EntityUid.Invalid));
+                        Assert.That(probe.DetachedDuringCallback, Is.True);
+                        Assert.That(probe.QueuedDuringCallback, Is.True);
+                        Assert.That(probe.YieldDuringCallback, Is.EqualTo(15));
+                        Assert.That(Server.UnhandledException, Is.Null);
+                        using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                        Assert.That(new StreamReader(stream).ReadToEnd(), Is.EqualTo(saved));
+                    });
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+                finally
+                {
+                    probe.Enabled = false;
+                }
+            });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
+            await Pair.RunTicksSync(2);
+
+            // Retry startup on a clean map from the same disk claim, not fresh reserve/yield defaults.
+            var retry = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    snapshots.Restore(retry.MapUid, warId);
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            });
+            if (failure != null)
+                throw failure;
+            await Pair.RunTicksSync(1);
+            await Server.WaitAssertion(() =>
+            {
+                var field = FindMapEntity<FrontlineResourceFieldComponent>(retry.MapId, component => component.FieldId == fieldId);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                Assert.That(component.RemainingReserveNodes, Is.EqualTo(2), "Retry must not mint the fresh-map reserve of 3.");
+                Assert.That(component.ActiveNodes, Has.Count.EqualTo(3));
+                foreach (var uid in component.ActiveNodes)
+                {
+                    var node = SComp<FrontlineResourceNodeComponent>(uid);
+                    Assert.That(SEntMan.EntityExists(uid), Is.True);
+                    Assert.That(SEntMan.IsQueuedForDeletion(uid), Is.False);
+                    Assert.That(node.Field, Is.EqualTo(field));
+                    Assert.That(node.RemainingYield, Is.EqualTo(node.SlotId == "iron-west" ? 15 : 20));
+                }
+                Assert.That(fields.CaptureSnapshot(retry.MapId).Single().Nodes, Has.Count.EqualTo(3));
+                foreach (var territory in new[] { "frontline-one", "frontline-five" })
+                {
+                    var hall = FindMapEntity<TownHallComponent>(retry.MapId, objective => objective.TerritoryId == territory);
+                    Assert.That(SComp<FrontlineStockpileComponent>(hall).Counts,
+                        Is.EquivalentTo(new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                            { ["SoldierSupplies"] = 7, ["BasicMaterials"] = 11 }));
+                }
+                using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                Assert.That(new StreamReader(stream).ReadToEnd(), Is.EqualTo(saved));
+                Assert.That(Server.UnhandledException, Is.Null);
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() => probe.Enabled = false);
+        }
+    }
+
+    public sealed class QueueStagedResourceOnOldNodeTerminationSystem : EntitySystem
+    {
+        public bool Enabled;
+        public bool Fired;
+        public EntityUid OldNode;
+        public EntityUid StagedNode = EntityUid.Invalid;
+        public bool DetachedDuringCallback;
+        public bool QueuedDuringCallback;
+        public int YieldDuringCallback;
+
+        public override void Initialize()
+        {
+            // BaseStructure supplies Tag; this component/native event pair is otherwise unclaimed.
+            SubscribeLocalEvent<TagComponent, EntityTerminatingEvent>(OnOldNodeTerminating);
+        }
+
+        private void OnOldNodeTerminating(Entity<TagComponent> ent, ref EntityTerminatingEvent args)
+        {
+            if (!Enabled || Fired || ent.Owner != OldNode)
+                return;
+            Fired = true;
+            var old = Comp<FrontlineResourceNodeComponent>(ent);
+            var mapId = Transform(ent).MapID;
+            var query = EntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out var node, out var transform))
+            {
+                if (uid == OldNode || transform.MapID != mapId || node.SlotId != old.SlotId ||
+                    node.Field != EntityUid.Invalid || !string.IsNullOrEmpty(node.FieldId) || TerminatingOrDeleted(uid))
+                    continue;
+                StagedNode = uid;
+                DetachedDuringCallback = node.SpawnPoint == EntityUid.Invalid;
+                YieldDuringCallback = node.RemainingYield;
+                QueueDel(uid);
+                QueuedDuringCallback = EntityManager.IsQueuedForDeletion(uid);
+                return;
+            }
         }
     }
 
