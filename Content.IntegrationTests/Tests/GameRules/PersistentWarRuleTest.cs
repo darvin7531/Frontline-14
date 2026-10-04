@@ -18,6 +18,9 @@ using Content.Server.War;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.Components;
 using Content.Shared.CCVar;
+using Content.Shared.Damage;
+using Content.Shared.Damage.Systems;
+using Content.Shared.FixedPoint;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Ghost.Components;
 using Content.Shared.Mind.Components;
@@ -643,6 +646,141 @@ public sealed class PersistentWarRuleTest : GameTest
             }
         });
     }
+
+    // Exact damage is the persistence contract, not a player-facing health measurement.
+#pragma warning disable CS0618
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesObjectiveDamageAndRuinRepairProgress()
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var territories = Server.System<TerritorySystem>();
+        var damage = Server.System<DamageableSystem>();
+        var hands = Server.System<SharedHandsSystem>();
+        var interaction = Server.System<SharedInteractionSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var session = ServerSession!;
+        var faction = new FactionId("FrontlineFactionOne");
+        EntityUid oldMap = default;
+        EntityUid liveHall = default;
+        EntityUid destroyedHall = default;
+        EntityUid ruin = default;
+        EntityUid materials = default;
+        WarState beforeRestart = default!;
+        DamageSpecifier damageBefore = default!;
+        var progressBefore = 0;
+        var selected = false;
+        var damaged = false;
+        var destroyed = false;
+        var pickedUp = false;
+        var repairStarted = false;
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                factions.ClearFaction(session.UserId);
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitPost(() =>
+            {
+                selected = factions.TrySelectFaction(session.UserId, faction);
+                ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                liveHall = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                    hall => hall.TerritoryId == "frontline-one");
+                destroyedHall = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                    hall => hall.TerritoryId == "frontline-five");
+                // Below the native 50 breakage / 100 destruction thresholds; retain both exact types.
+                damaged = damage.TryChangeDamage(liveHall, new DamageSpecifier
+                {
+                    DamageDict = new() { ["Blunt"] = FixedPoint2.New(7.25), ["Slash"] = FixedPoint2.New(3.5) },
+                }, ignoreResistances: true, ignoreGlobalModifiers: true);
+                destroyed = damage.TryChangeDamage(destroyedHall, new DamageSpecifier
+                {
+                    DamageDict = new() { ["Blunt"] = FixedPoint2.New(100) },
+                }, ignoreResistances: true, ignoreGlobalModifiers: true);
+            });
+            await Pair.RunTicksSync(2);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(selected && damaged && destroyed, Is.True);
+                Assert.That(session.AttachedEntity, Is.Not.Null);
+                Assert.That(SEntMan.EntityExists(liveHall), Is.True);
+                Assert.That(SEntMan.EntityExists(destroyedHall), Is.False,
+                    "Native damage/destruction must remove the hall before testing persistence.");
+                Assert.That(territories.GetState(new TerritoryId("frontline-five"), ticker.DefaultMap),
+                    Is.EqualTo(TerritoryState.Neutral));
+            });
+            await Server.WaitPost(() =>
+            {
+                ruin = FindMapEntity<TownHallRuinComponent>(ticker.DefaultMap,
+                    objective => objective.TerritoryId == "frontline-five");
+                var body = session.AttachedEntity!.Value;
+                var coordinates = SComp<TransformComponent>(ruin).Coordinates;
+                Server.System<SharedTransformSystem>().SetCoordinates(body, coordinates);
+                materials = Server.System<StackSystem>().SpawnAtPosition(2, "BasicMaterials", coordinates);
+                pickedUp = hands.TryPickupAnyHand(body, materials);
+                repairStarted = interaction.InteractDoAfter(body, materials, ruin, coordinates, true);
+            });
+            await Pair.RunSeconds(2.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(pickedUp && repairStarted, Is.True);
+                Assert.That(damage.GetAllDamage(liveHall).DamageDict["Blunt"], Is.EqualTo(FixedPoint2.New(7.25)));
+                Assert.That(damage.GetAllDamage(liveHall).DamageDict["Slash"], Is.EqualTo(FixedPoint2.New(3.5)));
+                Assert.That(SComp<TownHallRuinComponent>(ruin).DepositedBasicMaterials, Is.EqualTo(1));
+                Assert.That(SComp<TownHallRuinComponent>(ruin).RequiredBasicMaterials, Is.GreaterThan(1));
+                Assert.That(SComp<StackComponent>(materials).Count, Is.EqualTo(1),
+                    "Partial progress must come from consuming a real held BasicMaterials stack.");
+                Assert.That(territories.CountOwned(faction, ticker.DefaultMap), Is.EqualTo(1));
+                Assert.That(war.State!.Status, Is.EqualTo(WarStatus.Active), "Setup must remain below victory.");
+            });
+            await Server.WaitPost(() =>
+            {
+                damageBefore = damage.GetAllDamage(liveHall);
+                progressBefore = SComp<TownHallRuinComponent>(ruin).DepositedBasicMaterials;
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitAssertion(() => Assert.Multiple(() =>
+            {
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                Assert.That(SEntMan.EntityExists(liveHall), Is.False);
+                Assert.That(SEntMan.EntityExists(ruin), Is.False);
+                var restoredRuin = FindMapEntity<TownHallRuinComponent>(ticker.DefaultMap,
+                    objective => objective.TerritoryId == "frontline-five");
+                Assert.That(SEntMan.HasComponent<TownHallComponent>(restoredRuin), Is.False,
+                    "A destroyed hall must remain a ruin after normal preset reload.");
+                Assert.That(SComp<TownHallRuinComponent>(restoredRuin).DepositedBasicMaterials,
+                    Is.EqualTo(progressBefore), "Technical restart must not erase paid ruin repair progress.");
+                var restoredHall = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                    hall => hall.TerritoryId == "frontline-one");
+                Assert.That(damage.GetAllDamage(restoredHall).DamageDict, Is.EquivalentTo(damageBefore.DamageDict),
+                    "Technical restart must retain exact per-type objective damage, not heal the hall.");
+            }));
+        }
+        finally
+        {
+            // Native cleanup on behavioral RED too; fixture teardown removes saves and restores the preset.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+#pragma warning restore CS0618
 
     [Test]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
