@@ -1,0 +1,55 @@
+name: Frontline verification
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  frontline-verification:
+    name: Frontline verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DOTNET_gcServer: 1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build test projects
+        run: dotnet build Content.IntegrationTests/Content.IntegrationTests.csproj --configuration DebugOpt /m
+
+      - name: Run Content.Tests
+        run: >-
+          dotnet test Content.Tests/Content.Tests.csproj --no-build --no-restore --configuration DebugOpt
+          -- NUnit.ConsoleOut=0 NUnit.MapWarningTo=Failed NUnit.TestOutputXml="logs"
+          NUnit.WorkDirectory="$PWD/test_results/unit"
+
+      - name: Run Frontline integration tests
+        run: >-
+          dotnet test Content.IntegrationTests/Content.IntegrationTests.csproj --no-build --no-restore --configuration DebugOpt
+          --filter 'FullyQualifiedName~Content.IntegrationTests.Tests.War.|FullyQualifiedName~Content.IntegrationTests.Tests.GameRules.PersistentWarRuleTest.|FullyQualifiedName~Content.IntegrationTests.Tests.GameRules.WarFactionMembershipTest.|FullyQualifiedName~Content.IntegrationTests.Tests.GameRules.WarStatePersistenceTest.'
+          -- NUnit.ConsoleOut=0 NUnit.MapWarningTo=Failed NUnit.TestOutputXml="logs"
+          NUnit.WorkDirectory="$PWD/test_results/frontline"
+
+      - name: Run shared core integration tests
+        run: >-
+          dotnet test Content.IntegrationTests/Content.IntegrationTests.csproj --no-build --no-restore --configuration DebugOpt
+          --filter 'FullyQualifiedName~PrototypeTests|FullyQualifiedName~PrototypeSaveTest|FullyQualifiedName~EntityPrototypeComponentsTest|FullyQualifiedName~EntityTest|FullyQualifiedName~Serialization|FullyQualifiedName~FixedPoint2Serialization|FullyQualifiedName~Localization|FullyQualifiedName~PostMapInit|FullyQualifiedName~SaveLoadMap|FullyQualifiedName~SaveLoadSave|FullyQualifiedName~Mapping|FullyQualifiedName~Networking|FullyQualifiedName~Minds|FullyQualifiedName~EuiManagerTest|FullyQualifiedName~UiControlTest|FullyQualifiedName~MaterialArbitrage'
+          -- NUnit.ConsoleOut=0 NUnit.MapWarningTo=Failed NUnit.TestOutputXml="logs"
+          NUnit.WorkDirectory="$PWD/test_results/shared-core"
+
+      - name: Archive NUnit3 test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontline-nunit3-results
+          path: test_results/
+          retention-days: 7
+          compression-level: 9

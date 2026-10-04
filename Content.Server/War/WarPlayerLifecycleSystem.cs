@@ -32,6 +32,7 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
     private readonly HashSet<NetUserId> _respawning = new();
     private readonly Dictionary<NetUserId, EntityUid> _waiting = new();
     private readonly Dictionary<NetUserId, RespawnChoiceEui> _choices = new();
+    private float _choiceUpdateAccumulator;
 
     public override void Initialize()
     {
@@ -43,6 +44,22 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
     {
         _players.PlayerStatusChanged -= OnPlayerStatusChanged;
         base.Shutdown();
+    }
+
+    public override void Update(float frameTime)
+    {
+        base.Update(frameTime);
+
+        if (_choices.Count == 0)
+            return;
+
+        _choiceUpdateAccumulator += frameTime;
+        if (_choiceUpdateAccumulator < 1f)
+            return;
+        _choiceUpdateAccumulator = 0f;
+
+        foreach (var choice in _choices.Values)
+            choice.RefreshState();
     }
 
     private void OnMobStateChanged(MobStateChangedEvent args)
@@ -89,6 +106,7 @@ public sealed partial class WarPlayerLifecycleSystem : EntitySystem
             choices.Add(new RespawnBaseOption(territory.Id, prototype.Name,
                 Comp<FrontlineStockpileComponent>(core).Counts.GetValueOrDefault(SoldierSupplies)));
         }
+        choices.Sort((left, right) => string.CompareOrdinal(left.TerritoryId, right.TerritoryId));
         return choices.ToArray();
     }
 

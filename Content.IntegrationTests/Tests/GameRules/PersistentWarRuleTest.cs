@@ -1215,6 +1215,150 @@ public sealed class PersistentWarRuleTest : GameTest
 
     [Test]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task DeadRespawnChoiceRefreshesOpenWindowAfterStockpileReplenishment()
+    {
+        var ticker = Server.System<GameTicker>();
+        var factions = Server.System<WarFactionSystem>();
+        var minds = Server.System<MindSystem>();
+        var mobState = Server.System<MobStateSystem>();
+        var territories = Server.System<TerritorySystem>();
+        var hands = Server.System<SharedHandsSystem>();
+        var stockpiles = Server.System<FrontlineStockpileSystem>();
+        var ui = Client.ResolveDependency<IUserInterfaceManager>();
+        var localization = Client.ResolveDependency<ILocalizationManager>();
+        var session = ServerSession!;
+        var account = session.UserId;
+        var faction = new FactionId("FrontlineFactionOne");
+        var territory = new TerritoryId("frontline-one");
+        ProtoId<FrontlineTerritoryPrototype> territoryPrototype = territory.Id;
+        EntityUid home = default;
+        EntityUid oldBody = default;
+        EntityUid? mindId = default;
+        RespawnChoiceWindow window = default!;
+        Button respawn = default!;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+
+        await Server.WaitPost(() =>
+        {
+            factions.ClearFaction(account);
+            Assert.That(factions.TrySelectFaction(account, faction), Is.True);
+            home = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                hall => hall.TerritoryId == territory.Id && hall.FactionId == faction.Id);
+            SComp<FrontlineStockpileComponent>(home).Counts["SoldierSupplies"] = 0;
+            ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
+            oldBody = session.AttachedEntity!.Value;
+            Assert.That(minds.TryGetMind(account, out mindId, out _), Is.True);
+        });
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SComp<MobStateComponent>(oldBody).CurrentState, Is.EqualTo(MobState.Alive));
+            Assert.That(SComp<FrontlineStockpileComponent>(home).Counts["SoldierSupplies"], Is.Zero,
+                "Initial deployment must remain free at an empty base.");
+        });
+
+        await Server.WaitPost(() => mobState.ChangeMobState(oldBody, MobState.Dead));
+        await Pair.RunUntilSynced();
+        await Client.WaitAssertion(() =>
+        {
+            var windows = ui.WindowRoot.Children.OfType<RespawnChoiceWindow>()
+                .Where(entry => entry.IsOpen).ToArray();
+            Assert.That(windows, Has.Length.EqualTo(1));
+            window = windows.Single();
+            respawn = Descendants(window).OfType<Button>()
+                .Single(button => button.Name == "Respawn:frontline-one");
+            Assert.That(respawn.Disabled, Is.True);
+            Assert.That(respawn.Text, Is.EqualTo(localization.GetString("frontline-respawn-choice-base",
+                ("base", localization.GetString(CProtoMan.Index(territoryPrototype).Name)), ("count", 0))));
+        });
+
+        await Server.WaitPost(() =>
+        {
+            var coordinates = SComp<TransformComponent>(home).Coordinates;
+            var courier = SEntMan.SpawnEntity("MobHuman", coordinates);
+            var crate = SEntMan.SpawnEntity("FrontlineSupplyCrate", coordinates);
+            Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Product.Id, Is.EqualTo("SoldierSupplies"));
+            SComp<FrontlineSupplyCrateComponent>(crate).Amount = 2;
+            Assert.That(hands.TryPickupAnyHand(courier, crate), Is.True);
+            Assert.That(stockpiles.TrySubmitHeld(home, courier), Is.True);
+            Assert.That(SEntMan.EntityExists(crate), Is.False);
+            SEntMan.DeleteEntity(courier);
+        });
+        await Pair.RunSeconds(2);
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SComp<FrontlineStockpileComponent>(home).Counts["SoldierSupplies"], Is.EqualTo(2));
+            Assert.That(session.AttachedEntity, Is.EqualTo(oldBody));
+            Assert.That(SComp<MobStateComponent>(oldBody).CurrentState, Is.EqualTo(MobState.Dead));
+        });
+        await Client.WaitAssertion(() =>
+        {
+            var windows = ui.WindowRoot.Children.OfType<RespawnChoiceWindow>()
+                .Where(entry => entry.IsOpen).ToArray();
+            Assert.That(windows, Has.Length.EqualTo(1));
+            Assert.That(windows.Single(), Is.SameAs(window), "Replenishment must refresh the still-open death window.");
+            respawn = Descendants(window).OfType<Button>()
+                .Single(button => button.Name == "Respawn:frontline-one");
+            Assert.That(respawn.Disabled, Is.False, "Logistics replenishment must enable the open base choice.");
+            Assert.That(respawn.Text, Is.EqualTo(localization.GetString("frontline-respawn-choice-base",
+                ("base", localization.GetString(CProtoMan.Index(territoryPrototype).Name)), ("count", 2))));
+        });
+
+        var screenCoords = new ScreenCoordinates(
+            respawn.GlobalPixelPosition + respawn.PixelSize / 2,
+            respawn.Window?.Id ?? default);
+        var relativePos = screenCoords.Position / respawn.UIScale - respawn.GlobalPosition;
+        var relativePixelPos = screenCoords.Position - respawn.GlobalPixelPosition;
+        foreach (var state in new[] { BoundKeyState.Down, BoundKeyState.Up })
+        {
+            await Client.DoGuiEvent(respawn, new GUIBoundKeyEventArgs(
+                EngineKeyFunctions.UIClick, state, screenCoords, default, relativePos, relativePixelPos));
+            await Pair.RunTicksSync(1);
+        }
+        await Pair.RunUntilSynced();
+
+        await Server.WaitAssertion(() => Assert.Multiple(() =>
+        {
+            var newBody = session.AttachedEntity;
+            Assert.That(newBody, Is.Not.Null);
+            Assert.That(newBody, Is.Not.EqualTo(oldBody));
+            Assert.That(SEntMan.EntityExists(oldBody), Is.False);
+            Assert.That(SEntMan.EntityExists(newBody!.Value), Is.True);
+            Assert.That(SComp<MobStateComponent>(newBody.Value).CurrentState, Is.EqualTo(MobState.Alive));
+            var transform = SComp<TransformComponent>(newBody.Value);
+            Assert.That(transform.MapID, Is.EqualTo(ticker.DefaultMap));
+            Assert.That(territories.Contains(territory, transform.Coordinates), Is.True);
+            Assert.That(SComp<FrontlineStockpileComponent>(home).Counts["SoldierSupplies"], Is.EqualTo(1),
+                "The real client click must debit exactly one replenished SoldierSupply.");
+            Assert.That(minds.TryGetMind(account, out var currentMindId, out var mind), Is.True);
+            Assert.That(currentMindId, Is.EqualTo(mindId));
+            Assert.That(mind?.UserId, Is.EqualTo(account));
+            Assert.That(mind?.OwnedEntity, Is.EqualTo(newBody));
+            Assert.That(mind?.CurrentEntity, Is.EqualTo(newBody));
+        }));
+
+        static IEnumerable<Control> Descendants(Control parent)
+        {
+            foreach (var child in parent.Children)
+            {
+                yield return child;
+                foreach (var descendant in Descendants(child))
+                    yield return descendant;
+            }
+        }
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
     public async Task RuinRepairUsesBasicMaterialsInsteadOfSteel()
     {
         var ticker = Server.System<GameTicker>();
