@@ -258,8 +258,12 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
         var query = EntityQueryEnumerator<FrontlineResourceFieldComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var field, out var transform))
         {
-            if (transform.MapID == mapId && Usable(uid))
-                fields.Add(field.FieldId, (uid, field));
+            if (transform.MapID != mapId)
+                continue;
+            // A pending controller still owns its reserve/cooldown; omission would mint fresh state.
+            if (!Usable(uid))
+                throw new InvalidDataException("Resource field deletion must settle before persistence.");
+            fields.Add(field.FieldId, (uid, field));
         }
         return fields;
     }
@@ -386,12 +390,13 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     {
         foreach (var uid in staged)
         {
-            if (Exists(uid))
+            if (!TerminatingOrDeleted(uid))
                 Del(uid);
         }
     }
 
-    internal void CommitSnapshot(MapId mapId, List<WarResourceFieldSnapshot> entries, List<EntityUid> staged)
+    internal void ValidateStagedSnapshot(MapId mapId, List<WarResourceFieldSnapshot> entries,
+        List<EntityUid> staged, bool committed = false)
     {
         var fields = GetFields(mapId);
         var slots = GetSlots(mapId);
@@ -399,17 +404,45 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
             staged.Count != entries.Sum(entry => entry.Nodes.Count) ||
             entries.Any(entry => !fields.ContainsKey(entry.FieldId) ||
                 entry.Nodes.Any(node => !slots.ContainsKey((entry.FieldId, node.SlotId)))))
-            throw new InvalidDataException("Resource entities were lost before commit.");
+            throw new InvalidDataException("Resource entities were lost during restore.");
         var index = 0;
         foreach (var field in entries)
-        foreach (var saved in field.Nodes)
         {
-            var uid = staged[index++];
-            var slot = slots[(field.FieldId, saved.SlotId)];
-            if (Transform(uid).MapID != mapId || Transform(uid).Coordinates != Transform(slot).Coordinates ||
-                Comp<FrontlineResourceNodeComponent>(uid).RemainingYield != saved.RemainingYield)
-                throw new InvalidDataException("Staged resource node changed before commit.");
+            var controller = fields[field.FieldId];
+            if (committed && (controller.Comp.RemainingReserveNodes != field.RemainingReserveNodes ||
+                controller.Comp.FieldInitialized != field.FieldInitialized || controller.Comp.State != field.State ||
+                !controller.Comp.CacheInitialized ||
+                controller.Comp.ActiveNodes.Count != field.Nodes.Count ||
+                controller.Comp.NextReplacement != (field.ReplacementRemainingTicks == 0 ? TimeSpan.Zero :
+                    _timing.CurTime + TimeSpan.FromTicks(field.ReplacementRemainingTicks)) ||
+                controller.Comp.NextReplenishment != (field.ReplenishmentRemainingTicks == 0 ? TimeSpan.Zero :
+                    _timing.CurTime + TimeSpan.FromTicks(field.ReplenishmentRemainingTicks))))
+                throw new InvalidDataException("Restored resource controller changed during commit.");
+            foreach (var saved in field.Nodes)
+            {
+                var uid = staged[index++];
+                var slot = slots[(field.FieldId, saved.SlotId)];
+                var node = Comp<FrontlineResourceNodeComponent>(uid);
+                if (Transform(uid).MapID != mapId || Transform(uid).Coordinates != Transform(slot).Coordinates ||
+                    MetaData(uid).EntityPrototype?.ID != saved.Prototype || node.RemainingYield != saved.RemainingYield ||
+                    node.SlotId != saved.SlotId ||
+                    (!committed && (node.Field != EntityUid.Invalid || !string.IsNullOrEmpty(node.FieldId) ||
+                        node.SpawnPoint != EntityUid.Invalid)) ||
+                    (committed && (node.Field != controller.Owner || node.FieldId != field.FieldId ||
+                        node.SpawnPoint != slot || !controller.Comp.ActiveNodes.Contains(uid))))
+                    throw new InvalidDataException("Restored resource node changed during commit.");
+            }
         }
+    }
+
+    internal void CommitSnapshot(MapId mapId, List<WarResourceFieldSnapshot> entries, List<EntityUid> staged,
+        ref bool commitStarted)
+    {
+        ValidateStagedSnapshot(mapId, entries, staged);
+        var fields = GetFields(mapId);
+        var slots = GetSlots(mapId);
+        // From here, rollback of detached stages cannot recover the discarded YAML claims.
+        commitStarted = true;
         var old = new List<EntityUid>();
         var query = EntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var node, out var transform))
@@ -423,10 +456,14 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
             _extractingNodes.Remove(uid);
             old.Add(uid);
         }
+        DeleteStagedNodes(old);
+        // Del runs native termination/shutdown callbacks synchronously. Preflight alone is not a commit check.
+        ValidateStagedSnapshot(mapId, entries, staged);
+        if (fields.Values.Any(field => !Usable(field.Owner)) || slots.Values.Any(uid => !Usable(uid)))
+            throw new InvalidDataException("Resource controller or slot was lost during old-node deletion.");
         foreach (var field in fields.Values)
             field.Comp.ActiveNodes.Clear();
-        DeleteStagedNodes(old);
-        index = 0;
+        var index = 0;
         foreach (var entry in entries)
         {
             var field = fields[entry.FieldId];
@@ -447,5 +484,6 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
             RebuildFieldCache(field, mapId);
             field.Comp.CacheInitialized = true;
         }
+        ValidateStagedSnapshot(mapId, entries, staged, committed: true);
     }
 }

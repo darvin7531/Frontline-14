@@ -186,19 +186,25 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     /// <summary>Call once on the validated, initialized fresh map, before any player deployment.</summary>
     public void Restore(EntityUid map, int warId)
     {
+        if (!Usable(map))
+            throw new InvalidDataException("Strategic restore requires a live map.");
         if (_loadedMap == map)
             return;
         var mapId = Comp<MapComponent>(map).MapId;
         var staged = new List<EntityUid>();
         var stagedNodes = new List<EntityUid>();
-        var accepted = true;
+        var accepted = false;
+        var commitStarted = false;
         try
         {
             var data = _resources.UserData;
             // A missing primary after rotation means the backup is the last committed snapshot.
             var path = data.Exists(SavePath) ? SavePath : BackupPath;
             if (!data.Exists(path))
+            {
+                accepted = true;
                 return;
+            }
             using var stream = data.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             using var document = JsonDocument.Parse(stream);
             RejectDuplicateKeys(document.RootElement);
@@ -206,7 +212,10 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
                            throw new InvalidDataException("Empty strategic snapshot.");
             ValidateHeader(snapshot);
             if (snapshot.WarId != warId)
+            {
+                accepted = true;
                 return; // Explicit newwar never inherits the old map's inventory.
+            }
             var objectives = GetObjectives(mapId);
             Validate(snapshot, objectives); // All entries preflight before spawning or removing anything.
             _resourceFields.ValidateSnapshot(mapId, snapshot.Resources);
@@ -235,25 +244,51 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             }
             _resourceFields.StageSnapshot(mapId, snapshot.Resources, stagedNodes);
             // Stage both slices before deleting fresh YAML entities. Resource staging has no field ownership.
-            if (staged.Any(uid => !Usable(uid)))
-                throw new InvalidDataException("Restored objective was lost before commit.");
-            _resourceFields.CommitSnapshot(mapId, snapshot.Resources, stagedNodes);
-            stagedNodes.Clear();
-            staged.Clear();
+            if (!Usable(map) || staged.Any(uid => !Usable(uid)))
+                throw new InvalidDataException("Restored objective or map was lost before commit.");
+            _resourceFields.CommitSnapshot(mapId, snapshot.Resources, stagedNodes, ref commitStarted);
+            // Old resource callbacks can invalidate staged bases, and old base callbacks can invalidate resources.
+            if (!Usable(map) || staged.Any(uid => !Usable(uid)))
+                throw new InvalidDataException("Restored objective or map was lost during resource commit.");
             foreach (var objective in objectives.Values)
                 _halls.DeleteObjective(objective);
+            if (!Usable(map) || staged.Any(uid => !Usable(uid)))
+                throw new InvalidDataException("Restored objective or map was lost during base commit.");
+            var restored = GetObjectives(mapId);
+            for (var i = 0; i < snapshot.Bases.Count; i++)
+            {
+                var entry = snapshot.Bases[i];
+                var uid = staged[i];
+                if (restored[entry.TerritoryId] != uid || MetaData(uid).EntityPrototype?.ID != entry.Prototype ||
+                    !ReadDamage(uid).OrderBy(pair => pair.Key)
+                        .SequenceEqual(entry.DamageHundredths.OrderBy(pair => pair.Key)) ||
+                    (entry.ObjectiveKind == "hall"
+                        ? Comp<TownHallComponent>(uid).FactionId != entry.FactionId ||
+                          !Comp<FrontlineStockpileComponent>(uid).Counts.OrderBy(pair => pair.Key.Id)
+                              .Select(pair => new KeyValuePair<string, int>(pair.Key.Id, pair.Value))
+                              .SequenceEqual(entry.Counts.OrderBy(pair => pair.Key))
+                        : Comp<TownHallRuinComponent>(uid).DepositedBasicMaterials != entry.RuinMaterialDeposited))
+                    throw new InvalidDataException("Restored strategic base changed during commit.");
+            }
+            _resourceFields.ValidateStagedSnapshot(mapId, snapshot.Resources, stagedNodes, committed: true);
+            accepted = true;
         }
         catch
         {
-            accepted = false;
-            // Never replace an unreadable paid inventory with fresh campaign defaults.
+            // Once originals were discarded, this is not a rollback to usable fresh YAML.
+            // Abort this entire unaccepted map; retry must load a clean map from the unchanged disk claim.
+            if (commitStarted && !TerminatingOrDeleted(map))
+                Del(map);
             throw;
         }
         finally
         {
-            _resourceFields.DeleteStagedNodes(stagedNodes);
-            foreach (var objective in staged)
-                _halls.DeleteObjective(objective);
+            if (!commitStarted)
+            {
+                _resourceFields.DeleteStagedNodes(stagedNodes);
+                foreach (var objective in staged)
+                    _halls.DeleteObjective(objective);
+            }
             if (accepted)
             {
                 _loadedMap = map;
