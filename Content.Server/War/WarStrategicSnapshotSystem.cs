@@ -70,11 +70,17 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         return result;
     }
 
+    private static void ValidateHeader(WarStrategicSnapshot snapshot)
+    {
+        if (snapshot.SnapshotVersion != 1 || snapshot.WarId <= 0 || snapshot.Bases == null)
+            throw new InvalidDataException("Invalid strategic snapshot header.");
+    }
+
     private void Validate(WarStrategicSnapshot snapshot, Dictionary<string, EntityUid> objectives)
     {
-        if (snapshot.SnapshotVersion != 1 || snapshot.WarId <= 0 || snapshot.Bases == null ||
-            snapshot.Bases.Count != objectives.Count)
-            throw new InvalidDataException("Invalid strategic snapshot header or objective count.");
+        ValidateHeader(snapshot);
+        if (snapshot.Bases.Count != objectives.Count)
+            throw new InvalidDataException("Invalid strategic objective count.");
         var seen = new HashSet<string>();
         foreach (var entry in snapshot.Bases)
         {
@@ -139,6 +145,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             RejectDuplicateKeys(document.RootElement);
             var snapshot = document.RootElement.Deserialize<WarStrategicSnapshot>() ??
                            throw new InvalidDataException("Empty strategic snapshot.");
+            ValidateHeader(snapshot);
             if (snapshot.WarId != warId)
                 return; // Explicit newwar never inherits the old map's inventory.
             var objectives = GetObjectives(mapId);
@@ -161,11 +168,10 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             foreach (var objective in objectives.Values)
                 _halls.DeleteObjective(objective);
         }
-        catch (Exception e)
+        catch
         {
             accepted = false;
             // Never replace an unreadable paid inventory with fresh campaign defaults.
-            Log.Error($"Strategic snapshot refused; aborting campaign startup: {e}");
             throw;
         }
         finally
@@ -182,36 +188,30 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 
     private void OnCleanup(RoundRestartCleanupEvent args)
     {
-        try
-        {
-            if (_loadedMap is not { } map || !Usable(map) || _ticker.CurrentPreset?.ID != "PersistentWar" ||
-                !_resources.UserData.Exists(WarStateSystem.SavePath))
-                return;
-            var objectives = GetObjectives(Comp<MapComponent>(map).MapId);
-            var bases = new List<WarBaseSnapshot>();
-            foreach (var (territory, uid) in objectives)
-            {
-                var hall = TryComp<TownHallComponent>(uid, out var component);
-                var counts = hall
-                    ? Comp<FrontlineStockpileComponent>(uid).Counts.ToDictionary(entry => entry.Key.Id, entry => entry.Value)
-                    : new Dictionary<string, int>();
-                bases.Add(new WarBaseSnapshot(territory, hall ? "hall" : "ruin",
-                    MetaData(uid).EntityPrototype?.ID ?? throw new InvalidDataException("Objective has no prototype."),
-                    hall ? component!.FactionId : null, counts));
-            }
-            // StartNewWar may already have changed WarState. This map still belongs to its loaded war.
-            var snapshot = new WarStrategicSnapshot(1, _loadedWarId, bases);
-            Validate(snapshot, objectives);
-            Save(snapshot);
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Failed to save strategic snapshot; previous committed file retained: {e}");
-        }
-        finally
+        if (_loadedMap is not { } map || !Usable(map) || _ticker.CurrentPreset?.ID != "PersistentWar" ||
+            !_resources.UserData.Exists(WarStateSystem.SavePath))
         {
             _loadedMap = null;
+            return;
         }
+        var objectives = GetObjectives(Comp<MapComponent>(map).MapId);
+        var bases = new List<WarBaseSnapshot>();
+        foreach (var (territory, uid) in objectives)
+        {
+            var hall = TryComp<TownHallComponent>(uid, out var component);
+            var counts = hall
+                ? Comp<FrontlineStockpileComponent>(uid).Counts.ToDictionary(entry => entry.Key.Id, entry => entry.Value)
+                : new Dictionary<string, int>();
+            bases.Add(new WarBaseSnapshot(territory, hall ? "hall" : "ruin",
+                MetaData(uid).EntityPrototype?.ID ?? throw new InvalidDataException("Objective has no prototype."),
+                hall ? component!.FactionId : null, counts));
+        }
+        // StartNewWar may already have changed WarState. This map still belongs to its loaded war.
+        var snapshot = new WarStrategicSnapshot(1, _loadedWarId, bases);
+        Validate(snapshot, objectives);
+        // Propagate failure before native entity flush, retaining this map for a later retry.
+        Save(snapshot);
+        _loadedMap = null;
     }
 
     private void Save(WarStrategicSnapshot snapshot)
