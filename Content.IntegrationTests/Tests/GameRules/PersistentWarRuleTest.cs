@@ -647,6 +647,179 @@ public sealed class PersistentWarRuleTest : GameTest
         });
     }
 
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesResourceReserveAndPartialNodeYield()
+    {
+        const string fieldId = "frontline-test-iron";
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var hands = Server.System<SharedHandsSystem>();
+        var interaction = Server.System<SharedInteractionSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        _ = Server.System<FrontlineResourceFieldSystem>();
+        var session = ServerSession!;
+        EntityUid oldMap = default;
+        EntityUid field = default;
+        EntityUid slot = default;
+        EntityUid node = default;
+        EntityUid tool = default;
+        WarState beforeRestart = default!;
+        Dictionary<Vector2, (Vector2 Position, int Yield)> nodesBefore = default!;
+        var reserveBefore = 0;
+        var stateBefore = default(FrontlineResourceFieldState);
+        var selected = false;
+        var pickedUp = false;
+        var extractionStarted = false;
+
+        // Slot UIDs change on reload. Use the mapper's local position on the same grid instead.
+        List<EntityUid> MapNodes()
+        {
+            var result = new List<EntityUid>();
+            var query = SEntMan.EntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out var component, out var transform))
+            {
+                if (component.FieldId == fieldId && transform.MapID == ticker.DefaultMap)
+                    result.Add(uid);
+            }
+            return result;
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                factions.ClearFaction(session.UserId);
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Pair.RunTicksSync(1);
+            await Server.WaitPost(() =>
+            {
+                selected = factions.TrySelectFaction(session.UserId, new FactionId("FrontlineFactionOne"));
+                ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                field = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap,
+                    component => component.FieldId == fieldId);
+                node = SComp<FrontlineResourceFieldComponent>(field).ActiveNodes
+                    .OrderBy(uid => SComp<TransformComponent>(uid).LocalPosition.X).First();
+                slot = SComp<FrontlineResourceNodeComponent>(node).SpawnPoint;
+                tool = FindMapEntity<MetaDataComponent>(ticker.DefaultMap,
+                    metadata => metadata.EntityPrototype?.ID == "Pickaxe");
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(selected, Is.True);
+                Assert.That(session.AttachedEntity, Is.Not.Null);
+                Assert.That(SComp<FrontlineResourceFieldComponent>(field).RemainingReserveNodes, Is.EqualTo(3));
+                Assert.That(MapNodes(), Has.Count.EqualTo(3));
+            });
+            await Server.WaitPost(() =>
+            {
+                var body = session.AttachedEntity!.Value;
+                Server.System<SharedTransformSystem>().SetCoordinates(body,
+                    SComp<TransformComponent>(node).Coordinates.Offset(new Vector2(0, 1)));
+                pickedUp = hands.TryPickupAnyHand(body, tool);
+            });
+            await Server.WaitAssertion(() => Assert.That(pickedUp, Is.True));
+
+            // Exhaust one real 20-yield node, paying four native 5-unit do-afters.
+            for (var i = 0; i < 4; i++)
+            {
+                await Server.WaitPost(() => extractionStarted = interaction.InteractDoAfter(
+                    session.AttachedEntity!.Value, tool, node, SComp<TransformComponent>(node).Coordinates, true));
+                await Pair.RunSeconds(1.1f);
+                await Server.WaitAssertion(() => Assert.That(extractionStarted, Is.True));
+            }
+            await Server.WaitAssertion(() => Assert.That(SEntMan.EntityExists(node), Is.False));
+            await Pair.RunSeconds(1.1f);
+            await Server.WaitPost(() =>
+            {
+                node = SComp<FrontlineResourceFieldComponent>(field).ActiveNodes
+                    .Single(uid => SComp<FrontlineResourceNodeComponent>(uid).SpawnPoint == slot);
+                extractionStarted = interaction.InteractDoAfter(session.AttachedEntity!.Value, tool, node,
+                    SComp<TransformComponent>(node).Coordinates, true);
+            });
+            await Pair.RunSeconds(1.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(extractionStarted, Is.True);
+                Assert.That(SComp<FrontlineResourceNodeComponent>(node).RemainingYield, Is.EqualTo(15));
+                Assert.That(SComp<FrontlineResourceFieldComponent>(field).RemainingReserveNodes, Is.EqualTo(2));
+                Assert.That(SComp<FrontlineResourceFieldComponent>(field).State, Is.EqualTo(FrontlineResourceFieldState.Active));
+                Assert.That(MapNodes(), Has.Count.EqualTo(3));
+                Assert.That(SComp<FrontlineResourceFieldComponent>(field).ActiveNodes, Is.EquivalentTo(MapNodes()));
+                Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
+                    stack.StackTypeId == "FrontlineRawIron" &&
+                    SComp<TransformComponent>(stack.Owner).MapID == ticker.DefaultMap).Sum(stack => stack.Count),
+                    Is.EqualTo(25), "Reserve and partial yield must come from paid native harvesting.");
+            });
+            await Server.WaitPost(() =>
+            {
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                reserveBefore = component.RemainingReserveNodes;
+                stateBefore = component.State;
+                nodesBefore = MapNodes().ToDictionary(
+                    uid => SComp<TransformComponent>(SComp<FrontlineResourceNodeComponent>(uid).SpawnPoint).LocalPosition,
+                    uid => (SComp<TransformComponent>(uid).LocalPosition,
+                        SComp<FrontlineResourceNodeComponent>(uid).RemainingYield));
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Pair.RunTicksSync(1);
+            await Server.WaitAssertion(() => Assert.Multiple(() =>
+            {
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+                Assert.That(SEntMan.EntityExists(field), Is.False);
+                Assert.That(SEntMan.EntityExists(node), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                var restored = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap,
+                    component => component.FieldId == fieldId);
+                var restoredField = SComp<FrontlineResourceFieldComponent>(restored);
+                Assert.That(restoredField.RemainingReserveNodes, Is.EqualTo(reserveBefore),
+                    "Technical restart must not mint the spent replacement reserve (2, not fresh-map 3).");
+                Assert.That(restoredField.State, Is.EqualTo(stateBefore));
+                Assert.That(restoredField.FieldInitialized, Is.True);
+                var nodes = MapNodes();
+                Assert.That(nodes, Has.Count.EqualTo(nodesBefore.Count), "Reload must not duplicate active nodes.");
+                Assert.That(restoredField.ActiveNodes, Is.EquivalentTo(nodes), "Rebuild ownership caches after reload.");
+                var restoredNodes = new Dictionary<Vector2, (Vector2 Position, int Yield)>();
+                foreach (var uid in nodes)
+                {
+                    var component = SComp<FrontlineResourceNodeComponent>(uid);
+                    var transform = SComp<TransformComponent>(uid);
+                    var point = SComp<TransformComponent>(component.SpawnPoint);
+                    Assert.That(component.Field, Is.EqualTo(restored));
+                    Assert.That(SComp<FrontlineResourceSpawnPointComponent>(component.SpawnPoint).FieldId,
+                        Is.EqualTo(fieldId));
+                    Assert.That(point.MapID, Is.EqualTo(ticker.DefaultMap));
+                    Assert.That(transform.ParentUid, Is.EqualTo(point.ParentUid));
+                    Assert.That(point.ParentUid, Is.EqualTo(SComp<TransformComponent>(restored).ParentUid));
+                    Assert.That(restoredNodes.TryAdd(point.LocalPosition, (transform.LocalPosition, component.RemainingYield)),
+                        Is.True, "Each mapper slot may own only one active node.");
+                }
+                Assert.That(restoredNodes, Is.EquivalentTo(nodesBefore),
+                    "Same-parent/local-position slots must retain exact node positions and yields (15, 20, 20), not refill to 20.");
+            }));
+        }
+        finally
+        {
+            // Native cleanup on RED too; existing teardown deletes all save paths and restores the preset.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+
     // Exact damage is the persistence contract, not a player-facing health measurement.
 #pragma warning disable CS0618
     [Test]
