@@ -1,5 +1,8 @@
 using System;
+using System.IO;
 using Content.Server.Stack;
+using Content.Shared.Damage;
+using Content.Shared.Damage.Systems;
 using Content.Shared.DoAfter;
 using Content.Shared.Interaction;
 using Content.Shared.Stacks;
@@ -18,6 +21,7 @@ public sealed partial class TownHallSystem : EntitySystem
     [Dependency] private TerritorySystem _territories = default!;
     [Dependency] private WarFactionSystem _factions = default!;
     [Dependency] private IPrototypeManager _prototypes = default!;
+    [Dependency] private DamageableSystem _damage = default!;
 
     public override void Initialize()
     {
@@ -95,11 +99,17 @@ public sealed partial class TownHallSystem : EntitySystem
 
     /// <summary>Stage an objective; the caller commits only after every replacement is ready.</summary>
     public EntityUid StageRestoredObjective(EntProtoId prototype, TerritoryId territory,
-        FactionId? faction, EntityCoordinates coordinates)
+        FactionId? faction, EntityCoordinates coordinates, DamageSpecifier damage)
     {
         var objective = Spawn(prototype, coordinates);
         try
         {
+            // A rejected damage restore must not spawn an untracked ruin from a staged hall.
+            if (TryComp<TownHallComponent>(objective, out var hall))
+                hall.TerritoryId = "Unassigned";
+            _damage.SetDamage(objective, damage);
+            if (TerminatingOrDeleted(objective) || EntityManager.IsQueuedForDeletion(objective))
+                throw new InvalidDataException("Restored objective did not survive its damage.");
             if (faction is { } owner)
                 Comp<TownHallComponent>(objective).Configure(territory, owner);
             else
@@ -111,6 +121,16 @@ public sealed partial class TownHallSystem : EntitySystem
             DeleteObjective(objective);
             throw;
         }
+    }
+
+    /// <summary>Restore only incomplete paid repair progress; completion remains the native repair path.</summary>
+    public void RestoreRuinProgress(EntityUid objective, int deposited)
+    {
+        var ruin = Comp<TownHallRuinComponent>(objective);
+        if (TerminatingOrDeleted(objective) || EntityManager.IsQueuedForDeletion(objective) ||
+            ruin.RequiredBasicMaterials <= 0 || deposited < 0 || deposited >= ruin.RequiredBasicMaterials)
+            throw new InvalidDataException("Invalid restored ruin repair progress.");
+        ruin.DepositedBasicMaterials = deposited;
     }
 
     public void DeleteObjective(EntityUid objective)

@@ -606,7 +606,7 @@ public sealed class PersistentWarRuleTest : GameTest
             using var stream = resources.UserData.Open(WarStrategicSnapshotSystem.SavePath, FileMode.Open);
             var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream);
             Assert.That(saved, Is.Not.Null);
-            Assert.That(saved!.SnapshotVersion, Is.EqualTo(1));
+            Assert.That(saved!.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
             Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
             Assert.That(saved.Bases.Count, Is.EqualTo(5));
             var captured = saved.Bases.Single(entry => entry.TerritoryId == capturedTerritory.Id);
@@ -756,6 +756,20 @@ public sealed class PersistentWarRuleTest : GameTest
             await Pair.RunUntilSynced();
             await Server.WaitAssertion(() => Assert.Multiple(() =>
             {
+                using var stream = Server.ResolveDependency<IResourceManager>().UserData
+                    .OpenRead(WarStrategicSnapshotSystem.SavePath);
+                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                var savedHall = saved.Bases.Single(entry => entry.TerritoryId == "frontline-one");
+                var savedRuin = saved.Bases.Single(entry => entry.TerritoryId == "frontline-five");
+                Assert.That(savedHall.ObjectiveKind, Is.EqualTo("hall"));
+                Assert.That(savedHall.DamageHundredths, Is.EquivalentTo(damageBefore.DamageDict
+                    .ToDictionary(pair => pair.Key.Id, pair => pair.Value.Value)),
+                    "Disk snapshot must contain exact integer hundredths for each damage type.");
+                Assert.That(savedRuin.ObjectiveKind, Is.EqualTo("ruin"));
+                Assert.That(savedRuin.RuinMaterialDeposited, Is.EqualTo(progressBefore),
+                    "Disk snapshot must contain paid repair progress before native map reload.");
                 Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
                 Assert.That(war.State, Is.EqualTo(beforeRestart));
                 Assert.That(SEntMan.EntityExists(oldMap), Is.False);
@@ -903,8 +917,9 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
-    [TestCase(1, 0)]
-    [TestCase(2, 41)]
+    [TestCase(2, 0)]
+    [TestCase(1, 41)]
+    [TestCase(3, 41)]
     public async Task MalformedStrategicHeaderCannotBypassValidationAsAnotherWar(int version, int savedWarId)
     {
         const int currentWarId = 42;
@@ -952,7 +967,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     foreach (var entry in bases.Where(entry => entry.ObjectiveKind == "hall"))
                         entry.Counts["SoldierSupplies"] = 7;
                     using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
-                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(1, currentWarId, bases));
+                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, currentWarId, bases));
                     snapshot.Restore(map.MapUid, currentWarId);
                     foreach (var entry in bases)
                     {

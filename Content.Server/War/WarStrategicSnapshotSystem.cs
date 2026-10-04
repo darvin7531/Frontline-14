@@ -5,6 +5,11 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Content.Server.GameTicking;
+using Content.Shared.Damage;
+using Content.Shared.Damage.Components;
+using Content.Shared.Damage.Prototypes;
+using Content.Shared.Damage.Systems;
+using Content.Shared.FixedPoint;
 using Content.Shared.GameTicking;
 using Content.Shared.War;
 using Robust.Shared.ContentPack;
@@ -20,11 +25,21 @@ namespace Content.Server.War;
 public sealed record WarStrategicSnapshot(int SnapshotVersion, int WarId, List<WarBaseSnapshot> Bases);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record WarBaseSnapshot(string TerritoryId, string ObjectiveKind, string Prototype,
-    string? FactionId, Dictionary<string, int> Counts);
+    string? FactionId, Dictionary<string, int> Counts)
+{
+    // Constructor defaults support fresh synthetic snapshots, not missing fields in persisted JSON.
+    [JsonRequired]
+    public Dictionary<string, int> DamageHundredths { get; init; } = new();
+
+    [JsonRequired]
+    public int RuinMaterialDeposited { get; init; }
+}
 
 /// <summary>Technical-restart persistence for objectives and virtual stockpiles only.</summary>
 public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 {
+    // Version 1 omitted damage/progress; refuse it rather than silently healing paid state.
+    public const int SnapshotVersion = 2;
     public static readonly ResPath SavePath = new("/persistent-war-strategic.json");
     public static readonly ResPath TemporaryPath = new("/persistent-war-strategic.json.tmp");
     public static readonly ResPath BackupPath = new("/persistent-war-strategic.json.bak");
@@ -35,6 +50,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     [Dependency] private TerritorySystem _territories = default!;
     [Dependency] private TownHallSystem _halls = default!;
     [Dependency] private FrontlineStockpileSystem _stockpiles = default!;
+    [Dependency] private DamageableSystem _damage = default!;
 
     private EntityUid? _loadedMap;
     private int _loadedWarId;
@@ -72,7 +88,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 
     private static void ValidateHeader(WarStrategicSnapshot snapshot)
     {
-        if (snapshot.SnapshotVersion != 1 || snapshot.WarId <= 0 || snapshot.Bases == null)
+        if (snapshot.SnapshotVersion != SnapshotVersion || snapshot.WarId <= 0 || snapshot.Bases == null)
             throw new InvalidDataException("Invalid strategic snapshot header.");
     }
 
@@ -91,16 +107,29 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
                 entry.Counts == null || !_stockpiles.ValidCounts(entry.Counts))
                 throw new InvalidDataException("Invalid strategic base, prototype or stockpile.");
             var hall = prototype.TryGetComponent<TownHallComponent>(out var hallComponent, EntityManager.ComponentFactory);
-            var ruin = prototype.HasComp<TownHallRuinComponent>(EntityManager.ComponentFactory);
+            var ruin = prototype.TryGetComponent<TownHallRuinComponent>(out var ruinComponent, EntityManager.ComponentFactory);
+            if (!prototype.HasComp<DamageableComponent>(EntityManager.ComponentFactory) || entry.DamageHundredths == null)
+                throw new InvalidDataException("Invalid strategic damage component or amounts.");
+            long totalDamage = 0;
+            foreach (var (type, amount) in entry.DamageHundredths)
+            {
+                if (string.IsNullOrWhiteSpace(type) || !_prototypes.HasIndex<DamageTypePrototype>(type) || amount < 0)
+                    throw new InvalidDataException("Invalid strategic damage type or amount.");
+                totalDamage += amount;
+                if (totalDamage > int.MaxValue)
+                    throw new InvalidDataException("Strategic total damage overflows FixedPoint2.");
+            }
             if (entry.ObjectiveKind == "hall")
             {
-                if (!hall || ruin || string.IsNullOrWhiteSpace(entry.FactionId) ||
+                if (!hall || ruin || entry.RuinMaterialDeposited != 0 || string.IsNullOrWhiteSpace(entry.FactionId) ||
                     !_prototypes.HasIndex<FrontlineFactionPrototype>(entry.FactionId) ||
                     hallComponent!.FactionId != entry.FactionId ||
                     !prototype.HasComp<FrontlineStockpileComponent>(EntityManager.ComponentFactory))
                     throw new InvalidDataException("Invalid strategic hall faction or components.");
             }
-            else if (entry.ObjectiveKind != "ruin" || !ruin || hall || entry.FactionId != null || entry.Counts.Count != 0)
+            else if (entry.ObjectiveKind != "ruin" || !ruin || hall || entry.FactionId != null || entry.Counts.Count != 0 ||
+                     ruinComponent!.RequiredBasicMaterials <= 0 || entry.RuinMaterialDeposited < 0 ||
+                     entry.RuinMaterialDeposited >= ruinComponent.RequiredBasicMaterials)
                 throw new InvalidDataException("Invalid strategic ruin.");
         }
     }
@@ -155,15 +184,27 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
                 var replacement = _halls.StageRestoredObjective(new EntProtoId(entry.Prototype),
                     new TerritoryId(entry.TerritoryId),
                     entry.FactionId is { } faction ? new FactionId(faction) : null,
-                    Transform(objectives[entry.TerritoryId]).Coordinates);
+                    Transform(objectives[entry.TerritoryId]).Coordinates, new DamageSpecifier
+                    {
+                        DamageDict = entry.DamageHundredths.ToDictionary(
+                            pair => new ProtoId<DamageTypePrototype>(pair.Key), pair => FixedPoint2.FromHundredths(pair.Value)),
+                    });
                 staged.Add(replacement);
                 if (!Usable(replacement) || Transform(replacement).MapID != mapId ||
                     !_territories.Contains(new TerritoryId(entry.TerritoryId), Transform(replacement).Coordinates))
                     throw new InvalidDataException("Restored objective is not live in its territory.");
                 if (entry.ObjectiveKind == "hall")
                     _stockpiles.RestoreCounts(replacement, entry.Counts);
+                else
+                    _halls.RestoreRuinProgress(replacement, entry.RuinMaterialDeposited);
+                if (!Usable(replacement) || !HasComp<DamageableComponent>(replacement) ||
+                    !ReadDamage(replacement).OrderBy(pair => pair.Key)
+                        .SequenceEqual(entry.DamageHundredths.OrderBy(pair => pair.Key)))
+                    throw new InvalidDataException("Restored objective did not retain its exact live damage.");
             }
             // All replacements are ready; fresh YAML objectives remain untouched on preflight/staging failure.
+            if (staged.Any(uid => !Usable(uid)))
+                throw new InvalidDataException("Restored objective was lost before commit.");
             staged.Clear();
             foreach (var objective in objectives.Values)
                 _halls.DeleteObjective(objective);
@@ -204,15 +245,25 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
                 : new Dictionary<string, int>();
             bases.Add(new WarBaseSnapshot(territory, hall ? "hall" : "ruin",
                 MetaData(uid).EntityPrototype?.ID ?? throw new InvalidDataException("Objective has no prototype."),
-                hall ? component!.FactionId : null, counts));
+                hall ? component!.FactionId : null, counts)
+            {
+                DamageHundredths = ReadDamage(uid),
+                RuinMaterialDeposited = hall ? 0 : Comp<TownHallRuinComponent>(uid).DepositedBasicMaterials,
+            });
         }
         // StartNewWar may already have changed WarState. This map still belongs to its loaded war.
-        var snapshot = new WarStrategicSnapshot(1, _loadedWarId, bases);
+        var snapshot = new WarStrategicSnapshot(SnapshotVersion, _loadedWarId, bases);
         Validate(snapshot, objectives);
         // Propagate failure before native entity flush, retaining this map for a later retry.
         Save(snapshot);
         _loadedMap = null;
     }
+
+    // Exact damage is persistence data, not a player-facing health measurement.
+#pragma warning disable CS0618
+    private Dictionary<string, int> ReadDamage(EntityUid uid) =>
+        _damage.GetAllDamage(uid).DamageDict.ToDictionary(pair => pair.Key.Id, pair => pair.Value.Value);
+#pragma warning restore CS0618
 
     private void Save(WarStrategicSnapshot snapshot)
     {
