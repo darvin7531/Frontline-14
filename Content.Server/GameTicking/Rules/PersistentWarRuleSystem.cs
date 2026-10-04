@@ -30,6 +30,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
     [Dependency] private FactionSpawnSystem _factionSpawns = default!;
     [Dependency] private WarFactionSystem _factions = default!;
     [Dependency] private WarStateSystem _war = default!;
+    [Dependency] private WarStrategicSnapshotSystem _strategic = default!;
     [Dependency] private MindSystem _mind = default!;
     [Dependency] private FrontlineStockpileSystem _stockpiles = default!;
     [Dependency] private TerritorySystem _territories = default!;
@@ -78,6 +79,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
         var map = _map.GetMap(GameTicker.DefaultMap);
         var war = _war.EnsureWar();
         _mapValidator.Validate(map);
+        _strategic.Restore(map, war.WarId);
         var cycle = Comp<LightCycleComponent>(map);
         _lightCycle.SetOffset((map, cycle), GetCycleOffset(war.StartedAt, cycle.Duration));
 

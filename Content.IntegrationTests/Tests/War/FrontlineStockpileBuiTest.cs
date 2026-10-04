@@ -60,6 +60,9 @@ public sealed class FrontlineStockpileBuiTest : InteractionTest
                 var resources = Server.ResolveDependency<IResourceManager>();
                 resources.UserData.Delete(WarStateSystem.SavePath);
                 resources.UserData.Delete(WarFactionSystem.SavePath);
+                resources.UserData.Delete(WarStrategicSnapshotSystem.SavePath);
+                resources.UserData.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                resources.UserData.Delete(WarStrategicSnapshotSystem.BackupPath);
             });
         await base.DoTeardown();
     }

@@ -139,6 +139,9 @@ public sealed class PersistentWarRuleTest : GameTest
                     var resources = Server.ResolveDependency<IResourceManager>();
                     resources.UserData.Delete(WarStateSystem.SavePath);
                     resources.UserData.Delete(WarFactionSystem.SavePath);
+                    resources.UserData.Delete(WarStrategicSnapshotSystem.SavePath);
+                    resources.UserData.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                    resources.UserData.Delete(WarStrategicSnapshotSystem.BackupPath);
                 }
                 finally
                 {
@@ -592,9 +595,26 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(beforeRestart.Status, Is.EqualTo(WarStatus.Active), "One neutral capture must stay below victory.");
         });
 
+        await Server.WaitPost(() => ticker.RestartRound());
+        await Server.WaitAssertion(() =>
+        {
+            var resources = Server.ResolveDependency<IResourceManager>();
+            using var stream = resources.UserData.Open(WarStrategicSnapshotSystem.SavePath, FileMode.Open);
+            var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream);
+            Assert.That(saved, Is.Not.Null);
+            Assert.That(saved!.SnapshotVersion, Is.EqualTo(1));
+            Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+            Assert.That(saved.Bases.Count, Is.EqualTo(5));
+            var captured = saved.Bases.Single(entry => entry.TerritoryId == capturedTerritory.Id);
+            Assert.That(captured.ObjectiveKind, Is.EqualTo("hall"));
+            Assert.That(captured.FactionId, Is.EqualTo(faction.Id));
+            Assert.That(captured.Prototype, Is.EqualTo("TownHallCoreFactionOne"));
+            for (var i = 0; i < baseTerritories.Length; i++)
+                Assert.That(saved.Bases.Single(entry => entry.TerritoryId == baseTerritories[i]).Counts,
+                    Is.EquivalentTo(countsBefore[i].ToDictionary(entry => entry.Key.Id, entry => entry.Value)));
+        });
         await Server.WaitPost(() =>
         {
-            ticker.RestartRound();
             ticker.SetGamePreset("PersistentWar");
             ticker.ToggleReadyAll(true);
             ticker.StartRound(true);
@@ -1597,6 +1617,12 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(halls.ForceCapture(territory, factionOne, ticker.DefaultMap), Is.True);
             }
 
+            var cores = SEntMan.EntityQueryEnumerator<TownHallComponent, TransformComponent>();
+            while (cores.MoveNext(out var core, out _, out var xform))
+            {
+                if (xform.MapID == ticker.DefaultMap)
+                    SComp<FrontlineStockpileComponent>(core).Counts["SoldierSupplies"] = 77;
+            }
             Assert.That(victory.CheckForVictory(), Is.True);
             oldWar = war.State!;
             Assert.That(oldWar.Status, Is.EqualTo(WarStatus.Ended));
@@ -1619,6 +1645,13 @@ public sealed class PersistentWarRuleTest : GameTest
         });
         await Server.WaitAssertion(() =>
         {
+            var resources = Server.ResolveDependency<IResourceManager>();
+            using var stream = resources.UserData.Open(WarStrategicSnapshotSystem.SavePath, FileMode.Open);
+            var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+            Assert.That(saved.WarId, Is.EqualTo(oldWar.WarId),
+                "Cleanup must save the old loaded map's war, not the already-created new war.");
+            Assert.That(saved.Bases.Where(entry => entry.ObjectiveKind == "hall")
+                .All(entry => entry.Counts["SoldierSupplies"] == 77), Is.True);
             Assert.That(war.State?.WarId, Is.EqualTo(oldWar.WarId + 1));
             Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
             Assert.That(war.State?.Winner, Is.Null);
@@ -1648,11 +1681,13 @@ public sealed class PersistentWarRuleTest : GameTest
             var ruins = 0;
 
             var hallQuery = SEntMan.EntityQueryEnumerator<TownHallComponent, TransformComponent>();
-            while (hallQuery.MoveNext(out _, out var hall, out var transform))
+            while (hallQuery.MoveNext(out var core, out var hall, out var transform))
             {
                 if (transform.MapID != mapId)
                     continue;
 
+                Assert.That(SComp<FrontlineStockpileComponent>(core).Counts["SoldierSupplies"],
+                    Is.EqualTo(20), "Newwar must use fresh YAML supplies, not old inventory.");
                 if (hall.FactionId == "FrontlineFactionOne")
                     factionOneHalls++;
                 else if (hall.FactionId == "FrontlineFactionTwo")

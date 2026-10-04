@@ -93,6 +93,35 @@ public sealed partial class TownHallSystem : EntitySystem
         return true;
     }
 
+    /// <summary>Stage an objective; the caller commits only after every replacement is ready.</summary>
+    public EntityUid StageRestoredObjective(EntProtoId prototype, TerritoryId territory,
+        FactionId? faction, EntityCoordinates coordinates)
+    {
+        var objective = Spawn(prototype, coordinates);
+        try
+        {
+            if (faction is { } owner)
+                Comp<TownHallComponent>(objective).Configure(territory, owner);
+            else
+                Comp<TownHallRuinComponent>(objective).TerritoryId = territory.Id;
+            return objective;
+        }
+        catch
+        {
+            DeleteObjective(objective);
+            throw;
+        }
+    }
+
+    public void DeleteObjective(EntityUid objective)
+    {
+        if (TerminatingOrDeleted(objective))
+            return;
+        if (TryComp<TownHallComponent>(objective, out var hall))
+            hall.TerritoryId = "Unassigned";
+        Del(objective);
+    }
+
     private void OnRuinInteract(Entity<TownHallRuinComponent> ruin, ref AfterInteractUsingEvent args)
     {
         if (args.Handled || !args.CanReach ||
