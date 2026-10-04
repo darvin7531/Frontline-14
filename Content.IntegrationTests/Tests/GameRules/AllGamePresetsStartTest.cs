@@ -10,7 +10,10 @@ using Content.Server.Shuttles.Components;
 using Content.Shared.Antag;
 using Content.Shared.CCVar;
 using Content.Shared.GameTicking;
+using Content.Shared.GameTicking.Components;
+using Robust.Shared.GameObjects;
 using Robust.Shared.Map.Components;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Player;
 
 namespace Content.IntegrationTests.Tests.GameRules;
@@ -26,6 +29,69 @@ public sealed class AllGamePresetsStartTest : AntagTest
     private static readonly HashSet<string> IgnoredPresets = ["PersistentWar"];
 
     private static string[] _gamePresets = GameDataScrounger.PrototypesOfKind<GamePresetPrototype>().Where(p => !IgnoredPresets.Contains(p)).ToArray();
+
+    private static readonly EntProtoId HighMinimumRule = "Revolutionary";
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameLobbyFallbackPreset), "Extended")]
+    public async Task EndedHighMinimumRuleDoesNotBlockFallbackPreset()
+    {
+        await Server.AddDummySessions(4);
+        await Pair.RunUntilSynced();
+        EntityUid endedRule = default;
+        EntityUid activeRule = default;
+
+        var fallbackEnabled = Server.CfgMan.GetCVar(CCVars.GameLobbyFallbackEnabled);
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                Server.CfgMan.SetCVar(CCVars.GameLobbyFallbackEnabled, true);
+                Assert.That(STicker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
+                STicker.SetGamePreset("Extended");
+                STicker.ToggleReadyAll(true);
+                Assert.That(STicker.ReadyPlayerCount(), Is.EqualTo(5));
+
+                endedRule = STicker.AddGameRule(HighMinimumRule);
+                Assert.That(STicker.StartGameRule(endedRule), Is.True);
+                Assert.That(STicker.IsGameRuleActive(endedRule), Is.True);
+                Assert.That(STicker.EndGameRule(endedRule), Is.True);
+                Assert.That(SEntMan.HasComponent<GameRuleComponent>(endedRule), Is.True);
+                Assert.That(SEntMan.HasComponent<EndedGameRuleComponent>(endedRule), Is.True);
+                Assert.That(STicker.IsGameRuleAdded(endedRule), Is.False);
+                Assert.That(SComp<GameRuleComponent>(endedRule).MinPlayers, Is.EqualTo(15));
+                Assert.That(SComp<GameRuleComponent>(endedRule).CancelPresetOnTooFewPlayers, Is.True);
+
+                // The active control must veto the first attempt. Native fallback ends it,
+                // then retries Extended with both high-minimum rule components still present.
+                activeRule = STicker.AddGameRule(HighMinimumRule);
+                Assert.That(STicker.StartGameRule(activeRule), Is.True);
+                Assert.That(STicker.IsGameRuleActive(activeRule), Is.True);
+                Assert.That(SComp<GameRuleComponent>(activeRule).MinPlayers, Is.EqualTo(15));
+                Assert.That(SComp<GameRuleComponent>(activeRule).CancelPresetOnTooFewPlayers, Is.True);
+                STicker.StartRound();
+            });
+
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(STicker.RunLevel, Is.EqualTo(GameRunLevel.InRound),
+                    "Ended Revolutionary rules must not veto the five-player Extended fallback.");
+                Assert.That(STicker.CurrentPreset?.ID, Is.EqualTo("Extended"));
+                Assert.That(SEntMan.HasComponent<EndedGameRuleComponent>(activeRule), Is.True,
+                    "The active high-minimum control must reject the initial attempt and be ended by fallback.");
+                Assert.That(SEntMan.HasComponent<EndedGameRuleComponent>(endedRule), Is.True);
+                Assert.That(SComp<GameRuleComponent>(endedRule).MinPlayers, Is.EqualTo(15));
+                Assert.That(SComp<GameRuleComponent>(activeRule).MinPlayers, Is.EqualTo(15));
+                Assert.That(STicker.PlayerGameStatuses, Has.Count.EqualTo(5));
+                Assert.That(STicker.PlayerGameStatuses.Values.All(x => x == PlayerGameStatus.JoinedGame), Is.True);
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() =>
+                Server.CfgMan.SetCVar(CCVars.GameLobbyFallbackEnabled, fallbackEnabled));
+        }
+    }
 
     // Tests that all game modes can start given ideal circumstances.
     [Test]

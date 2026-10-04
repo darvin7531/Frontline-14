@@ -432,6 +432,9 @@ public sealed partial class GameTicker
         var query = EntityQueryEnumerator<GameRuleComponent>();
         while (query.MoveNext(out var uid, out var gameRule))
         {
+            if (HasComp<EndedGameRuleComponent>(uid))
+                continue;
+
             var minPlayers = gameRule.MinPlayers;
             var name = ToPrettyString(uid);
 
