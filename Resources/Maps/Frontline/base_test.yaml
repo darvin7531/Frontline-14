@@ -145,11 +145,15 @@ entities:
   entities:
   - uid: 163
     components:
+    - type: FrontlineRefinery
+      refineryId: frontline-test-refinery-west
     - type: Transform
       parent: 2
       pos: 6,-20
   - uid: 165
     components:
+    - type: FrontlineRefinery
+      refineryId: frontline-test-refinery-east
     - type: Transform
       parent: 2
       pos: 44,-20

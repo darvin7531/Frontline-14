@@ -39,6 +39,10 @@ public sealed partial class FrontlineRefineryComponent : Component
     public const string InputContainerId = "inputContainer";
     public const string OutputContainerId = "outputContainer";
 
+    // Mapper identity, not a runtime entity or position.
+    [DataField]
+    public string RefineryId = string.Empty;
+
     [ViewVariables]
     public Container InputContainer = default!;
 

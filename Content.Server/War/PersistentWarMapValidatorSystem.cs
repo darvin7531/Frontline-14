@@ -24,9 +24,29 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         ValidateEnvironment(map, errors);
         ValidateTerritories(map, errors);
         ValidateResourceFields(Comp<MapComponent>(map).MapId, errors);
+        ValidateRefineries(Comp<MapComponent>(map).MapId, errors);
 
         if (errors.Count != 0)
             throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
+    }
+
+    private void ValidateRefineries(MapId mapId, List<string> errors)
+    {
+        var ids = new HashSet<string>();
+        var query = AllEntityQuery<FrontlineRefineryComponent, TransformComponent>();
+        while (query.MoveNext(out var uid, out var refinery, out var transform))
+        {
+            if (transform.MapID != mapId)
+                continue;
+            if (string.IsNullOrWhiteSpace(refinery.RefineryId) || !ids.Add(refinery.RefineryId))
+                errors.Add("PersistentWar refinery IDs must be nonempty and unique on the map.");
+            var prototypeId = MetaData(uid).EntityPrototype?.ID;
+            if (TerminatingOrDeleted(uid) || EntityManager.IsQueuedForDeletion(uid) ||
+                string.IsNullOrWhiteSpace(prototypeId) ||
+                !_prototypes.TryIndex(new EntProtoId(prototypeId), out var prototype) || prototype.Abstract ||
+                !prototype.HasComp<FrontlineRefineryComponent>(EntityManager.ComponentFactory))
+                errors.Add($"PersistentWar refinery '{refinery.RefineryId}' must have a live concrete refinery prototype.");
+        }
     }
 
     internal void ValidateResourceFields(MapId mapId, List<string> errors)

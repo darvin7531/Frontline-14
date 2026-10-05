@@ -1736,6 +1736,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     saved = JsonSerializer.Serialize(new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, warId, bases)
                     {
                         Resources = resources,
+                        Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(source.MapId),
                     });
                     data.Delete(WarStrategicSnapshotSystem.BackupPath);
                     using var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath);
@@ -1912,7 +1913,7 @@ public sealed class PersistentWarRuleTest : GameTest
     [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 0)]
     [TestCase(1, 41)]
     [TestCase(2, 41)]
-    [TestCase(4, 41)]
+    [TestCase(5, 41)]
     [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 42)]
     public async Task MalformedStrategicHeaderCannotBypassValidationAsAnotherWar(int version, int savedWarId)
     {
@@ -1948,6 +1949,7 @@ public sealed class PersistentWarRuleTest : GameTest
                         JsonSerializer.Serialize(stream, new WarStrategicSnapshot(version, savedWarId, bases)
                         {
                             Resources = resourceEntries,
+                            Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(map.MapId),
                         });
                     Assert.Multiple(() =>
                     {
@@ -1970,6 +1972,7 @@ public sealed class PersistentWarRuleTest : GameTest
                         JsonSerializer.Serialize(stream, new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, currentWarId, bases)
                         {
                             Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(map.MapId),
+                            Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(map.MapId),
                         });
                     snapshot.Restore(map.MapUid, currentWarId);
                     foreach (var entry in bases)
