@@ -1174,6 +1174,58 @@ public sealed class PersistentWarRuleTest : GameTest
 
     [TestCase(false)]
     [TestCase(true)]
+    public async Task PausedResourceCaptureDoesNotSpendCooldown(bool replenishing)
+    {
+        var fields = Server.System<FrontlineResourceFieldSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var timing = Server.ResolveDependency<Robust.Shared.Timing.IGameTiming>();
+        var map = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        EntityUid field = default;
+        long remaining = 0;
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                field = FindMapEntity<FrontlineResourceFieldComponent>(map.MapId, _ => true);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                if (replenishing)
+                {
+                    component.RemainingReserveNodes = 0;
+                    foreach (var node in component.ActiveNodes.ToArray())
+                        SEntMan.DeleteEntity(node);
+                    component.ReplenishmentDelay = TimeSpan.FromSeconds(60);
+                    component.NextReplenishment = timing.CurTime + component.ReplenishmentDelay;
+                }
+                else
+                {
+                    component.ReplacementDelay = TimeSpan.FromSeconds(60);
+                    component.NextReplacement = timing.CurTime + component.ReplacementDelay;
+                }
+                maps.SetPaused(map.MapId, true);
+                var saved = fields.CaptureSnapshot(map.MapId).Single();
+                remaining = replenishing ? saved.ReplenishmentRemainingTicks : saved.ReplacementRemainingTicks;
+            });
+            await Pair.RunTicksSync(10);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(timing.CurTime, Is.GreaterThan(SComp<MetaDataComponent>(field).PauseTime!.Value));
+                var saved = fields.CaptureSnapshot(map.MapId).Single();
+                Assert.That(replenishing ? saved.ReplenishmentRemainingTicks : saved.ReplacementRemainingTicks,
+                    Is.EqualTo(remaining), "Paused time must not spend a durable resource cooldown.");
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() =>
+            {
+                maps.SetPaused(map.MapId, false);
+                SEntMan.DeleteEntity(map.MapUid);
+            });
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
     public async Task QueuedDepletedResourceControllerBlocksRestartBeforeEntityFlush(bool paused)
     {
