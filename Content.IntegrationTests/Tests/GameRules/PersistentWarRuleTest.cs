@@ -1301,9 +1301,10 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
-    [Test]
+    [TestCase(false)]
+    [TestCase(true)]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
-    public async Task TechnicalRestartPreservesPaidFactoryQueueAndRetainedCrates()
+    public async Task TechnicalRestartPreservesPaidFactoryQueueAndRetainedCrates(bool writeFault)
     {
         ProtoId<FrontlineFactoryRecipePrototype> recipe = "FrontlineFactoryBrutepack";
         ProtoId<FrontlineSupplyProductPrototype> product = "Brutepack1";
@@ -1316,6 +1317,7 @@ public sealed class PersistentWarRuleTest : GameTest
         var maps = Server.System<SharedMapSystem>();
         var session = ServerSession!;
         var duration = factories.GetAvailableRecipes().Single(entry => entry.ID == recipe.Id).Duration;
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
         EntityUid factory = default;
         EntityUid oldFactory = default;
         EntityUid oldMap = default;
@@ -1326,9 +1328,11 @@ public sealed class PersistentWarRuleTest : GameTest
         var selected = false;
         var inserted = false;
         var submitted = false;
+        var inputAmount = 3;
+        Exception failure = null;
 
         // base_test.yaml has factories at (5,-20) and (45,-20); anchoring snaps to tile centers.
-        // Test lookup only until stable mapper factory IDs exist; never persist positions or UIDs.
+        // Test lookup only: persistence uses stable mapper factory IDs, never positions or UIDs.
         EntityUid FindFactory(Vector2 position) => SEntMan.EntityQuery<FrontlineFactoryComponent>()
             .Select(component => component.Owner).Single(uid =>
                 SComp<TransformComponent>(uid).MapID == ticker.DefaultMap &&
@@ -1345,7 +1349,7 @@ public sealed class PersistentWarRuleTest : GameTest
             var stack = SComp<StackComponent>(retainedInput);
             Assert.That(stack.StackTypeId, Is.EqualTo(new ProtoId<StackPrototype>("BasicMaterials")));
             Assert.That(stack.Unlimited, Is.False);
-            Assert.That(stack.Count, Is.EqualTo(3));
+            Assert.That(stack.Count, Is.EqualTo(inputAmount));
             Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId, out var outputs), Is.True);
             Assert.That(outputs.ContainedEntities, Has.Count.EqualTo(crateCount));
             foreach (var uid in outputs.ContainedEntities)
@@ -1387,6 +1391,17 @@ public sealed class PersistentWarRuleTest : GameTest
                 ticker.ToggleReadyAll(true);
                 ticker.StartRound(true);
             });
+            if (writeFault)
+            {
+                await Server.WaitPost(() =>
+                {
+                    // Commit an empty same-war claim through native cleanup before paying for new work.
+                    ticker.RestartRound();
+                    ticker.SetGamePreset("PersistentWar");
+                    ticker.ToggleReadyAll(true);
+                    ticker.StartRound(true);
+                });
+            }
             await Pair.RunUntilSynced();
             await Server.WaitPost(() =>
             {
@@ -1430,8 +1445,72 @@ public sealed class PersistentWarRuleTest : GameTest
                     Is.InRange(SGameTiming.TickPeriod, duration - SGameTiming.TickPeriod));
                 AssertGoods(1); // Paid pending work, retained output and unused input are independent claims.
             });
+            if (writeFault)
+            {
+                await Server.WaitPost(() =>
+                {
+                    // Catch expected restart/assertion exceptions so the posted callback cannot kill the server.
+                    try
+                    {
+                        using var committedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                        var committed = committedStream.ReadToEnd();
+                        var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(committed)!;
+                        Assert.That(saved.WarId, Is.EqualTo(war.State!.WarId));
+                        Assert.That(saved.Factories, Has.Count.EqualTo(2));
+                        Assert.That(saved.Factories.All(entry => entry.Jobs.Count == 0 &&
+                            entry.Inputs.Count == 0 && entry.Outputs.Count == 0), Is.True);
+                        var liveJobs = factories.GetJobs(factory).ToArray();
+                        var liveMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                        Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId,
+                            out var outputs), Is.True);
+                        var liveOutputs = outputs.ContainedEntities.ToArray();
+                        data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                        data.CreateDir(WarStrategicSnapshotSystem.TemporaryPath);
+                        Assert.That(data.IsDir(WarStrategicSnapshotSystem.TemporaryPath), Is.True);
+                        Assert.Throws<ArgumentException>(() => ticker.RestartRound(),
+                            "Write failure must stop native cleanup before paid claims are flushed.");
+                        Assert.That(Server.UnhandledException, Is.Null);
+                        Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
+                        Assert.That(ticker.CurrentPreset?.ID, Is.EqualTo("PersistentWar"));
+                        Assert.That(SEntMan.EntityExists(liveMap) && SEntMan.EntityExists(factory) &&
+                            SEntMan.EntityExists(input), Is.True);
+                        Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(liveMap));
+                        Assert.That(FindFactory(new Vector2(5.5f, -19.5f)), Is.EqualTo(factory));
+                        Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.InputContainerId,
+                            out var inputs), Is.True);
+                        Assert.That(inputs.ContainedEntities, Is.EqualTo(new[] { input }));
+                        Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId,
+                            out var retainedOutputs), Is.True);
+                        Assert.That(retainedOutputs.ContainedEntities, Is.EqualTo(liveOutputs));
+                        Assert.That(factories.GetJobs(factory).Select(job => (job.Recipe, job.Remaining.Ticks)),
+                            Is.EqualTo(liveJobs.Select(job => (job.Recipe, job.Remaining.Ticks))),
+                            "Failed capture must retain the ordered paid recipe and exact remaining ticks.");
+                        AssertGoods(1);
+                        using var unchangedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                        Assert.That(unchangedStream.ReadToEnd(), Is.EqualTo(committed),
+                            "Failed writing must not replace the last committed disk claim.");
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e;
+                    }
+                    finally
+                    {
+                        data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                    }
+                });
+                Assert.That(Server.UnhandledException, Is.Null);
+                if (failure != null)
+                    throw failure;
+            }
             await Server.WaitPost(() =>
             {
+                if (writeFault)
+                {
+                    // Retry must capture this surviving map's updated, not stale, input claim.
+                    inputAmount = 2;
+                    stacks.SetCount((input, SComp<StackComponent>(input)), inputAmount);
+                }
                 remaining = factories.GetJobs(factory)[0].Remaining;
                 oldFactory = factory;
                 oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
@@ -1455,6 +1534,25 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(war.State, Is.EqualTo(beforeRestart));
                 Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldFactory) || SEntMan.EntityExists(input), Is.False);
                 Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                Assert.That(saved.Factories, Has.Count.EqualTo(2));
+                var claim = saved.Factories.Single(entry => entry.FactoryId == "frontline-test-factory-west");
+                Assert.That(claim.FactoryId, Is.EqualTo(SComp<FrontlineFactoryComponent>(factory).FactoryId));
+                Assert.That(claim.Prototype, Is.EqualTo("FrontlineFactory"));
+                Assert.That(claim.Jobs.Select(job => (job.Recipe, job.RemainingTicks)),
+                    Is.EqualTo(new[] { (recipe.Id, remaining.Ticks) }));
+                Assert.That(claim.Inputs.Select(stack => (stack.StackId, stack.Prototype, stack.Count)),
+                    Is.EqualTo(new[] { ("BasicMaterials", "BasicMaterials1", inputAmount) }));
+                Assert.That(claim.Outputs.Select(crate => (crate.Prototype, crate.Product, crate.Amount)),
+                    Is.EqualTo(new[] { ("FrontlineFactoryMedicalCrate", product.Id, 2) }));
+                var otherClaim = saved.Factories.Single(entry => entry.FactoryId == "frontline-test-factory-east");
+                Assert.That(otherClaim.Prototype, Is.EqualTo("FrontlineFactory"));
+                Assert.That(otherClaim.Jobs, Is.Empty);
+                Assert.That(otherClaim.Inputs, Is.Empty);
+                Assert.That(otherClaim.Outputs, Is.Empty);
                 AssertGoods(1);
             });
             await Pair.RunTicksSync(1);
@@ -1475,7 +1573,7 @@ public sealed class PersistentWarRuleTest : GameTest
             await Server.WaitAssertion(() =>
             {
                 Assert.That(factories.GetJobs(factory), Is.Empty);
-                AssertGoods(2); // Once-only completion must not debit the three unused BasicMaterials.
+                AssertGoods(2); // Once-only completion must not debit the unused BasicMaterials.
             });
         }
         finally
