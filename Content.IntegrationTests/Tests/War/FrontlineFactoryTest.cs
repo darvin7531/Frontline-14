@@ -890,10 +890,25 @@ public sealed class FrontlineFactoryTest : GameTest
             Assert.That(jobs[0].Remaining.TotalSeconds, Is.EqualTo(4.4).Within(0.2));
             Assert.That(jobs[1].Remaining.TotalSeconds, Is.EqualTo(4.4).Within(0.2));
             Assert.That(jobs[2].Remaining, Is.EqualTo(TimeSpan.FromSeconds(5)));
-            Assert.That(system.GetJobs(persisted), Has.Count.EqualTo(1));
+            var persistedJobs = system.GetJobs(persisted);
+            Assert.That(persistedJobs, Has.Count.EqualTo(2), "Keep the invalid paid claim without assigning it a processing slot.");
+            Assert.That(persistedJobs[0].Recipe.Id, Is.EqualTo("MissingFrontlineFactoryRecipe"));
+            Assert.That(persistedJobs[0].Remaining, Is.EqualTo(TimeSpan.Zero));
+            Assert.That(persistedJobs[1].Remaining, Is.GreaterThan(TimeSpan.Zero).And.LessThan(TimeSpan.FromSeconds(1)));
         });
         await Pair.RunSeconds(0.5f);
-        await server.WaitAssertion(() => Assert.That(system.GetJobs(persisted), Is.Empty));
+        await server.WaitAssertion(() =>
+        {
+            var jobs = system.GetJobs(persisted);
+            Assert.That(jobs, Has.Count.EqualTo(1));
+            Assert.That(jobs[0].Recipe.Id, Is.EqualTo("MissingFrontlineFactoryRecipe"));
+            Assert.That(jobs[0].Remaining, Is.EqualTo(TimeSpan.Zero));
+            var outputs = SComp<FrontlineFactoryComponent>(persisted).OutputContainer.ContainedEntities;
+            Assert.That(outputs, Has.Count.EqualTo(1), "Valid paid work behind a quarantined claim must complete.");
+            var crate = SComp<FrontlineSupplyCrateComponent>(outputs.Single());
+            Assert.That(crate.Product.Id, Is.EqualTo("Brutepack1"));
+            Assert.That(crate.Amount, Is.EqualTo(2));
+        });
     }
 
     [Test]

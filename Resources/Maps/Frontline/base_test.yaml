@@ -133,11 +133,15 @@ entities:
   entities:
   - uid: 161
     components:
+    - type: FrontlineFactory
+      factoryId: frontline-test-factory-west
     - type: Transform
       parent: 2
       pos: 5,-20
   - uid: 164
     components:
+    - type: FrontlineFactory
+      factoryId: frontline-test-factory-east
     - type: Transform
       parent: 2
       pos: 45,-20

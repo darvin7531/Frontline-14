@@ -32,7 +32,29 @@ public sealed record WarStrategicSnapshot(
 
     [JsonRequired]
     public List<WarRefinerySnapshot> Refineries { get; init; } = new();
+
+    [JsonRequired]
+    public List<WarFactorySnapshot> Factories { get; init; } = new();
 }
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record WarFactorySnapshot(
+    [property: JsonRequired] string FactoryId,
+    [property: JsonRequired] string Prototype,
+    [property: JsonRequired] List<WarFactoryJobSnapshot> Jobs,
+    [property: JsonRequired] List<WarRefineryStackSnapshot> Inputs,
+    [property: JsonRequired] List<WarFactoryCrateSnapshot> Outputs);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record WarFactoryJobSnapshot(
+    [property: JsonRequired] string Recipe,
+    [property: JsonRequired] long RemainingTicks);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record WarFactoryCrateSnapshot(
+    [property: JsonRequired] string Prototype,
+    [property: JsonRequired] string Product,
+    [property: JsonRequired] int Amount);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record WarRefinerySnapshot(
@@ -84,11 +106,11 @@ public sealed record WarBaseSnapshot(
     public int RuinMaterialDeposited { get; init; }
 }
 
-/// <summary>Technical-restart persistence for objectives, stockpiles, resource fields and refineries.</summary>
+/// <summary>Technical-restart persistence for objectives, stockpiles, resource fields, refineries and factories.</summary>
 public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 {
     // Earlier versions omitted paid machine claims; never accept omitted state as fresh defaults.
-    public const int SnapshotVersion = 4;
+    public const int SnapshotVersion = 5;
     public static readonly ResPath SavePath = new("/persistent-war-strategic.json");
     public static readonly ResPath TemporaryPath = new("/persistent-war-strategic.json.tmp");
     public static readonly ResPath BackupPath = new("/persistent-war-strategic.json.bak");
@@ -102,6 +124,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     [Dependency] private DamageableSystem _damage = default!;
     [Dependency] private FrontlineResourceFieldSystem _resourceFields = default!;
     [Dependency] private FrontlineRefinerySystem _refineries = default!;
+    [Dependency] private FrontlineFactorySystem _factories = default!;
 
     private EntityUid? _loadedMap;
     private int _loadedWarId;
@@ -141,7 +164,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     private static void ValidateHeader(WarStrategicSnapshot snapshot)
     {
         if (snapshot.SnapshotVersion != SnapshotVersion || snapshot.WarId <= 0 ||
-            snapshot.Bases == null || snapshot.Resources == null || snapshot.Refineries == null)
+            snapshot.Bases == null || snapshot.Resources == null || snapshot.Refineries == null || snapshot.Factories == null)
             throw new InvalidDataException("Invalid strategic snapshot header.");
     }
 
@@ -219,6 +242,8 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         var stagedNodes = new List<EntityUid>();
         var stagedStacks = new List<EntityUid>();
         var restoringRefineries = new List<EntityUid>();
+        var stagedFactoryClaims = new List<EntityUid>();
+        var restoringFactories = new List<EntityUid>();
         var accepted = false;
         var commitStarted = false;
         try
@@ -246,6 +271,8 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             Validate(snapshot, objectives); // All entries preflight before spawning or removing anything.
             _resourceFields.ValidateSnapshot(mapId, snapshot.Resources);
             _refineries.ValidateSnapshot(mapId, snapshot.Refineries);
+            _factories.ValidateSnapshot(mapId, snapshot.Factories);
+            _factories.StageSnapshot(mapId, snapshot.Factories, stagedFactoryClaims, restoringFactories);
             _refineries.StageSnapshot(mapId, snapshot.Refineries, stagedStacks, restoringRefineries);
             foreach (var entry in snapshot.Bases)
             {
@@ -271,6 +298,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             }
             _resourceFields.StageSnapshot(mapId, snapshot.Resources, stagedNodes);
             _refineries.ValidateStagedSnapshot(mapId, snapshot.Refineries, stagedStacks);
+            _factories.ValidateStagedSnapshot(mapId, snapshot.Factories, stagedFactoryClaims);
             // Stage all paid claims before deleting fresh YAML entities. Nodes have no field ownership yet.
             if (!Usable(map) || staged.Any(uid => !Usable(uid)))
                 throw new InvalidDataException("Restored objective or map was lost before commit.");
@@ -278,8 +306,12 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             // Old resource callbacks can invalidate staged bases, and old base callbacks can invalidate resources.
             if (!Usable(map) || staged.Any(uid => !Usable(uid)))
                 throw new InvalidDataException("Restored objective or map was lost during resource commit.");
+            _factories.ValidateStagedSnapshot(mapId, snapshot.Factories, stagedFactoryClaims);
             foreach (var objective in objectives.Values)
+            {
                 _halls.DeleteObjective(objective);
+                _factories.ValidateStagedSnapshot(mapId, snapshot.Factories, stagedFactoryClaims);
+            }
             if (!Usable(map) || staged.Any(uid => !Usable(uid)))
                 throw new InvalidDataException("Restored objective or map was lost during base commit.");
             var restored = GetObjectives(mapId);
@@ -300,6 +332,9 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             }
             _resourceFields.ValidateStagedSnapshot(mapId, snapshot.Resources, stagedNodes, committed: true);
             _refineries.CommitSnapshot(mapId, snapshot.Refineries, stagedStacks);
+            _factories.CommitSnapshot(mapId, snapshot.Factories, stagedFactoryClaims);
+            // Both ledgers must still be exact after all native callbacks, before releasing either guard.
+            _refineries.ValidateStagedSnapshot(mapId, snapshot.Refineries, stagedStacks, committed: true);
             accepted = true;
         }
         catch
@@ -308,32 +343,35 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             // Abort this entire unaccepted map; retry must load a clean map from the unchanged disk claim.
             if (commitStarted)
                 _failedMaps.Add(map);
-            try
+            Exception? cleanupFailure = null;
+            // Clean each machine slice independently: a refinery failure cannot release factory goods.
+            Cleanup(() => _factories.DeleteStagedClaims(stagedFactoryClaims));
+            Cleanup(() => _refineries.DeleteStagedStacks(stagedStacks));
+            if (commitStarted)
+                Cleanup(() => { if (!TerminatingOrDeleted(map)) Del(map); });
+            else
             {
-                if (commitStarted)
-                {
-                    if (!TerminatingOrDeleted(map))
-                        Del(map);
-                }
-                else
-                {
-                    _refineries.DeleteStagedStacks(stagedStacks);
-                    _resourceFields.DeleteStagedNodes(stagedNodes);
-                    foreach (var objective in staged)
-                        _halls.DeleteObjective(objective);
-                }
+                Cleanup(() => _resourceFields.DeleteStagedNodes(stagedNodes));
+                foreach (var objective in staged)
+                    Cleanup(() => _halls.DeleteObjective(objective));
             }
-            catch (Exception cleanupFailure)
+            if (cleanupFailure != null)
             {
-                // Native deletion may leave descendants behind. Preserve refusal, not a disposal guarantee.
                 _failedMaps.Add(map);
                 Log.Warning($"Strategic restore cleanup failed; this map cannot be retried: {cleanupFailure}");
+            }
+
+            void Cleanup(Action cleanup)
+            {
+                try { cleanup(); }
+                catch (Exception e) { cleanupFailure ??= e; }
             }
             throw;
         }
         finally
         {
             _refineries.FinishSnapshotRestore(restoringRefineries);
+            _factories.FinishSnapshotRestore(restoringFactories);
             if (accepted)
             {
                 _loadedMap = map;
@@ -372,6 +410,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         {
             Resources = _resourceFields.CaptureSnapshot(mapId),
             Refineries = _refineries.CaptureSnapshot(mapId),
+            Factories = _factories.CaptureSnapshot(mapId),
         };
         Validate(snapshot, objectives);
         // Propagate failure before native entity flush, retaining this map for a later retry.

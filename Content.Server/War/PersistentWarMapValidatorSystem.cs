@@ -25,6 +25,7 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         ValidateTerritories(map, errors);
         ValidateResourceFields(Comp<MapComponent>(map).MapId, errors);
         ValidateRefineries(Comp<MapComponent>(map).MapId, errors);
+        ValidateFactories(Comp<MapComponent>(map).MapId, errors);
 
         if (errors.Count != 0)
             throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
@@ -46,6 +47,25 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
                 !_prototypes.TryIndex(new EntProtoId(prototypeId), out var prototype) || prototype.Abstract ||
                 !prototype.HasComp<FrontlineRefineryComponent>(EntityManager.ComponentFactory))
                 errors.Add($"PersistentWar refinery '{refinery.RefineryId}' must have a live concrete refinery prototype.");
+        }
+    }
+
+    private void ValidateFactories(MapId mapId, List<string> errors)
+    {
+        var ids = new HashSet<string>();
+        var query = AllEntityQuery<FrontlineFactoryComponent, TransformComponent>();
+        while (query.MoveNext(out var uid, out var factory, out var transform))
+        {
+            if (transform.MapID != mapId)
+                continue;
+            if (string.IsNullOrWhiteSpace(factory.FactoryId) || !ids.Add(factory.FactoryId))
+                errors.Add("PersistentWar factory IDs must be nonempty and unique on the map.");
+            var prototypeId = MetaData(uid).EntityPrototype?.ID;
+            if (TerminatingOrDeleted(uid) || EntityManager.IsQueuedForDeletion(uid) ||
+                string.IsNullOrWhiteSpace(prototypeId) ||
+                !_prototypes.TryIndex(new EntProtoId(prototypeId), out var prototype) || prototype.Abstract ||
+                !prototype.HasComp<FrontlineFactoryComponent>(EntityManager.ComponentFactory))
+                errors.Add($"PersistentWar factory '{factory.FactoryId}' must have a live concrete factory prototype.");
         }
     }
 

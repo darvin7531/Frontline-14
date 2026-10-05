@@ -2000,6 +2000,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     {
                         Resources = resources,
                         Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(source.MapId),
+                        Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(source.MapId),
                     });
                     data.Delete(WarStrategicSnapshotSystem.BackupPath);
                     using var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath);
@@ -2252,6 +2253,7 @@ public sealed class PersistentWarRuleTest : GameTest
                         {
                             Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(fresh.MapId),
                             Refineries = claims,
+                            Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(fresh.MapId),
                         });
                     string saved;
                     using (var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
@@ -2342,7 +2344,7 @@ public sealed class PersistentWarRuleTest : GameTest
     [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 0)]
     [TestCase(1, 41)]
     [TestCase(2, 41)]
-    [TestCase(5, 41)]
+    [TestCase(6, 41)]
     [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 42)]
     public async Task MalformedStrategicHeaderCannotBypassValidationAsAnotherWar(int version, int savedWarId)
     {
@@ -2379,6 +2381,7 @@ public sealed class PersistentWarRuleTest : GameTest
                         {
                             Resources = resourceEntries,
                             Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(map.MapId),
+                            Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(map.MapId),
                         });
                     Assert.Multiple(() =>
                     {
@@ -2402,6 +2405,7 @@ public sealed class PersistentWarRuleTest : GameTest
                         {
                             Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(map.MapId),
                             Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(map.MapId),
+                            Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(map.MapId),
                         });
                     snapshot.Restore(map.MapUid, currentWarId);
                     foreach (var entry in bases)
