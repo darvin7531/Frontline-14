@@ -1062,9 +1062,10 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
-    [Test]
+    [TestCase(false)]
+    [TestCase(true)]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
-    public async Task TechnicalRestartPreservesPaidRefineryQueueAndRetainedMaterials()
+    public async Task TechnicalRestartPreservesPaidRefineryQueueAndRetainedMaterials(bool writeFault)
     {
         ProtoId<FrontlineRefineryRecipePrototype> recipe = "FrontlineSteel";
         var ticker = Server.System<GameTicker>();
@@ -1075,6 +1076,7 @@ public sealed class PersistentWarRuleTest : GameTest
         var containers = Server.System<SharedContainerSystem>();
         var maps = Server.System<SharedMapSystem>();
         var session = ServerSession!;
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
         var duration = refineries.GetAvailableRecipes().Single(entry => entry.ID == recipe.Id).Duration;
         EntityUid refinery = default;
         EntityUid oldRefinery = default;
@@ -1086,6 +1088,8 @@ public sealed class PersistentWarRuleTest : GameTest
         var selected = false;
         var inserted = false;
         var submitted = false;
+        var inputAmount = 3;
+        Exception failure = null;
 
         // base_test.yaml has refineries at (6,-20) and (44,-20); anchoring snaps to tile centers.
         // Test lookup only: persistence must introduce stable mapper IDs, never save positions or UIDs.
@@ -1097,13 +1101,13 @@ public sealed class PersistentWarRuleTest : GameTest
 
         void AssertGoods(int outputAmount)
         {
-            AssertContainer(refinery, FrontlineRefineryComponent.InputContainerId, "FrontlineRawIron", 3);
+            AssertContainer(refinery, FrontlineRefineryComponent.InputContainerId, "FrontlineRawIron", inputAmount);
             AssertContainer(refinery, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", outputAmount);
             var other = FindRefinery(new Vector2(44.5f, -19.5f));
             Assert.That(refineries.GetJobs(other), Is.Empty, "Do not restore the paid claim into both refineries.");
             AssertContainer(other, FrontlineRefineryComponent.InputContainerId, "FrontlineRawIron", 0);
             AssertContainer(other, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", 0);
-            foreach (var (type, amount) in new[] { ("FrontlineRawIron", 3), ("BasicMaterials", outputAmount) })
+            foreach (var (type, amount) in new[] { ("FrontlineRawIron", inputAmount), ("BasicMaterials", outputAmount) })
             {
                 Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack => stack.StackTypeId == type &&
                     SComp<TransformComponent>(stack.Owner).MapID == ticker.DefaultMap).Sum(stack => stack.Count),
@@ -1132,6 +1136,17 @@ public sealed class PersistentWarRuleTest : GameTest
                 ticker.ToggleReadyAll(true);
                 ticker.StartRound(true);
             });
+            if (writeFault)
+            {
+                await Server.WaitPost(() =>
+                {
+                    // Commit an empty same-war claim through native cleanup before paying for new work.
+                    ticker.RestartRound();
+                    ticker.SetGamePreset("PersistentWar");
+                    ticker.ToggleReadyAll(true);
+                    ticker.StartRound(true);
+                });
+            }
             await Pair.RunUntilSynced();
             await Server.WaitPost(() =>
             {
@@ -1168,8 +1183,62 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(refineries.GetJobs(refinery)[0].Remaining, Is.InRange(SGameTiming.TickPeriod, duration - SGameTiming.TickPeriod));
                 AssertGoods(5); // Three independent claims: paid pending work, committed output, unused input.
             });
+            if (writeFault)
+            {
+                await Server.WaitPost(() =>
+                {
+                    // Catch expected restart/assertion exceptions here so the posted callback cannot kill the server.
+                    try
+                    {
+                        using var committedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                        var committed = committedStream.ReadToEnd();
+                        var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(committed)!;
+                        Assert.That(saved.WarId, Is.EqualTo(war.State!.WarId));
+                        Assert.That(saved.Refineries.All(entry => entry.Jobs.Count == 0 &&
+                            entry.Inputs.Count == 0 && entry.Outputs.Count == 0), Is.True);
+                        var liveJobs = refineries.GetJobs(refinery).ToArray();
+                        var liveMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                        data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                        data.CreateDir(WarStrategicSnapshotSystem.TemporaryPath);
+                        Assert.That(data.IsDir(WarStrategicSnapshotSystem.TemporaryPath), Is.True);
+                        Assert.Throws<ArgumentException>(() => ticker.RestartRound(),
+                            "Write failure must stop native cleanup before paid claims are flushed.");
+                        Assert.That(Server.UnhandledException, Is.Null);
+                        Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
+                        Assert.That(ticker.CurrentPreset?.ID, Is.EqualTo("PersistentWar"));
+                        Assert.That(SEntMan.EntityExists(liveMap) && SEntMan.EntityExists(refinery) &&
+                            SEntMan.EntityExists(input), Is.True);
+                        Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(liveMap));
+                        Assert.That(FindRefinery(new Vector2(6.5f, -19.5f)), Is.EqualTo(refinery));
+                        Assert.That(refineries.GetJobs(refinery).Select(job => (job.Recipe, job.Remaining.Ticks)),
+                            Is.EqualTo(liveJobs.Select(job => (job.Recipe, job.Remaining.Ticks))),
+                            "Failed capture must retain the ordered paid recipe and exact remaining ticks.");
+                        AssertGoods(5);
+                        using var unchangedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                        Assert.That(unchangedStream.ReadToEnd(), Is.EqualTo(committed),
+                            "Failed writing must not replace the last committed disk claim.");
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e;
+                    }
+                    finally
+                    {
+                        data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                    }
+                });
+                Assert.That(Server.UnhandledException, Is.Null);
+                if (failure != null)
+                    throw failure;
+            }
             await Server.WaitPost(() =>
             {
+                if (writeFault)
+                {
+                    // Retry must capture this surviving map's updated, not stale, input claim.
+                    inputAmount = 2;
+                    stacks.SetCount((input, SComp<StackComponent>(input)), inputAmount);
+                }
                 remaining = refineries.GetJobs(refinery)[0].Remaining;
                 oldRefinery = refinery;
                 oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
@@ -1192,6 +1261,16 @@ public sealed class PersistentWarRuleTest : GameTest
                     "Technical restart must restore the paid refinery job instead of reloading an empty queue.");
                 Assert.That(restoredJobs[0].Recipe, Is.EqualTo(recipe));
                 Assert.That(restoredJobs[0].Remaining, Is.EqualTo(remaining), "Restore exact paid progress, not a fresh recipe duration.");
+                using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                var claim = saved.Refineries.Single(entry => entry.RefineryId == SComp<FrontlineRefineryComponent>(refinery).RefineryId);
+                Assert.That(claim.Jobs.Select(job => (job.Recipe, job.RemainingTicks)),
+                    Is.EqualTo(new[] { (recipe.Id, remaining.Ticks) }));
+                Assert.That(claim.Inputs.Select(stack => (stack.StackId, stack.Count)),
+                    Is.EqualTo(new[] { ("FrontlineRawIron", inputAmount) }));
+                Assert.That(claim.Outputs.Select(stack => (stack.StackId, stack.Count)),
+                    Is.EqualTo(new[] { ("BasicMaterials", 5) }));
                 AssertGoods(5);
             });
             await Pair.RunTicksSync(1);
@@ -1212,7 +1291,7 @@ public sealed class PersistentWarRuleTest : GameTest
             await Server.WaitAssertion(() =>
             {
                 Assert.That(refineries.GetJobs(refinery), Is.Empty);
-                AssertGoods(10); // Completion is once-only and must not consume the remaining three raw iron.
+                AssertGoods(10); // Completion is once-only and must not consume the unused raw iron.
             });
         }
         finally
