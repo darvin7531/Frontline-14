@@ -2324,6 +2324,12 @@ public sealed class PersistentWarRuleTest : GameTest
             {
                 try
                 {
+                    // EntitySystems survive pooled map cleanup; each case needs fresh observer state.
+                    probe.Fired = false;
+                    probe.StagedNode = EntityUid.Invalid;
+                    probe.DetachedDuringCallback = false;
+                    probe.QueuedDuringCallback = false;
+                    probe.YieldDuringCallback = 0;
                     probe.SpawnExtraNode = spawnExtraNode;
                     probe.OldNode = spawnExtraNode
                         ? FindMapEntity<TownHallComponent>(fresh.MapId, hall => hall.TerritoryId == "frontline-one")
