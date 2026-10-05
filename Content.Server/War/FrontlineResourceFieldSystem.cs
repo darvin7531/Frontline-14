@@ -24,6 +24,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     [Dependency] private StackSystem _stack = default!;
     [Dependency] private TagSystem _tags = default!;
     [Dependency] private IGameTiming _timing = default!;
+    [Dependency] private MetaDataSystem _metadata = default!;
     [Dependency] private IRobustRandom _random = default!;
     [Dependency] private IPrototypeManager _prototypes = default!;
     [Dependency] private PersistentWarMapValidatorSystem _mapValidator = default!;
@@ -303,10 +304,11 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
         }
         foreach (var (id, field) in GetFields(mapId))
         {
+            var now = _timing.CurTime - _metadata.GetPauseTime(field.Owner);
             result.Add(new WarResourceFieldSnapshot(id, field.Comp.RemainingReserveNodes,
                 field.Comp.FieldInitialized, field.Comp.State,
-                Math.Max(0, (field.Comp.NextReplacement - _timing.CurTime).Ticks),
-                Math.Max(0, (field.Comp.NextReplenishment - _timing.CurTime).Ticks),
+                Math.Max(0, (field.Comp.NextReplacement - now).Ticks),
+                Math.Max(0, (field.Comp.NextReplenishment - now).Ticks),
                 nodes.Remove(id, out var entries) ? entries : new()));
         }
         if (nodes.Count != 0)
