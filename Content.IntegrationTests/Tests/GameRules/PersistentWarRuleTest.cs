@@ -1301,6 +1301,190 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesPaidFactoryQueueAndRetainedCrates()
+    {
+        ProtoId<FrontlineFactoryRecipePrototype> recipe = "FrontlineFactoryBrutepack";
+        ProtoId<FrontlineSupplyProductPrototype> product = "Brutepack1";
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var factories = Server.System<FrontlineFactorySystem>();
+        var stacks = Server.System<StackSystem>();
+        var containers = Server.System<SharedContainerSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var session = ServerSession!;
+        var duration = factories.GetAvailableRecipes().Single(entry => entry.ID == recipe.Id).Duration;
+        EntityUid factory = default;
+        EntityUid oldFactory = default;
+        EntityUid oldMap = default;
+        EntityUid input = default;
+        WarState beforeRestart = default!;
+        FrontlineFactoryJob[] restoredJobs = default!;
+        TimeSpan remaining = default;
+        var selected = false;
+        var inserted = false;
+        var submitted = false;
+
+        // base_test.yaml has factories at (5,-20) and (45,-20); anchoring snaps to tile centers.
+        // Test lookup only until stable mapper factory IDs exist; never persist positions or UIDs.
+        EntityUid FindFactory(Vector2 position) => SEntMan.EntityQuery<FrontlineFactoryComponent>()
+            .Select(component => component.Owner).Single(uid =>
+                SComp<TransformComponent>(uid).MapID == ticker.DefaultMap &&
+                SComp<TransformComponent>(uid).LocalPosition == position &&
+                SComp<MetaDataComponent>(uid).EntityPrototype?.ID == "FrontlineFactory");
+
+        void AssertGoods(int crateCount)
+        {
+            Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.InputContainerId, out var inputs), Is.True);
+            Assert.That(inputs.ContainedEntities, Has.Count.EqualTo(1));
+            var retainedInput = inputs.ContainedEntities.Single();
+            Assert.That(SEntMan.EntityExists(retainedInput) && !SEntMan.IsQueuedForDeletion(retainedInput), Is.True);
+            Assert.That(SComp<MetaDataComponent>(retainedInput).EntityLifeStage, Is.LessThan(EntityLifeStage.Terminating));
+            var stack = SComp<StackComponent>(retainedInput);
+            Assert.That(stack.StackTypeId, Is.EqualTo(new ProtoId<StackPrototype>("BasicMaterials")));
+            Assert.That(stack.Unlimited, Is.False);
+            Assert.That(stack.Count, Is.EqualTo(3));
+            Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId, out var outputs), Is.True);
+            Assert.That(outputs.ContainedEntities, Has.Count.EqualTo(crateCount));
+            foreach (var uid in outputs.ContainedEntities)
+            {
+                Assert.That(SEntMan.EntityExists(uid) && !SEntMan.IsQueuedForDeletion(uid), Is.True);
+                Assert.That(SComp<MetaDataComponent>(uid).EntityLifeStage, Is.LessThan(EntityLifeStage.Terminating));
+                Assert.That(SComp<MetaDataComponent>(uid).EntityPrototype?.ID, Is.EqualTo("FrontlineFactoryMedicalCrate"));
+                var crate = SComp<FrontlineSupplyCrateComponent>(uid);
+                Assert.That(crate.Product, Is.EqualTo(product));
+                Assert.That(crate.Amount, Is.EqualTo(2));
+            }
+            Assert.That(outputs.ContainedEntities.Sum(uid => SComp<FrontlineSupplyCrateComponent>(uid).Amount),
+                Is.EqualTo(crateCount * 2));
+            var other = FindFactory(new Vector2(45.5f, -19.5f));
+            Assert.That(factories.GetJobs(other), Is.Empty, "Do not restore the paid claim into both factories.");
+            Assert.That(containers.TryGetContainer(other, FrontlineFactoryComponent.InputContainerId, out var otherInputs), Is.True);
+            Assert.That(otherInputs.ContainedEntities, Is.Empty);
+            Assert.That(containers.TryGetContainer(other, FrontlineFactoryComponent.OutputContainerId, out var otherOutputs), Is.True);
+            Assert.That(otherOutputs.ContainedEntities, Is.Empty);
+            Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(crate =>
+                    SComp<TransformComponent>(crate.Owner).MapID == ticker.DefaultMap).Select(crate => crate.Owner),
+                Is.EquivalentTo(outputs.ContainedEntities), "No loose crates, duplicate batches or other-machine claims.");
+            Assert.That(SEntMan.EntityQuery<StackComponent>().Where(material => material.StackTypeId == "BasicMaterials" &&
+                SComp<TransformComponent>(material.Owner).MapID == ticker.DefaultMap).Select(material => material.Owner),
+                Is.EquivalentTo(inputs.ContainedEntities), "Unused material must not also appear loose or in another machine.");
+            Assert.That(SEntMan.EntityQuery<MetaDataComponent>().Count(metadata => metadata.EntityPrototype?.ID == product.Id &&
+                SComp<TransformComponent>(metadata.Owner).MapID == ticker.DefaultMap), Is.Zero,
+                "Sealed batches must not also materialize their withdrawal goods.");
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                factions.ClearFaction(session.UserId);
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitPost(() =>
+            {
+                selected = factions.TrySelectFaction(session.UserId, new FactionId("FrontlineFactionOne"));
+                ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
+                factory = FindFactory(new Vector2(5.5f, -19.5f));
+                var coordinates = SComp<TransformComponent>(factory).Coordinates;
+                Server.System<SharedTransformSystem>().SetCoordinates(session.AttachedEntity!.Value,
+                    coordinates.Offset(new Vector2(0, 1)));
+                // Owning insertion plus public player/container submission, not held interaction or BUI coverage.
+                input = stacks.SpawnAtPosition(13, "BasicMaterials", coordinates);
+                inserted = factories.TryInsertInput(factory, input);
+                submitted = factories.TrySubmitPlayerJob(factory, session.AttachedEntity.Value, recipe);
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(selected && inserted && submitted, Is.True);
+                Assert.That(session.AttachedEntity, Is.Not.Null);
+                Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(8));
+                Assert.That(factories.GetJobs(factory), Has.Count.EqualTo(1));
+            });
+            await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(factories.GetJobs(factory), Is.Empty);
+                Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId, out var outputs), Is.True);
+                Assert.That(outputs.ContainedEntities, Has.Count.EqualTo(1));
+                var crate = outputs.ContainedEntities.Single();
+                Assert.That(SComp<MetaDataComponent>(crate).EntityPrototype?.ID, Is.EqualTo("FrontlineFactoryMedicalCrate"));
+                Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Product, Is.EqualTo(product));
+                Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Amount, Is.EqualTo(2));
+            });
+            await Server.WaitPost(() => submitted = factories.TrySubmitPlayerJob(factory,
+                session.AttachedEntity!.Value, recipe));
+            await Pair.RunTicksSync(30);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(submitted, Is.True);
+                Assert.That(factories.GetJobs(factory), Has.Count.EqualTo(1));
+                Assert.That(factories.GetJobs(factory)[0].Remaining,
+                    Is.InRange(SGameTiming.TickPeriod, duration - SGameTiming.TickPeriod));
+                AssertGoods(1); // Paid pending work, retained output and unused input are independent claims.
+            });
+            await Server.WaitPost(() =>
+            {
+                remaining = factories.GetJobs(factory)[0].Remaining;
+                oldFactory = factory;
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+                factory = FindFactory(new Vector2(5.5f, -19.5f));
+                // Capture through the owning read API before any native Update spends restored progress.
+                restoredJobs = factories.GetJobs(factory).ToArray();
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(restoredJobs, Has.Length.EqualTo(1),
+                    "Technical restart must restore the paid factory job instead of reloading an empty queue.");
+                Assert.That(restoredJobs[0].Recipe, Is.EqualTo(recipe));
+                Assert.That(restoredJobs[0].Remaining.Ticks, Is.EqualTo(remaining.Ticks),
+                    "Restore exact paid progress, not a fresh recipe duration.");
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldFactory) || SEntMan.EntityExists(input), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                AssertGoods(1);
+            });
+            await Pair.RunTicksSync(1);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(factories.GetJobs(factory), Has.Count.EqualTo(1));
+                Assert.That(factories.GetJobs(factory)[0].Remaining, Is.GreaterThan(TimeSpan.Zero).And.LessThan(remaining),
+                    "Restoration after MapInit must activate the paid queue for native processing.");
+                AssertGoods(1);
+            });
+            await Pair.RunSeconds((float) remaining.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(factories.GetJobs(factory), Is.Empty);
+                AssertGoods(2);
+            });
+            await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(factories.GetJobs(factory), Is.Empty);
+                AssertGoods(2); // Once-only completion must not debit the three unused BasicMaterials.
+            });
+        }
+        finally
+        {
+            // Native cleanup on RED too; fixture teardown deletes all saves and restores the preset.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+
     // Exact damage is the persistence contract, not a player-facing health measurement.
 #pragma warning disable CS0618
     [Test]
