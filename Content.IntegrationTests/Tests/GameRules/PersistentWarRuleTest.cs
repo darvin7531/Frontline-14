@@ -1909,6 +1909,172 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
+    [Test]
+    public async Task RefineryRestoreQueueObserverFailureCannotLeaveLaterStagedOutputObtainable()
+    {
+        const int warId = 42;
+        var snapshots = Server.System<WarStrategicSnapshotSystem>();
+        var refineries = Server.System<FrontlineRefinerySystem>();
+        var stacks = Server.System<StackSystem>();
+        var containers = Server.System<SharedContainerSystem>();
+        var hands = Server.System<SharedHandsSystem>();
+        var probe = Server.System<ObserveRefineryRestoreInsertionSystem>();
+        var manager = (EntityManager) SEntMan; // Public native C# event, not an ECS event.
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var fresh = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        var provisional = new List<EntityUid>();
+        var queueFailure = new InvalidOperationException("One-shot native refinery queue observer failure.");
+        var threw = false;
+        var guardedDuringQueue = true;
+        EntityUid refinery = default;
+        EntityUid player = default;
+        Exception failure = null;
+
+        void OnQueued(EntityUid uid)
+        {
+            if (!provisional.Contains(uid))
+                return;
+            guardedDuringQueue &= !refineries.TryTakePlayerOutput(refinery, player);
+            if (uid == provisional[0] && !threw)
+            {
+                threw = true;
+                // QueueDeleteEntity has recorded the UID, but has not started native termination.
+                throw queueFailure;
+            }
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    refinery = FindMapEntity<FrontlineRefineryComponent>(fresh.MapId, _ => true);
+                    var output = SComp<FrontlineRefineryComponent>(refinery).OutputContainer;
+                    var coordinates = SComp<TransformComponent>(refinery).Coordinates.Offset(new Vector2(0, 1));
+                    player = SEntMan.SpawnEntity("MobHuman", coordinates);
+                    // Positive control: the same actor can really take retained output at this machine.
+                    var control = stacks.SpawnAtPosition(5, "BasicMaterials", coordinates);
+                    Assert.That(containers.Insert(control, output), Is.True);
+                    Assert.That(refineries.TryTakePlayerOutput(refinery, player), Is.True);
+                    Assert.That(hands.GetActiveItem(player), Is.EqualTo(control));
+                    SEntMan.DeleteEntity(control);
+                    Assert.That(hands.GetActiveItem(player), Is.Null);
+
+                    var bases = Server.System<TerritorySystem>().GetTerritories(fresh.MapId).Select(id =>
+                    {
+                        var hall = id.Id is "frontline-one" or "frontline-five";
+                        var uid = hall
+                            ? FindMapEntity<TownHallComponent>(fresh.MapId, objective => objective.TerritoryId == id.Id)
+                            : FindMapEntity<TownHallRuinComponent>(fresh.MapId, objective => objective.TerritoryId == id.Id);
+                        return new WarBaseSnapshot(id.Id, hall ? "hall" : "ruin",
+                            SComp<MetaDataComponent>(uid).EntityPrototype!.ID,
+                            hall ? SComp<TownHallComponent>(uid).FactionId : null,
+                            hall ? SComp<FrontlineStockpileComponent>(uid).Counts.ToDictionary(entry => entry.Key.Id, entry => entry.Value)
+                                : new Dictionary<string, int>());
+                    }).ToList();
+                    var claims = refineries.CaptureSnapshot(fresh.MapId);
+                    var index = claims.FindIndex(entry => entry.RefineryId == SComp<FrontlineRefineryComponent>(refinery).RefineryId);
+                    claims[index] = claims[index] with
+                    {
+                        Outputs = new()
+                        {
+                            new WarRefineryStackSnapshot("BasicMaterials", "BasicMaterials1", 5),
+                            new WarRefineryStackSnapshot("BasicMaterials", "BasicMaterials1", 7),
+                        },
+                    };
+                    data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                    using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
+                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, warId, bases)
+                        {
+                            Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(fresh.MapId),
+                            Refineries = claims,
+                        });
+                    string saved;
+                    using (var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
+                        saved = new StreamReader(stream).ReadToEnd();
+
+                    probe.Observe = args =>
+                    {
+                        if (args.Container != output)
+                            return;
+                        provisional.Add(args.Entity);
+                        if (provisional.Count == 2)
+                        {
+                            // Real insertion + owning SetCount callback invalidate an earlier tracked claim.
+                            var first = provisional[0];
+                            stacks.SetCount((first, SComp<StackComponent>(first)), 6);
+                        }
+                    };
+                    manager.EntityQueueDeleted += OnQueued;
+                    var refusal = Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId));
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(refusal!.Message, Is.EqualTo("Restored refinery contents changed during native callbacks."),
+                            "Cleanup failure must not replace the original precommit restoration refusal.");
+                        Assert.That(provisional, Has.Count.EqualTo(2));
+                        Assert.That(threw, Is.True, "The first provisional claim must reach the native queue observer.");
+                        Assert.That(guardedDuringQueue, Is.True);
+                        foreach (var uid in provisional)
+                            Assert.That(!SEntMan.EntityExists(uid) || SEntMan.IsQueuedForDeletion(uid), Is.True,
+                                "EVERY provisional refinery claim must be queued/deleted before restoring guards release.");
+                        // No tick may hide the leak between FinishSnapshotRestore and queue draining.
+                        Assert.That(refineries.TryTakePlayerOutput(refinery, player), Is.False,
+                            "A refused restore must not release a later provisional output to a player's hand.");
+                        Assert.That(hands.GetActiveItem(player), Is.Null);
+                        var retry = Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId));
+                        Assert.That(retry!.Message, Is.EqualTo("Strategic restore requires a live map."));
+                        using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                        Assert.That(new StreamReader(stream).ReadToEnd(), Is.EqualTo(saved));
+                    });
+                }
+                catch (Exception e)
+                {
+                    failure = e; // Assertion failures must not escape the posted server callback.
+                }
+                finally
+                {
+                    probe.Observe = null;
+                    manager.EntityQueueDeleted -= OnQueued;
+                }
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() =>
+            {
+                probe.Observe = null;
+                manager.EntityQueueDeleted -= OnQueued;
+                SEntMan.QueueDeleteEntity(fresh.MapUid);
+            });
+            await Pair.RunTicksSync(2); // Native disposal also settles the leaked/held output on RED.
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(SEntMan.EntityExists(fresh.MapUid), Is.False);
+                Assert.That(provisional.All(uid => !SEntMan.EntityExists(uid)), Is.True);
+            });
+        }
+        Assert.That(Server.UnhandledException, Is.Null);
+        if (failure != null)
+            throw failure;
+    }
+
+    public sealed class ObserveRefineryRestoreInsertionSystem : EntitySystem
+    {
+        public Action<EntInsertedIntoContainerMessage> Observe;
+
+        public override void Initialize()
+        {
+            // BaseStructure supplies Tag; this native component/event pair is otherwise unclaimed.
+            SubscribeLocalEvent<TagComponent, EntInsertedIntoContainerMessage>(OnInserted);
+        }
+
+        private void OnInserted(Entity<TagComponent> ent, ref EntInsertedIntoContainerMessage args)
+        {
+            Observe?.Invoke(args);
+        }
+    }
+
     [TestCase(2, 0)]
     [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 0)]
     [TestCase(1, 41)]
