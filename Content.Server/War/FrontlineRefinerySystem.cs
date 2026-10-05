@@ -844,10 +844,13 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
             var jobsBefore = refinery.Jobs.Count;
 
             // Invalid paid jobs stay quarantined in the ledger; capture/restore refuses them.
-            var processing = Math.Min(Math.Max(1, refinery.ProcessingSlots), refinery.Jobs.Count);
-            for (var i = processing - 1; i >= 0; i--)
+            var processing = refinery.Jobs
+                .Where(job => !string.IsNullOrWhiteSpace(job.Recipe.Id) &&
+                    _prototypes.TryIndex(job.Recipe, out var recipe) && IsValidRecipe(recipe))
+                .Take(Math.Max(1, refinery.ProcessingSlots))
+                .Reverse().ToArray();
+            foreach (var job in processing)
             {
-                var job = refinery.Jobs[i];
                 if (string.IsNullOrWhiteSpace(job.Recipe.Id) ||
                     !_prototypes.TryIndex(job.Recipe, out var recipe) || !IsValidRecipe(recipe))
                     continue;
