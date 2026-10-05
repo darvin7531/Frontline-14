@@ -2483,8 +2483,9 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
-    [Test]
-    public async Task RefineryRestoreQueueObserverFailureCannotLeaveLaterStagedOutputObtainable()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task RefineryRestoreQueueObserverFailureCannotLeaveLaterStagedOutputObtainable(bool includeFactory)
     {
         const int warId = 42;
         var snapshots = Server.System<WarStrategicSnapshotSystem>();
@@ -2493,23 +2494,33 @@ public sealed class PersistentWarRuleTest : GameTest
         var containers = Server.System<SharedContainerSystem>();
         var hands = Server.System<SharedHandsSystem>();
         var probe = Server.System<ObserveRefineryRestoreInsertionSystem>();
+        var factories = Server.System<FrontlineFactorySystem>();
         var manager = (EntityManager) SEntMan; // Public native C# event, not an ECS event.
         var data = Server.ResolveDependency<IResourceManager>().UserData;
         var fresh = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
         var provisional = new List<EntityUid>();
-        var queueFailure = new InvalidOperationException("One-shot native refinery queue observer failure.");
+        var factoryProvisional = new List<EntityUid>();
+        var queued = new List<EntityUid>();
+        var queueFailure = new InvalidOperationException("One-shot native machine queue observer failure.");
         var threw = false;
         var guardedDuringQueue = true;
         EntityUid refinery = default;
         EntityUid player = default;
+        EntityUid factory = default;
+        EntityUid factoryPlayer = default;
+        EntityUid retryMap = EntityUid.Invalid;
+        string saved = null;
         Exception failure = null;
 
         void OnQueued(EntityUid uid)
         {
-            if (!provisional.Contains(uid))
+            if (!provisional.Contains(uid) && !factoryProvisional.Contains(uid))
                 return;
+            queued.Add(uid);
             guardedDuringQueue &= !refineries.TryTakePlayerOutput(refinery, player);
-            if (uid == provisional[0] && !threw)
+            if (includeFactory)
+                guardedDuringQueue &= !factories.TryTakePlayerOutput(factory, factoryPlayer);
+            if (uid == (includeFactory ? factoryProvisional[0] : provisional[0]) && !threw)
             {
                 threw = true;
                 // QueueDeleteEntity has recorded the UID, but has not started native termination.
@@ -2535,6 +2546,24 @@ public sealed class PersistentWarRuleTest : GameTest
                     SEntMan.DeleteEntity(control);
                     Assert.That(hands.GetActiveItem(player), Is.Null);
 
+                    factory = FindMapEntity<FrontlineFactoryComponent>(fresh.MapId,
+                        component => component.FactoryId == "frontline-test-factory-west");
+                    var factoryOutput = SComp<FrontlineFactoryComponent>(factory).OutputContainer;
+                    if (includeFactory)
+                    {
+                        var factoryCoordinates = SComp<TransformComponent>(factory).Coordinates.Offset(new Vector2(0, 1));
+                        factoryPlayer = SEntMan.SpawnEntity("MobHuman", factoryCoordinates);
+                        var factoryControl = SEntMan.SpawnEntity("FrontlineFactoryMedicalCrate", factoryCoordinates);
+                        var crate = SComp<FrontlineSupplyCrateComponent>(factoryControl);
+                        crate.Product = "SoldierSupplies";
+                        crate.Amount = 7;
+                        Assert.That(containers.Insert(factoryControl, factoryOutput), Is.True);
+                        Assert.That(factories.TryTakePlayerOutput(factory, factoryPlayer), Is.True);
+                        Assert.That(hands.GetActiveItem(factoryPlayer), Is.EqualTo(factoryControl));
+                        SEntMan.DeleteEntity(factoryControl);
+                        Assert.That(hands.GetActiveItem(factoryPlayer), Is.Null);
+                    }
+
                     var bases = Server.System<TerritorySystem>().GetTerritories(fresh.MapId).Select(id =>
                     {
                         var hall = id.Id is "frontline-one" or "frontline-five";
@@ -2557,22 +2586,41 @@ public sealed class PersistentWarRuleTest : GameTest
                             new WarRefineryStackSnapshot("BasicMaterials", "BasicMaterials1", 7),
                         },
                     };
+                    var factoryClaims = factories.CaptureSnapshot(fresh.MapId);
+                    if (includeFactory)
+                    {
+                        var factoryIndex = factoryClaims.FindIndex(entry => entry.FactoryId == "frontline-test-factory-west");
+                        factoryClaims[factoryIndex] = factoryClaims[factoryIndex] with
+                        {
+                            Outputs = new()
+                            {
+                                new WarFactoryCrateSnapshot("FrontlineFactoryMedicalCrate", "SoldierSupplies", 7),
+                                new WarFactoryCrateSnapshot("FrontlineFactoryMedicalCrate", "Brutepack1", 3),
+                            },
+                        };
+                    }
                     data.Delete(WarStrategicSnapshotSystem.BackupPath);
                     using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
                         JsonSerializer.Serialize(stream, new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, warId, bases)
                         {
                             Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(fresh.MapId),
                             Refineries = claims,
-                            Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(fresh.MapId),
+                            Factories = factoryClaims,
                         });
-                    string saved;
                     using (var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
                         saved = new StreamReader(stream).ReadToEnd();
 
                     probe.Observe = args =>
                     {
+                        if (includeFactory && args.Container == factoryOutput)
+                        {
+                            Assert.That(provisional, Is.Empty, "Factory StageSnapshot must precede refinery staging.");
+                            factoryProvisional.Add(args.Entity);
+                            return;
+                        }
                         if (args.Container != output)
                             return;
+                        Assert.That(factoryProvisional, Has.Count.EqualTo(includeFactory ? 2 : 0));
                         provisional.Add(args.Entity);
                         if (provisional.Count == 2)
                         {
@@ -2590,13 +2638,33 @@ public sealed class PersistentWarRuleTest : GameTest
                         Assert.That(provisional, Has.Count.EqualTo(2));
                         Assert.That(threw, Is.True, "The first provisional claim must reach the native queue observer.");
                         Assert.That(guardedDuringQueue, Is.True);
+                        Assert.That(factoryProvisional, Has.Count.EqualTo(includeFactory ? 2 : 0));
+                        Assert.That(queued, Is.EqualTo(factoryProvisional.Concat(provisional).ToArray()),
+                            "Factory queue-all must survive its own observer failure, then cleanup must visit every refinery claim.");
                         foreach (var uid in provisional)
                             Assert.That(!SEntMan.EntityExists(uid) || SEntMan.IsQueuedForDeletion(uid), Is.True,
                                 "EVERY provisional refinery claim must be queued/deleted before restoring guards release.");
+                        foreach (var uid in factoryProvisional)
+                            Assert.That(!SEntMan.EntityExists(uid) || SEntMan.IsQueuedForDeletion(uid), Is.True,
+                                "EVERY provisional factory claim must be queued/deleted before restoring guards release.");
                         // No tick may hide the leak between FinishSnapshotRestore and queue draining.
                         Assert.That(refineries.TryTakePlayerOutput(refinery, player), Is.False,
                             "A refused restore must not release a later provisional output to a player's hand.");
                         Assert.That(hands.GetActiveItem(player), Is.Null);
+                        if (includeFactory)
+                        {
+                            Assert.That(factories.TryTakePlayerOutput(factory, factoryPlayer), Is.False);
+                            Assert.That(hands.GetActiveItem(factoryPlayer), Is.Null);
+                            Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(crate =>
+                                SComp<TransformComponent>(crate.Owner).MapID == fresh.MapId && !SEntMan.IsQueuedForDeletion(crate.Owner)),
+                                Is.Empty, "No unqueued loose or retained sealed claim may leak before a tick.");
+                            Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
+                                SComp<TransformComponent>(stack.Owner).MapID == fresh.MapId && !SEntMan.IsQueuedForDeletion(stack.Owner)),
+                                Is.Empty, "No unqueued loose or retained material may leak before a tick.");
+                            Assert.That(SEntMan.EntityQuery<MetaDataComponent>().Where(metadata =>
+                                SComp<TransformComponent>(metadata.Owner).MapID == fresh.MapId && metadata.EntityPrototype?.ID == "Brutepack1"),
+                                Is.Empty, "Refusal must not materialize sealed withdrawal goods before a tick.");
+                        }
                         var retry = Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId));
                         Assert.That(retry!.Message, Is.EqualTo("Strategic restore requires a live map."));
                         using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
@@ -2613,6 +2681,45 @@ public sealed class PersistentWarRuleTest : GameTest
                     manager.EntityQueueDeleted -= OnQueued;
                 }
             });
+            if (includeFactory && failure == null)
+            {
+                // LoadTestMap advances ticks; fault observers are detached before clean-map retry.
+                var retry = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+                retryMap = retry.MapUid;
+                await Server.WaitPost(() =>
+                {
+                    try
+                    {
+                        var original = JsonSerializer.Deserialize<WarStrategicSnapshot>(saved)!;
+                        snapshots.Restore(retry.MapUid, warId);
+                        Assert.That(JsonSerializer.Serialize(factories.CaptureSnapshot(retry.MapId)),
+                            Is.EqualTo(JsonSerializer.Serialize(original.Factories)));
+                        Assert.That(JsonSerializer.Serialize(refineries.CaptureSnapshot(retry.MapId)),
+                            Is.EqualTo(JsonSerializer.Serialize(original.Refineries)));
+                        var restoredFactory = FindMapEntity<FrontlineFactoryComponent>(retry.MapId,
+                            component => component.FactoryId == "frontline-test-factory-west");
+                        var restoredRefinery = FindMapEntity<FrontlineRefineryComponent>(retry.MapId,
+                            component => component.RefineryId == original.Refineries.Single(entry => entry.Outputs.Count != 0).RefineryId);
+                        Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(crate =>
+                            SComp<TransformComponent>(crate.Owner).MapID == retry.MapId).Select(crate => crate.Owner),
+                            Is.EquivalentTo(SComp<FrontlineFactoryComponent>(restoredFactory).OutputContainer.ContainedEntities),
+                            "Retry must not create extra or loose sealed goods.");
+                        Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
+                            SComp<TransformComponent>(stack.Owner).MapID == retry.MapId).Select(stack => stack.Owner),
+                            Is.EquivalentTo(SComp<FrontlineRefineryComponent>(restoredRefinery).OutputContainer.ContainedEntities),
+                            "Retry must not create extra or loose materials.");
+                        Assert.That(SEntMan.EntityQuery<MetaDataComponent>().Where(metadata =>
+                            SComp<TransformComponent>(metadata.Owner).MapID == retry.MapId && metadata.EntityPrototype?.ID == "Brutepack1"),
+                            Is.Empty, "Sealed claims must not materialize withdrawal goods.");
+                        using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                        Assert.That(new StreamReader(stream).ReadToEnd(), Is.EqualTo(saved));
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e;
+                    }
+                });
+            }
         }
         finally
         {
@@ -2621,12 +2728,16 @@ public sealed class PersistentWarRuleTest : GameTest
                 probe.Observe = null;
                 manager.EntityQueueDeleted -= OnQueued;
                 SEntMan.QueueDeleteEntity(fresh.MapUid);
+                if (SEntMan.EntityExists(retryMap))
+                    SEntMan.QueueDeleteEntity(retryMap);
             });
             await Pair.RunTicksSync(2); // Native disposal also settles the leaked/held output on RED.
             await Server.WaitAssertion(() =>
             {
                 Assert.That(SEntMan.EntityExists(fresh.MapUid), Is.False);
                 Assert.That(provisional.All(uid => !SEntMan.EntityExists(uid)), Is.True);
+                Assert.That(factoryProvisional.All(uid => !SEntMan.EntityExists(uid)), Is.True);
+                Assert.That(SEntMan.EntityExists(retryMap), Is.False);
             });
         }
         Assert.That(Server.UnhandledException, Is.Null);
