@@ -82,6 +82,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 
     private EntityUid? _loadedMap;
     private int _loadedWarId;
+    private readonly HashSet<EntityUid> _failedMaps = [];
 
     public override void Initialize()
     {
@@ -100,16 +101,16 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             if (xform.MapID != mapId || !Usable(uid))
                 return;
             if (string.IsNullOrWhiteSpace(id) || id == "Unassigned" ||
-                !_territories.Contains(new TerritoryId(id), xform.Coordinates) || !result.TryAdd(id, uid))
+                !_territories.Contains(new TerritoryId(id), xform.Coordinates, includePaused: true) || !result.TryAdd(id, uid))
                 throw new InvalidDataException("Invalid or duplicate strategic objective.");
         }
-        var halls = EntityQueryEnumerator<TownHallComponent, TransformComponent>();
+        var halls = AllEntityQuery<TownHallComponent, TransformComponent>();
         while (halls.MoveNext(out var uid, out var hall, out var xform))
             Add(uid, hall.TerritoryId, xform);
-        var ruins = EntityQueryEnumerator<TownHallRuinComponent, TransformComponent>();
+        var ruins = AllEntityQuery<TownHallRuinComponent, TransformComponent>();
         while (ruins.MoveNext(out var uid, out var ruin, out var xform))
             Add(uid, ruin.TerritoryId, xform);
-        if (!result.Keys.ToHashSet().SetEquals(_territories.GetTerritories(mapId).Select(id => id.Id)))
+        if (!result.Keys.ToHashSet().SetEquals(_territories.GetTerritories(mapId, includePaused: true).Select(id => id.Id)))
             throw new InvalidDataException("Strategic objectives do not cover the loaded territories.");
         return result;
     }
@@ -186,7 +187,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     /// <summary>Call once on the validated, initialized fresh map, before any player deployment.</summary>
     public void Restore(EntityUid map, int warId)
     {
-        if (!Usable(map))
+        if (!Usable(map) || _failedMaps.Contains(map))
             throw new InvalidDataException("Strategic restore requires a live map.");
         if (_loadedMap == map)
             return;
@@ -228,10 +229,9 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
                     {
                         DamageDict = entry.DamageHundredths.ToDictionary(
                             pair => new ProtoId<DamageTypePrototype>(pair.Key), pair => FixedPoint2.FromHundredths(pair.Value)),
-                    });
-                staged.Add(replacement);
+                    }, staged);
                 if (!Usable(replacement) || Transform(replacement).MapID != mapId ||
-                    !_territories.Contains(new TerritoryId(entry.TerritoryId), Transform(replacement).Coordinates))
+                    !_territories.Contains(new TerritoryId(entry.TerritoryId), Transform(replacement).Coordinates, includePaused: true))
                     throw new InvalidDataException("Restored objective is not live in its territory.");
                 if (entry.ObjectiveKind == "hall")
                     _stockpiles.RestoreCounts(replacement, entry.Counts);
@@ -277,18 +277,32 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         {
             // Once originals were discarded, this is not a rollback to usable fresh YAML.
             // Abort this entire unaccepted map; retry must load a clean map from the unchanged disk claim.
-            if (commitStarted && !TerminatingOrDeleted(map))
-                Del(map);
+            if (commitStarted)
+                _failedMaps.Add(map);
+            try
+            {
+                if (commitStarted)
+                {
+                    if (!TerminatingOrDeleted(map))
+                        Del(map);
+                }
+                else
+                {
+                    _resourceFields.DeleteStagedNodes(stagedNodes);
+                    foreach (var objective in staged)
+                        _halls.DeleteObjective(objective);
+                }
+            }
+            catch (Exception cleanupFailure)
+            {
+                // Native deletion may leave descendants behind. Preserve refusal, not a disposal guarantee.
+                _failedMaps.Add(map);
+                Log.Warning($"Strategic restore cleanup failed; this map cannot be retried: {cleanupFailure}");
+            }
             throw;
         }
         finally
         {
-            if (!commitStarted)
-            {
-                _resourceFields.DeleteStagedNodes(stagedNodes);
-                foreach (var objective in staged)
-                    _halls.DeleteObjective(objective);
-            }
             if (accepted)
             {
                 _loadedMap = map;

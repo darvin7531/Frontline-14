@@ -255,7 +255,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     private Dictionary<string, Entity<FrontlineResourceFieldComponent>> GetFields(MapId mapId)
     {
         var fields = new Dictionary<string, Entity<FrontlineResourceFieldComponent>>();
-        var query = EntityQueryEnumerator<FrontlineResourceFieldComponent, TransformComponent>();
+        var query = AllEntityQuery<FrontlineResourceFieldComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var field, out var transform))
         {
             if (transform.MapID != mapId)
@@ -271,7 +271,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     private Dictionary<(string FieldId, string SlotId), EntityUid> GetSlots(MapId mapId)
     {
         var slots = new Dictionary<(string, string), EntityUid>();
-        var query = EntityQueryEnumerator<FrontlineResourceSpawnPointComponent, TransformComponent>();
+        var query = AllEntityQuery<FrontlineResourceSpawnPointComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var slot, out var transform))
         {
             if (transform.MapID == mapId && Usable(uid))
@@ -285,11 +285,13 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     {
         var result = new List<WarResourceFieldSnapshot>();
         var nodes = new Dictionary<string, List<WarResourceNodeSnapshot>>();
-        var query = EntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+        var query = AllEntityQuery<FrontlineResourceNodeComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var node, out var transform))
         {
-            if (transform.MapID != mapId || TerminatingOrDeleted(uid) || string.IsNullOrWhiteSpace(node.FieldId))
+            if (transform.MapID != mapId || TerminatingOrDeleted(uid))
                 continue;
+            if (string.IsNullOrWhiteSpace(node.FieldId))
+                throw new InvalidDataException("Resource node has no field identity.");
             // Pending termination has not scheduled its replacement/depletion deadline yet.
             if (EntityManager.IsQueuedForDeletion(uid))
                 throw new InvalidDataException("Resource node deletion must settle before capture.");
@@ -405,6 +407,19 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
             entries.Any(entry => !fields.ContainsKey(entry.FieldId) ||
                 entry.Nodes.Any(node => !slots.ContainsKey((entry.FieldId, node.SlotId)))))
             throw new InvalidDataException("Resource entities were lost during restore.");
+        if (committed)
+        {
+            // Callbacks can mint detached or unknown-field nodes outside the rebuilt ownership caches.
+            var mapNodes = new HashSet<EntityUid>();
+            var query = AllEntityQuery<FrontlineResourceNodeComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out _, out var transform))
+            {
+                if (transform.MapID == mapId)
+                    mapNodes.Add(uid);
+            }
+            if (!mapNodes.SetEquals(staged) || mapNodes.Count != staged.Count)
+                throw new InvalidDataException("Restored map resource nodes do not match the staged claims.");
+        }
         var index = 0;
         foreach (var field in entries)
         {
@@ -444,7 +459,7 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
         // From here, rollback of detached stages cannot recover the discarded YAML claims.
         commitStarted = true;
         var old = new List<EntityUid>();
-        var query = EntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+        var query = AllEntityQuery<FrontlineResourceNodeComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var node, out var transform))
         {
             if (transform.MapID != mapId || !fields.ContainsKey(node.FieldId))
@@ -480,8 +495,10 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
                 var node = Comp<FrontlineResourceNodeComponent>(uid);
                 node.FieldId = entry.FieldId;
                 node.SlotId = saved.SlotId;
+                node.Field = field.Owner;
+                node.SpawnPoint = slots[(entry.FieldId, saved.SlotId)];
+                field.Comp.ActiveNodes.Add(uid);
             }
-            RebuildFieldCache(field, mapId);
             field.Comp.CacheInitialized = true;
         }
         ValidateStagedSnapshot(mapId, entries, staged, committed: true);

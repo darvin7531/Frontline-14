@@ -97,30 +97,23 @@ public sealed partial class TownHallSystem : EntitySystem
         return true;
     }
 
-    /// <summary>Stage an objective; the caller commits only after every replacement is ready.</summary>
+    /// <summary>Track the stage before eventful restoration; the caller owns cleanup and commit.</summary>
     public EntityUid StageRestoredObjective(EntProtoId prototype, TerritoryId territory,
-        FactionId? faction, EntityCoordinates coordinates, DamageSpecifier damage)
+        FactionId? faction, EntityCoordinates coordinates, DamageSpecifier damage, List<EntityUid> staged)
     {
         var objective = Spawn(prototype, coordinates);
-        try
-        {
-            // A rejected damage restore must not spawn an untracked ruin from a staged hall.
-            if (TryComp<TownHallComponent>(objective, out var hall))
-                hall.TerritoryId = "Unassigned";
-            _damage.SetDamage(objective, damage);
-            if (TerminatingOrDeleted(objective) || EntityManager.IsQueuedForDeletion(objective))
-                throw new InvalidDataException("Restored objective did not survive its damage.");
-            if (faction is { } owner)
-                Comp<TownHallComponent>(objective).Configure(territory, owner);
-            else
-                Comp<TownHallRuinComponent>(objective).TerritoryId = territory.Id;
-            return objective;
-        }
-        catch
-        {
-            DeleteObjective(objective);
-            throw;
-        }
+        staged.Add(objective);
+        // A rejected damage restore must not spawn an untracked ruin from a staged hall.
+        if (TryComp<TownHallComponent>(objective, out var hall))
+            hall.TerritoryId = "Unassigned";
+        _damage.SetDamage(objective, damage);
+        if (TerminatingOrDeleted(objective) || EntityManager.IsQueuedForDeletion(objective))
+            throw new InvalidDataException("Restored objective did not survive its damage.");
+        if (faction is { } owner)
+            Comp<TownHallComponent>(objective).Configure(territory, owner);
+        else
+            Comp<TownHallRuinComponent>(objective).TerritoryId = territory.Id;
+        return objective;
     }
 
     /// <summary>Restore only incomplete paid repair progress; completion remains the native repair path.</summary>

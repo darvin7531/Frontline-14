@@ -32,7 +32,7 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
     internal void ValidateResourceFields(MapId mapId, List<string> errors)
     {
         var fields = new Dictionary<string, FrontlineResourceFieldComponent>();
-        var fieldQuery = EntityQueryEnumerator<FrontlineResourceFieldComponent, TransformComponent>();
+        var fieldQuery = AllEntityQuery<FrontlineResourceFieldComponent, TransformComponent>();
         while (fieldQuery.MoveNext(out _, out var field, out var xform))
         {
             if (xform.MapID != mapId)
@@ -53,7 +53,7 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
 
         var spawnCounts = new Dictionary<string, int>();
         var slotIds = new HashSet<(string FieldId, string SlotId)>();
-        var spawnQuery = EntityQueryEnumerator<FrontlineResourceSpawnPointComponent, TransformComponent>();
+        var spawnQuery = AllEntityQuery<FrontlineResourceSpawnPointComponent, TransformComponent>();
         while (spawnQuery.MoveNext(out _, out var spawn, out var xform))
         {
             if (xform.MapID != mapId)
