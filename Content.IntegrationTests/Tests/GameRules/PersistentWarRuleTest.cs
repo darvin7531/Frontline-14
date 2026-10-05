@@ -1208,7 +1208,7 @@ public sealed class PersistentWarRuleTest : GameTest
             await Pair.RunTicksSync(10);
             await Server.WaitAssertion(() =>
             {
-                Assert.That(timing.CurTime, Is.GreaterThan(SComp<MetaDataComponent>(field).PauseTime!.Value));
+                Assert.That(Server.System<MetaDataSystem>().GetPauseTime(field), Is.GreaterThan(TimeSpan.Zero));
                 var saved = fields.CaptureSnapshot(map.MapId).Single();
                 Assert.That(replenishing ? saved.ReplenishmentRemainingTicks : saved.ReplacementRemainingTicks,
                     Is.EqualTo(remaining), "Paused time must not spend a durable resource cooldown.");
