@@ -851,6 +851,216 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
+    [TestCase(FrontlineResourceFieldState.Active)]
+    [TestCase(FrontlineResourceFieldState.Depleted)]
+    [TestCase(FrontlineResourceFieldState.Replenishing)]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesResourceCooldown(FrontlineResourceFieldState state)
+    {
+        const string fieldId = "frontline-test-iron";
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        _ = Server.System<FrontlineResourceFieldSystem>();
+        var replenishing = state != FrontlineResourceFieldState.Active;
+        var tick = SGameTiming.TickPeriod;
+        EntityUid field = default;
+        EntityUid oldField = default;
+        EntityUid oldMap = default;
+        EntityUid[] oldNodes = default!;
+        WarState beforeRestart = default!;
+        WarStrategicSnapshot saved = default!;
+        Dictionary<string, int> fullYields = default!;
+        Dictionary<string, int> yieldsBefore = default!;
+        TimeSpan replacementDelay = default;
+        TimeSpan replenishmentDelay = default;
+        TimeSpan remaining = default;
+        TimeSpan restoredAt = default;
+        TimeSpan deadline = default;
+
+        List<EntityUid> MapNodes()
+        {
+            var result = new List<EntityUid>();
+            var query = SEntMan.AllEntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out _, out var transform))
+            {
+                if (transform.MapID == ticker.DefaultMap)
+                    result.Add(uid);
+            }
+            return result;
+        }
+
+        void AssertField(int reserve, FrontlineResourceFieldState expectedState, Dictionary<string, int> yields)
+        {
+            var component = SComp<FrontlineResourceFieldComponent>(field);
+            var nodes = MapNodes();
+            Assert.That(component.FieldInitialized && component.CacheInitialized, Is.True);
+            Assert.That(component.State, Is.EqualTo(expectedState));
+            Assert.That(component.RemainingReserveNodes, Is.EqualTo(reserve));
+            Assert.That(nodes, Has.Count.EqualTo(yields.Count));
+            Assert.That(component.ActiveNodes, Is.EquivalentTo(nodes), "No duplicate or detached yield outside the ownership cache.");
+            Assert.That(nodes.ToDictionary(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId,
+                uid => SComp<FrontlineResourceNodeComponent>(uid).RemainingYield), Is.EquivalentTo(yields));
+            foreach (var uid in nodes)
+            {
+                var node = SComp<FrontlineResourceNodeComponent>(uid);
+                var slot = SComp<FrontlineResourceSpawnPointComponent>(node.SpawnPoint);
+                Assert.That(SEntMan.IsQueuedForDeletion(uid), Is.False);
+                Assert.That(node.Field, Is.EqualTo(field));
+                Assert.That(node.FieldId, Is.EqualTo(fieldId));
+                Assert.That(slot.FieldId, Is.EqualTo(fieldId));
+                Assert.That(slot.SlotId, Is.EqualTo(node.SlotId));
+                Assert.That(SComp<TransformComponent>(node.SpawnPoint).MapID, Is.EqualTo(ticker.DefaultMap));
+                Assert.That(SComp<TransformComponent>(uid).Coordinates,
+                    Is.EqualTo(SComp<TransformComponent>(node.SpawnPoint).Coordinates));
+                Assert.That(SComp<TransformComponent>(uid).ParentUid, Is.EqualTo(SComp<TransformComponent>(field).ParentUid));
+            }
+            Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack => stack.StackTypeId == "FrontlineRawIron" &&
+                SComp<TransformComponent>(stack.Owner).MapID == ticker.DefaultMap).Sum(stack => stack.Count), Is.Zero,
+                "Deleting/reloading owned nodes must not mint harvested output.");
+        }
+
+        async Task RunThroughDeadline(TimeSpan due)
+        {
+            var ticks = 0;
+            await Server.WaitPost(() => ticks = Math.Max(1,
+                (int) Math.Ceiling((due - SGameTiming.CurTime).TotalSeconds / tick.TotalSeconds) + 1));
+            // The last tick must execute Update at/after the deadline, not merely advance CurTime to it.
+            await Pair.RunTicksSync(ticks);
+            await Server.WaitAssertion(() => Assert.That(SGameTiming.CurTime,
+                Is.InRange(due, due + tick * 2)));
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunTicksSync(1);
+            await Server.WaitPost(() =>
+            {
+                field = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap, component => component.FieldId == fieldId);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                replacementDelay = component.ReplacementDelay;
+                replenishmentDelay = component.ReplenishmentDelay;
+                fullYields = MapNodes().ToDictionary(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId,
+                    uid => SComp<FrontlineResourceNodeComponent>(uid).RemainingYield);
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(fullYields, Has.Count.EqualTo(3));
+                Assert.That(fullYields.Values, Is.All.EqualTo(20));
+                Assert.That(replacementDelay, Is.GreaterThan(tick * 2));
+                Assert.That(replenishmentDelay, Is.GreaterThan(tick * 2));
+                AssertField(3, FrontlineResourceFieldState.Active, fullYields);
+            });
+            await Server.WaitPost(() =>
+            {
+                var nodes = SComp<FrontlineResourceFieldComponent>(field).ActiveNodes.ToArray();
+                // Native termination schedules the timer. Spend the second batch before depleting it.
+                foreach (var node in replenishing ? nodes : nodes.Take(1))
+                    SEntMan.DeleteEntity(node);
+                deadline = SComp<FrontlineResourceFieldComponent>(field).NextReplacement;
+            });
+            if (replenishing)
+            {
+                await RunThroughDeadline(deadline);
+                await Server.WaitAssertion(() => AssertField(0, FrontlineResourceFieldState.Active, fullYields));
+                await Server.WaitPost(() =>
+                {
+                    foreach (var node in SComp<FrontlineResourceFieldComponent>(field).ActiveNodes.ToArray())
+                        SEntMan.DeleteEntity(node);
+                });
+            }
+            // Preserve Depleted before its first Update; one tick otherwise spends real cooldown time.
+            if (state != FrontlineResourceFieldState.Depleted)
+                await Pair.RunTicksSync(1);
+            await Server.WaitPost(() =>
+            {
+                yieldsBefore = MapNodes().ToDictionary(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId,
+                    uid => SComp<FrontlineResourceNodeComponent>(uid).RemainingYield);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                remaining = (replenishing ? component.NextReplenishment : component.NextReplacement) - SGameTiming.CurTime;
+            });
+            await Server.WaitAssertion(() =>
+            {
+                AssertField(replenishing ? 0 : 3, state, yieldsBefore);
+                Assert.That(yieldsBefore, Has.Count.EqualTo(replenishing ? 0 : 2));
+                Assert.That(remaining, Is.GreaterThan(tick * 2));
+                Assert.That(remaining, state == FrontlineResourceFieldState.Depleted
+                    ? Is.EqualTo(replenishmentDelay)
+                    : Is.InRange((replenishing ? replenishmentDelay : replacementDelay) - tick * 2,
+                        (replenishing ? replenishmentDelay : replacementDelay) - tick));
+            });
+            await Server.WaitPost(() =>
+            {
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                oldField = field;
+                oldNodes = MapNodes().ToArray();
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                using var stream = Server.ResolveDependency<IResourceManager>().UserData.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+                restoredAt = SGameTiming.CurTime;
+                field = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap, component => component.FieldId == fieldId);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                deadline = replenishing ? component.NextReplenishment : component.NextReplacement;
+            });
+            await Server.WaitAssertion(() =>
+            {
+                var entry = saved.Resources.Single(resource => resource.FieldId == fieldId);
+                Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                Assert.That(entry.FieldInitialized, Is.True);
+                Assert.That(entry.RemainingReserveNodes, Is.EqualTo(replenishing ? 0 : 3));
+                Assert.That(entry.State, Is.EqualTo(state));
+                Assert.That(entry.ReplacementRemainingTicks, Is.EqualTo(replenishing ? 0 : remaining.Ticks));
+                Assert.That(entry.ReplenishmentRemainingTicks, Is.EqualTo(replenishing ? remaining.Ticks : 0));
+                Assert.That(entry.Nodes.ToDictionary(node => node.SlotId, node => node.RemainingYield), Is.EquivalentTo(yieldsBefore));
+                Assert.That(entry.Nodes.All(node => node.Prototype == "FrontlineIronResourceNode"), Is.True);
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldField), Is.False);
+                Assert.That(oldNodes.All(uid => !SEntMan.EntityExists(uid)), Is.True);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                Assert.That(component.ReplacementDelay, Is.EqualTo(replacementDelay));
+                Assert.That(component.ReplenishmentDelay, Is.EqualTo(replenishmentDelay));
+                Assert.That(deadline - restoredAt, Is.EqualTo(remaining), "Restore the disk duration, not a fresh configured delay.");
+                Assert.That(replenishing ? component.NextReplacement : component.NextReplenishment, Is.EqualTo(TimeSpan.Zero));
+                AssertField(replenishing ? 0 : 3, state, yieldsBefore);
+            });
+            // Stop strictly before the restored deadline; Depleted must transition but neither case may refill.
+            var earlyTicks = Math.Max(1, (int) (remaining.Ticks / tick.Ticks) - 1);
+            await Pair.RunTicksSync(earlyTicks);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(SGameTiming.CurTime - restoredAt,
+                    Is.InRange(tick * earlyTicks, tick * (earlyTicks + 1)));
+                Assert.That(SGameTiming.CurTime, Is.LessThan(deadline));
+                AssertField(replenishing ? 0 : 3,
+                    replenishing ? FrontlineResourceFieldState.Replenishing : FrontlineResourceFieldState.Active, yieldsBefore);
+                Assert.That((replenishing ? SComp<FrontlineResourceFieldComponent>(field).NextReplenishment
+                    : SComp<FrontlineResourceFieldComponent>(field).NextReplacement), Is.EqualTo(deadline));
+            });
+            await RunThroughDeadline(deadline);
+            await Server.WaitAssertion(() => AssertField(replenishing ? 3 : 2, FrontlineResourceFieldState.Active, fullYields));
+        }
+        finally
+        {
+            // Existing teardown removes all saves and restores the preset, including a behavioral RED.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+
     // Exact damage is the persistence contract, not a player-facing health measurement.
 #pragma warning disable CS0618
     [Test]
