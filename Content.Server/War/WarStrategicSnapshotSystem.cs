@@ -134,6 +134,20 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     {
         base.Initialize();
         SubscribeLocalEvent<RoundRestartCleanupEvent>(OnCleanup);
+        EntityManager.BeforeEntityFlush += OnBeforeEntityFlush;
+    }
+
+    public override void Shutdown()
+    {
+        EntityManager.BeforeEntityFlush -= OnBeforeEntityFlush;
+        base.Shutdown();
+    }
+
+    private void OnBeforeEntityFlush()
+    {
+        // Orderly server cleanup does not raise RoundRestartCleanupEvent.
+        if (EntityManager.ShuttingDown)
+            SaveLoadedMap();
     }
 
     private bool Usable(EntityUid uid) =>
@@ -381,6 +395,11 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     }
 
     private void OnCleanup(RoundRestartCleanupEvent args)
+    {
+        SaveLoadedMap();
+    }
+
+    private void SaveLoadedMap()
     {
         if (_loadedMap is not { } map || !Usable(map) || _ticker.CurrentPreset?.ID != "PersistentWar" ||
             !_resources.UserData.Exists(WarStateSystem.SavePath))
