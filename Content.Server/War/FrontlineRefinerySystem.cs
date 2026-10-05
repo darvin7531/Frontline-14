@@ -803,11 +803,24 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
     internal void DeleteStagedStacks(List<EntityUid> staged)
     {
         // Queue every claim before eventful deletion; cleanup exceptions still abort map acceptance.
+        Exception? queueFailure = null;
         foreach (var uid in staged)
         {
-            if (!TerminatingOrDeleted(uid))
+            if (TerminatingOrDeleted(uid))
+                continue;
+
+            try
+            {
                 QueueDel(uid);
+            }
+            catch (Exception e)
+            {
+                // Native QueueDeleteEntity queues before notifying; quarantine the remaining claims too.
+                queueFailure ??= e;
+            }
         }
+        if (queueFailure != null)
+            throw queueFailure;
         foreach (var uid in staged)
         {
             if (!TerminatingOrDeleted(uid))
