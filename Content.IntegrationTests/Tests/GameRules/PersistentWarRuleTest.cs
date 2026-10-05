@@ -36,6 +36,7 @@ using Content.Shared.Tag;
 using Content.Shared.War;
 
 using Robust.Shared.ContentPack;
+using Robust.Shared.Containers;
 using Robust.Client.GameObjects;
 using Robust.Client.UserInterface;
 using Robust.Client.UserInterface.Controls;
@@ -1057,6 +1058,166 @@ public sealed class PersistentWarRuleTest : GameTest
         finally
         {
             // Existing teardown removes all saves and restores the preset, including a behavioral RED.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesPaidRefineryQueueAndRetainedMaterials()
+    {
+        ProtoId<FrontlineRefineryRecipePrototype> recipe = "FrontlineSteel";
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var refineries = Server.System<FrontlineRefinerySystem>();
+        var stacks = Server.System<StackSystem>();
+        var containers = Server.System<SharedContainerSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var session = ServerSession!;
+        var duration = refineries.GetAvailableRecipes().Single(entry => entry.ID == recipe.Id).Duration;
+        EntityUid refinery = default;
+        EntityUid oldRefinery = default;
+        EntityUid oldMap = default;
+        EntityUid input = default;
+        WarState beforeRestart = default!;
+        FrontlineRefineryJob[] restoredJobs = default!;
+        TimeSpan remaining = default;
+        var selected = false;
+        var inserted = false;
+        var submitted = false;
+
+        // base_test.yaml has refineries at (6,-20) and (44,-20); anchoring snaps to tile centers.
+        // Test lookup only: persistence must introduce stable mapper IDs, never save positions or UIDs.
+        EntityUid FindRefinery(Vector2 position) => SEntMan.EntityQuery<FrontlineRefineryComponent>()
+            .Select(component => component.Owner).Single(uid =>
+                SComp<TransformComponent>(uid).MapID == ticker.DefaultMap &&
+                SComp<TransformComponent>(uid).LocalPosition == position &&
+                SComp<MetaDataComponent>(uid).EntityPrototype?.ID == "FrontlineRefinery");
+
+        void AssertGoods(int outputAmount)
+        {
+            AssertContainer(refinery, FrontlineRefineryComponent.InputContainerId, "FrontlineRawIron", 3);
+            AssertContainer(refinery, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", outputAmount);
+            var other = FindRefinery(new Vector2(44.5f, -19.5f));
+            Assert.That(refineries.GetJobs(other), Is.Empty, "Do not restore the paid claim into both refineries.");
+            AssertContainer(other, FrontlineRefineryComponent.InputContainerId, "FrontlineRawIron", 0);
+            AssertContainer(other, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", 0);
+            foreach (var (type, amount) in new[] { ("FrontlineRawIron", 3), ("BasicMaterials", outputAmount) })
+            {
+                Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack => stack.StackTypeId == type &&
+                    SComp<TransformComponent>(stack.Owner).MapID == ticker.DefaultMap).Sum(stack => stack.Count),
+                    Is.EqualTo(amount), "Retained goods must not also appear loose or in another machine.");
+            }
+        }
+
+        void AssertContainer(EntityUid owner, string id, string type, int amount)
+        {
+            Assert.That(containers.TryGetContainer(owner, id, out var container), Is.True);
+            Assert.That(container.ContainedEntities.All(uid => SEntMan.EntityExists(uid) &&
+                !SEntMan.IsQueuedForDeletion(uid) && SComp<MetaDataComponent>(uid).EntityLifeStage < EntityLifeStage.Terminating), Is.True);
+            var goods = container.ContainedEntities.Select(uid => SComp<StackComponent>(uid)).ToArray();
+            Assert.That(goods.All(stack => stack.StackTypeId == type && !stack.Unlimited && stack.Count > 0), Is.True);
+            Assert.That(goods.Sum(stack => stack.Count), Is.EqualTo(amount), $"{id} must retain exactly {amount} {type}.");
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                factions.ClearFaction(session.UserId);
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitPost(() =>
+            {
+                selected = factions.TrySelectFaction(session.UserId, new FactionId("FrontlineFactionOne"));
+                ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
+                refinery = FindRefinery(new Vector2(6.5f, -19.5f));
+                var coordinates = SComp<TransformComponent>(refinery).Coordinates;
+                Server.System<SharedTransformSystem>().SetCoordinates(session.AttachedEntity!.Value,
+                    coordinates.Offset(new Vector2(0, 1)));
+                // Owning insertion API; submission is the public player/container-only API, not the BUI.
+                input = stacks.SpawnAtPosition(13, "FrontlineRawIron", coordinates);
+                inserted = refineries.TryInsertInput(refinery, input);
+                submitted = refineries.TrySubmitPlayerJob(refinery, session.AttachedEntity.Value, recipe);
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(selected && inserted && submitted, Is.True);
+                Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(8));
+                Assert.That(refineries.GetJobs(refinery), Has.Count.EqualTo(1));
+            });
+            await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(refineries.GetJobs(refinery), Is.Empty);
+                AssertContainer(refinery, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", 5);
+            });
+            await Server.WaitPost(() => submitted = refineries.TrySubmitPlayerJob(refinery,
+                session.AttachedEntity!.Value, recipe));
+            await Pair.RunTicksSync(30);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(submitted, Is.True);
+                Assert.That(refineries.GetJobs(refinery), Has.Count.EqualTo(1));
+                Assert.That(refineries.GetJobs(refinery)[0].Remaining, Is.InRange(SGameTiming.TickPeriod, duration - SGameTiming.TickPeriod));
+                AssertGoods(5); // Three independent claims: paid pending work, committed output, unused input.
+            });
+            await Server.WaitPost(() =>
+            {
+                remaining = refineries.GetJobs(refinery)[0].Remaining;
+                oldRefinery = refinery;
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+                refinery = FindRefinery(new Vector2(6.5f, -19.5f));
+                // Observe restore before any native Update spends processing time.
+                restoredJobs = refineries.GetJobs(refinery).ToArray();
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldRefinery) || SEntMan.EntityExists(input), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                Assert.That(restoredJobs, Has.Length.EqualTo(1),
+                    "Technical restart must restore the paid refinery job instead of reloading an empty queue.");
+                Assert.That(restoredJobs[0].Recipe, Is.EqualTo(recipe));
+                Assert.That(restoredJobs[0].Remaining, Is.EqualTo(remaining), "Restore exact paid progress, not a fresh recipe duration.");
+                AssertGoods(5);
+            });
+            await Pair.RunTicksSync(1);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(refineries.GetJobs(refinery), Has.Count.EqualTo(1));
+                Assert.That(refineries.GetJobs(refinery)[0].Remaining, Is.GreaterThan(TimeSpan.Zero).And.LessThan(remaining),
+                    "Restoration after MapInit must activate the paid queue for native processing.");
+                AssertGoods(5);
+            });
+            await Pair.RunSeconds((float) remaining.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(refineries.GetJobs(refinery), Is.Empty);
+                AssertGoods(10);
+            });
+            await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(refineries.GetJobs(refinery), Is.Empty);
+                AssertGoods(10); // Completion is once-only and must not consume the remaining three raw iron.
+            });
+        }
+        finally
+        {
+            // Native cleanup on RED too; fixture teardown deletes all saves and restores the preset.
             await Server.WaitPost(() => ticker.RestartRound());
         }
     }
