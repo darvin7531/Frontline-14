@@ -1737,7 +1737,8 @@ public sealed class PersistentWarRuleTest : GameTest
                     Assert.That(FindMapEntity<FrontlineFactoryComponent>(fresh.MapId, component => component.FactoryId == eastId),
                         Is.EqualTo(freshFactories[eastId]));
                     Assert.That(factories.GetJobs(restoredFactory).Select(job => (job.Recipe.Id, job.Remaining.Ticks)), Is.EqualTo(paidJobs));
-                    Assert.That(JsonSerializer.Serialize(factories.CaptureSnapshot(fresh.MapId)), Is.EqualTo(JsonSerializer.Serialize(full.Factories)));
+                    Assert.That(JsonSerializer.Serialize(factories.CaptureSnapshot(fresh.MapId).OrderBy(entry => entry.FactoryId)),
+                        Is.EqualTo(JsonSerializer.Serialize(full.Factories.OrderBy(entry => entry.FactoryId))));
                     AssertEmptyMachines(fresh.MapId, restoredFactory);
                     var restored = SComp<FrontlineFactoryComponent>(restoredFactory);
                     Assert.That(restored.InputContainer.ContainedEntities, Has.Count.EqualTo(1));
@@ -2692,10 +2693,11 @@ public sealed class PersistentWarRuleTest : GameTest
                     {
                         var original = JsonSerializer.Deserialize<WarStrategicSnapshot>(saved)!;
                         snapshots.Restore(retry.MapUid, warId);
-                        Assert.That(JsonSerializer.Serialize(factories.CaptureSnapshot(retry.MapId)),
-                            Is.EqualTo(JsonSerializer.Serialize(original.Factories)));
-                        Assert.That(JsonSerializer.Serialize(refineries.CaptureSnapshot(retry.MapId)),
-                            Is.EqualTo(JsonSerializer.Serialize(original.Refineries)));
+                        // ECS enumeration order is not persistent identity; paid claim order stays exact.
+                        Assert.That(JsonSerializer.Serialize(factories.CaptureSnapshot(retry.MapId).OrderBy(entry => entry.FactoryId)),
+                            Is.EqualTo(JsonSerializer.Serialize(original.Factories.OrderBy(entry => entry.FactoryId))));
+                        Assert.That(JsonSerializer.Serialize(refineries.CaptureSnapshot(retry.MapId).OrderBy(entry => entry.RefineryId)),
+                            Is.EqualTo(JsonSerializer.Serialize(original.Refineries.OrderBy(entry => entry.RefineryId))));
                         var restoredFactory = FindMapEntity<FrontlineFactoryComponent>(retry.MapId,
                             component => component.FactoryId == "frontline-test-factory-west");
                         var restoredRefinery = FindMapEntity<FrontlineRefineryComponent>(retry.MapId,
