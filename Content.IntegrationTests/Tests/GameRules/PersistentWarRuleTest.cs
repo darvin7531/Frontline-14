@@ -1656,6 +1656,52 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(factories.GetJobs(factory), Is.Empty);
                 AssertGoods(2); // Once-only completion must not debit the unused BasicMaterials.
             });
+            if (recoverBackup)
+            {
+                await Server.WaitPost(() =>
+                {
+                    try
+                    {
+                        // Capture the surviving map's current claims before native cleanup deletes its entities.
+                        var currentFactories = JsonSerializer.Serialize(factories.CaptureSnapshot(ticker.DefaultMap)
+                            .OrderBy(entry => entry.FactoryId));
+                        Assert.That(factories.GetJobs(factory), Is.Empty);
+                        AssertGoods(2);
+                        ticker.RestartRound();
+                        Assert.That(war.State, Is.EqualTo(beforeRestart));
+                        using (var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
+                        {
+                            var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                            Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                            Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                            Assert.That(JsonSerializer.Serialize(saved.Factories.OrderBy(entry => entry.FactoryId)),
+                                Is.EqualTo(currentFactories), "The next save must commit every current factory claim by stable ID.");
+                            var claim = saved.Factories.Single(entry => entry.FactoryId == "frontline-test-factory-west");
+                            Assert.That(claim.Jobs, Is.Empty);
+                            Assert.That(claim.Inputs.Select(stack => (stack.StackId, stack.Prototype, stack.Count)),
+                                Is.EqualTo(new[] { ("BasicMaterials", "BasicMaterials1", inputAmount) }));
+                            Assert.That(claim.Outputs.Select(crate => (crate.Prototype, crate.Product, crate.Amount)),
+                                Is.EqualTo(new[]
+                                {
+                                    ("FrontlineFactoryMedicalCrate", retainedProduct.Id, retainedAmount),
+                                    ("FrontlineFactoryMedicalCrate", product.Id, 2),
+                                }));
+                        }
+                        Assert.That(data.Exists(WarStrategicSnapshotSystem.TemporaryPath), Is.False,
+                            "Successful promotion must leave no uncommitted temporary snapshot.");
+                        using var backup = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.BackupPath));
+                        Assert.That(backup.ReadToEnd(), Is.EqualTo(committedBackup),
+                            "The next save after recovery must retain the valid last committed backup, not rotate the corrupt primary over it.");
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e; // Report assertion failures on the test thread, preserving native cleanup.
+                    }
+                });
+                Assert.That(Server.UnhandledException, Is.Null);
+                if (failure != null)
+                    throw failure;
+            }
         }
         finally
         {
