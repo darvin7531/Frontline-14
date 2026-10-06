@@ -465,8 +465,26 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         }
         if (data.Exists(SavePath))
         {
-            data.Delete(BackupPath);
-            data.Rename(SavePath, BackupPath); // Native Rename does not overwrite.
+            var validSyntax = true;
+            try
+            {
+                using var primary = data.OpenRead(SavePath);
+                using var document = JsonDocument.Parse(primary);
+            }
+            catch (JsonException)
+            {
+                validSyntax = false;
+            }
+            if (validSyntax)
+            {
+                data.Delete(BackupPath);
+                data.Rename(SavePath, BackupPath); // Native Rename does not overwrite.
+            }
+            else
+            {
+                // A recovered map must not rotate the corrupt primary over its committed backup.
+                data.Delete(SavePath);
+            }
         }
         try
         {
