@@ -47,6 +47,10 @@ public sealed partial class FrontlineFactoryComponent : Component
     [ViewVariables]
     public Container OutputContainer = default!;
 
+    /// <summary>Stable mapper identity within one campaign map; never a runtime UID or position.</summary>
+    [DataField]
+    public string FactoryId = "";
+
     [DataField]
     public List<FrontlineFactoryJob> Jobs = new();
 

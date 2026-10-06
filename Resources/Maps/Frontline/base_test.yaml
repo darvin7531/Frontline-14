@@ -133,11 +133,15 @@ entities:
   entities:
   - uid: 161
     components:
+    - type: FrontlineFactory
+      factoryId: frontline-test-factory-west
     - type: Transform
       parent: 2
       pos: 5,-20
   - uid: 164
     components:
+    - type: FrontlineFactory
+      factoryId: frontline-test-factory-east
     - type: Transform
       parent: 2
       pos: 45,-20
@@ -145,11 +149,15 @@ entities:
   entities:
   - uid: 163
     components:
+    - type: FrontlineRefinery
+      refineryId: frontline-test-refinery-west
     - type: Transform
       parent: 2
       pos: 6,-20
   - uid: 165
     components:
+    - type: FrontlineRefinery
+      refineryId: frontline-test-refinery-east
     - type: Transform
       parent: 2
       pos: 44,-20
@@ -162,6 +170,7 @@ entities:
       pos: 20,-7
     - type: FrontlineResourceSpawnPoint
       fieldId: frontline-test-iron
+      slotId: iron-west
   - uid: 166
     components:
     - type: Transform
@@ -169,6 +178,7 @@ entities:
       pos: 25,-7
     - type: FrontlineResourceSpawnPoint
       fieldId: frontline-test-iron
+      slotId: iron-center
   - uid: 167
     components:
     - type: Transform
@@ -176,6 +186,7 @@ entities:
       pos: 30,-7
     - type: FrontlineResourceSpawnPoint
       fieldId: frontline-test-iron
+      slotId: iron-east
 - proto: TerritoryMarker
   entities:
   - uid: 168

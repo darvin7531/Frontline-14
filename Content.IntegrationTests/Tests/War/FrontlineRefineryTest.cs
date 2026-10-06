@@ -767,7 +767,7 @@ public sealed class FrontlineRefineryTest : GameTest
     }
 
     [Test]
-    public async Task InvalidPersistedJobIsSkippedWithoutBlockingValidJob()
+    public async Task InvalidPersistedJobIsQuarantinedWithoutBlockingValidJob()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -786,7 +786,10 @@ public sealed class FrontlineRefineryTest : GameTest
         await Pair.RunSeconds(0.2f);
         await server.WaitAssertion(() =>
         {
-            Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Is.Empty);
+            var jobs = SComp<FrontlineRefineryComponent>(refinery).Jobs;
+            Assert.That(jobs, Has.Count.EqualTo(1), "Keep the invalid paid claim for recovery, not silent deletion.");
+            Assert.That(jobs[0].Recipe.Id, Is.EqualTo("TestInvalidFrontlineRecipe"));
+            Assert.That(jobs[0].Remaining, Is.EqualTo(TimeSpan.Zero));
             Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
         });
     }

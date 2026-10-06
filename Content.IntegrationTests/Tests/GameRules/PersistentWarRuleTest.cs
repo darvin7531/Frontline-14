@@ -18,6 +18,9 @@ using Content.Server.War;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.Components;
 using Content.Shared.CCVar;
+using Content.Shared.Damage;
+using Content.Shared.Damage.Systems;
+using Content.Shared.FixedPoint;
 using Content.Shared.GameTicking.Components;
 using Content.Shared.Ghost.Components;
 using Content.Shared.Mind.Components;
@@ -29,9 +32,11 @@ using Content.Shared.Mobs.Systems;
 using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Interaction;
 using Content.Shared.Stacks;
+using Content.Shared.Tag;
 using Content.Shared.War;
 
 using Robust.Shared.ContentPack;
+using Robust.Shared.Containers;
 using Robust.Client.GameObjects;
 using Robust.Client.UserInterface;
 using Robust.Client.UserInterface.Controls;
@@ -43,6 +48,7 @@ using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Player;
+using Robust.Shared.Utility;
 
 namespace Content.IntegrationTests.Tests.GameRules;
 
@@ -103,6 +109,8 @@ public sealed class PersistentWarRuleTest : GameTest
         InvalidResourceField,
         ResourceFieldWithoutSpawnPoints,
         UnknownResourceFieldReference,
+        MissingResourceSlotId,
+        DuplicateResourceSlotId,
         EmptyResourceFieldId,
         ZeroResourceReserve,
         TooManyActiveResourceNodes,
@@ -139,6 +147,9 @@ public sealed class PersistentWarRuleTest : GameTest
                     var resources = Server.ResolveDependency<IResourceManager>();
                     resources.UserData.Delete(WarStateSystem.SavePath);
                     resources.UserData.Delete(WarFactionSystem.SavePath);
+                    resources.UserData.Delete(WarStrategicSnapshotSystem.SavePath);
+                    resources.UserData.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                    resources.UserData.Delete(WarStrategicSnapshotSystem.BackupPath);
                 }
                 finally
                 {
@@ -338,6 +349,10 @@ public sealed class PersistentWarRuleTest : GameTest
         "PersistentWar resource field 'orphan-field' must have at least one spawn point.")]
     [TestCase(InvalidMapCase.UnknownResourceFieldReference,
         "PersistentWar resource spawn point references unknown field 'missing-field'.")]
+    [TestCase(InvalidMapCase.MissingResourceSlotId,
+        "PersistentWar resource slot 'frontline-test-iron/' is missing or duplicated.")]
+    [TestCase(InvalidMapCase.DuplicateResourceSlotId,
+        "PersistentWar resource slot 'frontline-test-iron/iron-west' is missing or duplicated.")]
     [TestCase(InvalidMapCase.EmptyResourceFieldId,
         "PersistentWar resource field ID must not be empty.")]
     [TestCase(InvalidMapCase.ZeroResourceReserve,
@@ -438,6 +453,14 @@ public sealed class PersistentWarRuleTest : GameTest
                 case InvalidMapCase.EmptyResourceFieldId:
                     SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true)).FieldId = "";
                     break;
+                case InvalidMapCase.MissingResourceSlotId:
+                    SComp<FrontlineResourceSpawnPointComponent>(FindMapEntity<FrontlineResourceSpawnPointComponent>(mapId,
+                        component => component.SlotId == "iron-west")).SlotId = "";
+                    break;
+                case InvalidMapCase.DuplicateResourceSlotId:
+                    SComp<FrontlineResourceSpawnPointComponent>(FindMapEntity<FrontlineResourceSpawnPointComponent>(mapId,
+                        component => component.SlotId == "iron-east")).SlotId = "iron-west";
+                    break;
                 case InvalidMapCase.ZeroResourceReserve:
                     SComp<FrontlineResourceFieldComponent>(FindMapEntity<FrontlineResourceFieldComponent>(mapId, _ => true))
                         .MaxReserveNodes = 0;
@@ -524,6 +547,2446 @@ public sealed class PersistentWarRuleTest : GameTest
         });
 
         ticker.SetGamePreset((GamePresetPrototype) null);
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesOwnedBasesAndStockpileCounts()
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var territories = Server.System<TerritorySystem>();
+        var halls = Server.System<TownHallSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var faction = new FactionId("FrontlineFactionOne");
+        var capturedTerritory = new TerritoryId("frontline-three");
+        var baseTerritories = new[] { "frontline-one", capturedTerritory.Id, "frontline-five" };
+        WarState beforeRestart = default!;
+        EntityUid oldMap = default;
+        EntityUid[] oldBases = default!;
+        Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>[] countsBefore = default!;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            war.StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+            Assert.That(territories.GetState(capturedTerritory, ticker.DefaultMap), Is.EqualTo(TerritoryState.Neutral));
+        });
+
+        await Server.WaitPost(() =>
+        {
+            Assert.That(halls.ForceCapture(capturedTerritory, faction, ticker.DefaultMap), Is.True);
+            oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+            oldBases = baseTerritories.Select(territory => FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                hall => hall.TerritoryId == territory)).ToArray();
+            countsBefore = new[]
+            {
+                new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                    { ["SoldierSupplies"] = 0, ["BasicMaterials"] = 11 },
+                new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                    { ["SoldierSupplies"] = 7, ["BasicMaterials"] = 23 },
+                new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                    { ["SoldierSupplies"] = 13, ["BasicMaterials"] = 37 },
+            };
+            for (var i = 0; i < oldBases.Length; i++)
+            {
+                var counts = SComp<FrontlineStockpileComponent>(oldBases[i]).Counts;
+                counts.Clear();
+                foreach (var (product, count) in countsBefore[i])
+                    counts[product] = count;
+            }
+            beforeRestart = war.State!;
+        });
+        await Pair.RunTicksSync(1);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(territories.TryGetOwner(capturedTerritory, out var owner, ticker.DefaultMap), Is.True);
+            Assert.That(owner, Is.EqualTo(faction));
+            Assert.That(territories.CountOwned(faction, ticker.DefaultMap), Is.EqualTo(2));
+            Assert.That(war.State, Is.EqualTo(beforeRestart));
+            Assert.That(beforeRestart.Status, Is.EqualTo(WarStatus.Active), "One neutral capture must stay below victory.");
+        });
+
+        await Server.WaitPost(() => ticker.RestartRound());
+        await Server.WaitAssertion(() =>
+        {
+            var resources = Server.ResolveDependency<IResourceManager>();
+            using var stream = resources.UserData.Open(WarStrategicSnapshotSystem.SavePath, FileMode.Open);
+            var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream);
+            Assert.That(saved, Is.Not.Null);
+            Assert.That(saved!.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+            Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+            Assert.That(saved.Bases.Count, Is.EqualTo(5));
+            var captured = saved.Bases.Single(entry => entry.TerritoryId == capturedTerritory.Id);
+            Assert.That(captured.ObjectiveKind, Is.EqualTo("hall"));
+            Assert.That(captured.FactionId, Is.EqualTo(faction.Id));
+            Assert.That(captured.Prototype, Is.EqualTo("TownHallCoreFactionOne"));
+            for (var i = 0; i < baseTerritories.Length; i++)
+                Assert.That(saved.Bases.Single(entry => entry.TerritoryId == baseTerritories[i]).Counts,
+                    Is.EquivalentTo(countsBefore[i].ToDictionary(entry => entry.Key.Id, entry => entry.Value)));
+        });
+        await Server.WaitPost(() =>
+        {
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(territories.TryGetOwner(capturedTerritory, out var owner, ticker.DefaultMap), Is.True,
+                "Technical restart must restore the captured base instead of reloading its neutral ruin.");
+            Assert.That(owner, Is.EqualTo(faction));
+            Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+            Assert.That(war.State, Is.EqualTo(beforeRestart));
+            Assert.That(territories.CountOwned(faction, ticker.DefaultMap), Is.EqualTo(2));
+            Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+            Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+            for (var i = 0; i < oldBases.Length; i++)
+            {
+                Assert.That(SEntMan.EntityExists(oldBases[i]), Is.False);
+                var restored = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                    hall => hall.TerritoryId == baseTerritories[i]);
+                Assert.That(SComp<TownHallComponent>(restored).FactionId,
+                    Is.EqualTo(i == 2 ? "FrontlineFactionTwo" : faction.Id));
+                Assert.That(SComp<FrontlineStockpileComponent>(restored).Counts, Is.EquivalentTo(countsBefore[i]),
+                    $"Base {baseTerritories[i]} must retain exact counts, including zero supplies, without a fresh 20-supply grant.");
+            }
+        });
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesResourceReserveAndPartialNodeYield()
+    {
+        const string fieldId = "frontline-test-iron";
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var hands = Server.System<SharedHandsSystem>();
+        var interaction = Server.System<SharedInteractionSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        _ = Server.System<FrontlineResourceFieldSystem>();
+        var session = ServerSession!;
+        EntityUid oldMap = default;
+        EntityUid field = default;
+        EntityUid slot = default;
+        EntityUid node = default;
+        EntityUid tool = default;
+        WarState beforeRestart = default!;
+        Dictionary<Vector2, (Vector2 Position, int Yield)> nodesBefore = default!;
+        var reserveBefore = 0;
+        var stateBefore = default(FrontlineResourceFieldState);
+        var selected = false;
+        var pickedUp = false;
+        var extractionStarted = false;
+
+        // Slot UIDs change on reload. Use the mapper's local position on the same grid instead.
+        List<EntityUid> MapNodes()
+        {
+            var result = new List<EntityUid>();
+            var query = SEntMan.EntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out var component, out var transform))
+            {
+                if (component.FieldId == fieldId && transform.MapID == ticker.DefaultMap)
+                    result.Add(uid);
+            }
+            return result;
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                factions.ClearFaction(session.UserId);
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Pair.RunTicksSync(1);
+            await Server.WaitPost(() =>
+            {
+                selected = factions.TrySelectFaction(session.UserId, new FactionId("FrontlineFactionOne"));
+                ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                field = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap,
+                    component => component.FieldId == fieldId);
+                node = SComp<FrontlineResourceFieldComponent>(field).ActiveNodes
+                    .OrderBy(uid => SComp<TransformComponent>(uid).LocalPosition.X).First();
+                slot = SComp<FrontlineResourceNodeComponent>(node).SpawnPoint;
+                tool = FindMapEntity<MetaDataComponent>(ticker.DefaultMap,
+                    metadata => metadata.EntityPrototype?.ID == "Pickaxe");
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(selected, Is.True);
+                Assert.That(session.AttachedEntity, Is.Not.Null);
+                Assert.That(SComp<FrontlineResourceFieldComponent>(field).RemainingReserveNodes, Is.EqualTo(3));
+                Assert.That(MapNodes(), Has.Count.EqualTo(3));
+            });
+            await Server.WaitPost(() =>
+            {
+                var body = session.AttachedEntity!.Value;
+                Server.System<SharedTransformSystem>().SetCoordinates(body,
+                    SComp<TransformComponent>(node).Coordinates.Offset(new Vector2(0, 1)));
+                pickedUp = hands.TryPickupAnyHand(body, tool);
+            });
+            await Server.WaitAssertion(() => Assert.That(pickedUp, Is.True));
+
+            // Exhaust one real 20-yield node, paying four native 5-unit do-afters.
+            for (var i = 0; i < 4; i++)
+            {
+                await Server.WaitPost(() => extractionStarted = interaction.InteractDoAfter(
+                    session.AttachedEntity!.Value, tool, node, SComp<TransformComponent>(node).Coordinates, true));
+                await Pair.RunSeconds(1.1f);
+                await Server.WaitAssertion(() => Assert.That(extractionStarted, Is.True));
+            }
+            await Server.WaitAssertion(() => Assert.That(SEntMan.EntityExists(node), Is.False));
+            await Pair.RunSeconds(1.1f);
+            await Server.WaitPost(() =>
+            {
+                node = SComp<FrontlineResourceFieldComponent>(field).ActiveNodes
+                    .Single(uid => SComp<FrontlineResourceNodeComponent>(uid).SpawnPoint == slot);
+                extractionStarted = interaction.InteractDoAfter(session.AttachedEntity!.Value, tool, node,
+                    SComp<TransformComponent>(node).Coordinates, true);
+            });
+            await Pair.RunSeconds(1.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(extractionStarted, Is.True);
+                Assert.That(SComp<FrontlineResourceNodeComponent>(node).RemainingYield, Is.EqualTo(15));
+                Assert.That(SComp<FrontlineResourceFieldComponent>(field).RemainingReserveNodes, Is.EqualTo(2));
+                Assert.That(SComp<FrontlineResourceFieldComponent>(field).State, Is.EqualTo(FrontlineResourceFieldState.Active));
+                Assert.That(MapNodes(), Has.Count.EqualTo(3));
+                Assert.That(SComp<FrontlineResourceFieldComponent>(field).ActiveNodes, Is.EquivalentTo(MapNodes()));
+                Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
+                    stack.StackTypeId == "FrontlineRawIron" &&
+                    SComp<TransformComponent>(stack.Owner).MapID == ticker.DefaultMap).Sum(stack => stack.Count),
+                    Is.EqualTo(25), "Reserve and partial yield must come from paid native harvesting.");
+            });
+            await Server.WaitPost(() =>
+            {
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                reserveBefore = component.RemainingReserveNodes;
+                stateBefore = component.State;
+                nodesBefore = MapNodes().ToDictionary(
+                    uid => SComp<TransformComponent>(SComp<FrontlineResourceNodeComponent>(uid).SpawnPoint).LocalPosition,
+                    uid => (SComp<TransformComponent>(uid).LocalPosition,
+                        SComp<FrontlineResourceNodeComponent>(uid).RemainingYield));
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Pair.RunTicksSync(1);
+            await Server.WaitAssertion(() => Assert.Multiple(() =>
+            {
+                using var stream = Server.ResolveDependency<IResourceManager>().UserData.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                var savedField = saved.Resources.Single(entry => entry.FieldId == fieldId);
+                Assert.That(savedField.RemainingReserveNodes, Is.EqualTo(reserveBefore));
+                Assert.That(savedField.FieldInitialized, Is.True);
+                Assert.That(savedField.State, Is.EqualTo(stateBefore));
+                Assert.That(savedField.Nodes.Select(entry => entry.RemainingYield),
+                    Is.EquivalentTo(nodesBefore.Values.Select(entry => entry.Yield)));
+                Assert.That(savedField.Nodes.Select(entry => entry.SlotId).Distinct().Count(), Is.EqualTo(nodesBefore.Count));
+                Assert.That(savedField.Nodes.All(entry => entry.Prototype == "FrontlineIronResourceNode"), Is.True);
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+                Assert.That(SEntMan.EntityExists(field), Is.False);
+                Assert.That(SEntMan.EntityExists(node), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                var restored = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap,
+                    component => component.FieldId == fieldId);
+                var restoredField = SComp<FrontlineResourceFieldComponent>(restored);
+                Assert.That(restoredField.RemainingReserveNodes, Is.EqualTo(reserveBefore),
+                    "Technical restart must not mint the spent replacement reserve (2, not fresh-map 3).");
+                Assert.That(restoredField.State, Is.EqualTo(stateBefore));
+                Assert.That(restoredField.FieldInitialized, Is.True);
+                var nodes = MapNodes();
+                Assert.That(nodes, Has.Count.EqualTo(nodesBefore.Count), "Reload must not duplicate active nodes.");
+                Assert.That(restoredField.ActiveNodes, Is.EquivalentTo(nodes), "Rebuild ownership caches after reload.");
+                var restoredNodes = new Dictionary<Vector2, (Vector2 Position, int Yield)>();
+                foreach (var uid in nodes)
+                {
+                    var component = SComp<FrontlineResourceNodeComponent>(uid);
+                    var transform = SComp<TransformComponent>(uid);
+                    var point = SComp<TransformComponent>(component.SpawnPoint);
+                    Assert.That(component.Field, Is.EqualTo(restored));
+                    Assert.That(SComp<FrontlineResourceSpawnPointComponent>(component.SpawnPoint).FieldId,
+                        Is.EqualTo(fieldId));
+                    Assert.That(component.SlotId,
+                        Is.EqualTo(SComp<FrontlineResourceSpawnPointComponent>(component.SpawnPoint).SlotId));
+                    Assert.That(savedField.Nodes.Single(entry => entry.SlotId == component.SlotId).RemainingYield,
+                        Is.EqualTo(component.RemainingYield));
+                    Assert.That(point.MapID, Is.EqualTo(ticker.DefaultMap));
+                    Assert.That(transform.ParentUid, Is.EqualTo(point.ParentUid));
+                    Assert.That(point.ParentUid, Is.EqualTo(SComp<TransformComponent>(restored).ParentUid));
+                    Assert.That(restoredNodes.TryAdd(point.LocalPosition, (transform.LocalPosition, component.RemainingYield)),
+                        Is.True, "Each mapper slot may own only one active node.");
+                }
+                Assert.That(restoredNodes, Is.EquivalentTo(nodesBefore),
+                    "Same-parent/local-position slots must retain exact node positions and yields (15, 20, 20), not refill to 20.");
+            }));
+        }
+        finally
+        {
+            // Native cleanup on RED too; existing teardown deletes all save paths and restores the preset.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+
+    [TestCase(FrontlineResourceFieldState.Active)]
+    [TestCase(FrontlineResourceFieldState.Depleted)]
+    [TestCase(FrontlineResourceFieldState.Replenishing)]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesResourceCooldown(FrontlineResourceFieldState state)
+    {
+        const string fieldId = "frontline-test-iron";
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        _ = Server.System<FrontlineResourceFieldSystem>();
+        var replenishing = state != FrontlineResourceFieldState.Active;
+        var tick = SGameTiming.TickPeriod;
+        EntityUid field = default;
+        EntityUid oldField = default;
+        EntityUid oldMap = default;
+        EntityUid[] oldNodes = default!;
+        WarState beforeRestart = default!;
+        WarStrategicSnapshot saved = default!;
+        Dictionary<string, int> fullYields = default!;
+        Dictionary<string, int> yieldsBefore = default!;
+        TimeSpan replacementDelay = default;
+        TimeSpan replenishmentDelay = default;
+        TimeSpan remaining = default;
+        TimeSpan restoredAt = default;
+        TimeSpan deadline = default;
+
+        List<EntityUid> MapNodes()
+        {
+            var result = new List<EntityUid>();
+            var query = SEntMan.AllEntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out _, out var transform))
+            {
+                if (transform.MapID == ticker.DefaultMap)
+                    result.Add(uid);
+            }
+            return result;
+        }
+
+        void AssertField(int reserve, FrontlineResourceFieldState expectedState, Dictionary<string, int> yields)
+        {
+            var component = SComp<FrontlineResourceFieldComponent>(field);
+            var nodes = MapNodes();
+            Assert.That(component.FieldInitialized && component.CacheInitialized, Is.True);
+            Assert.That(component.State, Is.EqualTo(expectedState));
+            Assert.That(component.RemainingReserveNodes, Is.EqualTo(reserve));
+            Assert.That(nodes, Has.Count.EqualTo(yields.Count));
+            Assert.That(component.ActiveNodes, Is.EquivalentTo(nodes), "No duplicate or detached yield outside the ownership cache.");
+            Assert.That(nodes.ToDictionary(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId,
+                uid => SComp<FrontlineResourceNodeComponent>(uid).RemainingYield), Is.EquivalentTo(yields));
+            foreach (var uid in nodes)
+            {
+                var node = SComp<FrontlineResourceNodeComponent>(uid);
+                var slot = SComp<FrontlineResourceSpawnPointComponent>(node.SpawnPoint);
+                Assert.That(SEntMan.IsQueuedForDeletion(uid), Is.False);
+                Assert.That(node.Field, Is.EqualTo(field));
+                Assert.That(node.FieldId, Is.EqualTo(fieldId));
+                Assert.That(slot.FieldId, Is.EqualTo(fieldId));
+                Assert.That(slot.SlotId, Is.EqualTo(node.SlotId));
+                Assert.That(SComp<TransformComponent>(node.SpawnPoint).MapID, Is.EqualTo(ticker.DefaultMap));
+                Assert.That(SComp<TransformComponent>(uid).Coordinates,
+                    Is.EqualTo(SComp<TransformComponent>(node.SpawnPoint).Coordinates));
+                Assert.That(SComp<TransformComponent>(uid).ParentUid, Is.EqualTo(SComp<TransformComponent>(field).ParentUid));
+            }
+            Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack => stack.StackTypeId == "FrontlineRawIron" &&
+                SComp<TransformComponent>(stack.Owner).MapID == ticker.DefaultMap).Sum(stack => stack.Count), Is.Zero,
+                "Deleting/reloading owned nodes must not mint harvested output.");
+        }
+
+        async Task RunThroughDeadline(TimeSpan due)
+        {
+            var ticks = 0;
+            await Server.WaitPost(() => ticks = Math.Max(1,
+                (int) Math.Ceiling((due - SGameTiming.CurTime).TotalSeconds / tick.TotalSeconds) + 1));
+            // The last tick must execute Update at/after the deadline, not merely advance CurTime to it.
+            await Pair.RunTicksSync(ticks);
+            await Server.WaitAssertion(() => Assert.That(SGameTiming.CurTime,
+                Is.InRange(due, due + tick * 2)));
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunTicksSync(1);
+            await Server.WaitPost(() =>
+            {
+                field = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap, component => component.FieldId == fieldId);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                replacementDelay = component.ReplacementDelay;
+                replenishmentDelay = component.ReplenishmentDelay;
+                fullYields = MapNodes().ToDictionary(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId,
+                    uid => SComp<FrontlineResourceNodeComponent>(uid).RemainingYield);
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(fullYields, Has.Count.EqualTo(3));
+                Assert.That(fullYields.Values, Is.All.EqualTo(20));
+                Assert.That(replacementDelay, Is.GreaterThan(tick * 2));
+                Assert.That(replenishmentDelay, Is.GreaterThan(tick * 2));
+                AssertField(3, FrontlineResourceFieldState.Active, fullYields);
+            });
+            await Server.WaitPost(() =>
+            {
+                var nodes = SComp<FrontlineResourceFieldComponent>(field).ActiveNodes.ToArray();
+                // Native termination schedules the timer. Spend the second batch before depleting it.
+                foreach (var node in replenishing ? nodes : nodes.Take(1))
+                    SEntMan.DeleteEntity(node);
+                deadline = SComp<FrontlineResourceFieldComponent>(field).NextReplacement;
+            });
+            if (replenishing)
+            {
+                await RunThroughDeadline(deadline);
+                await Server.WaitAssertion(() => AssertField(0, FrontlineResourceFieldState.Active, fullYields));
+                await Server.WaitPost(() =>
+                {
+                    foreach (var node in SComp<FrontlineResourceFieldComponent>(field).ActiveNodes.ToArray())
+                        SEntMan.DeleteEntity(node);
+                });
+            }
+            // Preserve Depleted before its first Update; one tick otherwise spends real cooldown time.
+            if (state != FrontlineResourceFieldState.Depleted)
+                await Pair.RunTicksSync(1);
+            await Server.WaitPost(() =>
+            {
+                yieldsBefore = MapNodes().ToDictionary(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId,
+                    uid => SComp<FrontlineResourceNodeComponent>(uid).RemainingYield);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                remaining = (replenishing ? component.NextReplenishment : component.NextReplacement) - SGameTiming.CurTime;
+            });
+            await Server.WaitAssertion(() =>
+            {
+                AssertField(replenishing ? 0 : 3, state, yieldsBefore);
+                Assert.That(yieldsBefore, Has.Count.EqualTo(replenishing ? 0 : 2));
+                Assert.That(remaining, Is.GreaterThan(tick * 2));
+                Assert.That(remaining, state == FrontlineResourceFieldState.Depleted
+                    ? Is.EqualTo(replenishmentDelay)
+                    : Is.InRange((replenishing ? replenishmentDelay : replacementDelay) - tick * 2,
+                        (replenishing ? replenishmentDelay : replacementDelay) - tick));
+            });
+            await Server.WaitPost(() =>
+            {
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                oldField = field;
+                oldNodes = MapNodes().ToArray();
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                using var stream = Server.ResolveDependency<IResourceManager>().UserData.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+                restoredAt = SGameTiming.CurTime;
+                field = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap, component => component.FieldId == fieldId);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                deadline = replenishing ? component.NextReplenishment : component.NextReplacement;
+            });
+            await Server.WaitAssertion(() =>
+            {
+                var entry = saved.Resources.Single(resource => resource.FieldId == fieldId);
+                Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                Assert.That(entry.FieldInitialized, Is.True);
+                Assert.That(entry.RemainingReserveNodes, Is.EqualTo(replenishing ? 0 : 3));
+                Assert.That(entry.State, Is.EqualTo(state));
+                Assert.That(entry.ReplacementRemainingTicks, Is.EqualTo(replenishing ? 0 : remaining.Ticks));
+                Assert.That(entry.ReplenishmentRemainingTicks, Is.EqualTo(replenishing ? remaining.Ticks : 0));
+                Assert.That(entry.Nodes.ToDictionary(node => node.SlotId, node => node.RemainingYield), Is.EquivalentTo(yieldsBefore));
+                Assert.That(entry.Nodes.All(node => node.Prototype == "FrontlineIronResourceNode"), Is.True);
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldField), Is.False);
+                Assert.That(oldNodes.All(uid => !SEntMan.EntityExists(uid)), Is.True);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                Assert.That(component.ReplacementDelay, Is.EqualTo(replacementDelay));
+                Assert.That(component.ReplenishmentDelay, Is.EqualTo(replenishmentDelay));
+                Assert.That(deadline - restoredAt, Is.EqualTo(remaining), "Restore the disk duration, not a fresh configured delay.");
+                Assert.That(replenishing ? component.NextReplacement : component.NextReplenishment, Is.EqualTo(TimeSpan.Zero));
+                AssertField(replenishing ? 0 : 3, state, yieldsBefore);
+            });
+            // Stop strictly before the restored deadline; Depleted must transition but neither case may refill.
+            var earlyTicks = Math.Max(1, (int) (remaining.Ticks / tick.Ticks) - 1);
+            await Pair.RunTicksSync(earlyTicks);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(SGameTiming.CurTime - restoredAt,
+                    Is.InRange(tick * earlyTicks, tick * (earlyTicks + 1)));
+                Assert.That(SGameTiming.CurTime, Is.LessThan(deadline));
+                AssertField(replenishing ? 0 : 3,
+                    replenishing ? FrontlineResourceFieldState.Replenishing : FrontlineResourceFieldState.Active, yieldsBefore);
+                Assert.That((replenishing ? SComp<FrontlineResourceFieldComponent>(field).NextReplenishment
+                    : SComp<FrontlineResourceFieldComponent>(field).NextReplacement), Is.EqualTo(deadline));
+            });
+            await RunThroughDeadline(deadline);
+            await Server.WaitAssertion(() => AssertField(replenishing ? 3 : 2, FrontlineResourceFieldState.Active, fullYields));
+        }
+        finally
+        {
+            // Existing teardown removes all saves and restores the preset, including a behavioral RED.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesPaidRefineryQueueAndRetainedMaterials(bool writeFault)
+    {
+        ProtoId<FrontlineRefineryRecipePrototype> recipe = "FrontlineSteel";
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var refineries = Server.System<FrontlineRefinerySystem>();
+        var stacks = Server.System<StackSystem>();
+        var containers = Server.System<SharedContainerSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var session = ServerSession!;
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var duration = refineries.GetAvailableRecipes().Single(entry => entry.ID == recipe.Id).Duration;
+        EntityUid refinery = default;
+        EntityUid oldRefinery = default;
+        EntityUid oldMap = default;
+        EntityUid input = default;
+        WarState beforeRestart = default!;
+        FrontlineRefineryJob[] restoredJobs = default!;
+        TimeSpan remaining = default;
+        var selected = false;
+        var inserted = false;
+        var submitted = false;
+        var inputAmount = 3;
+        Exception failure = null;
+
+        // base_test.yaml has refineries at (6,-20) and (44,-20); anchoring snaps to tile centers.
+        // Test lookup only: persistence must introduce stable mapper IDs, never save positions or UIDs.
+        EntityUid FindRefinery(Vector2 position) => SEntMan.EntityQuery<FrontlineRefineryComponent>()
+            .Select(component => component.Owner).Single(uid =>
+                SComp<TransformComponent>(uid).MapID == ticker.DefaultMap &&
+                SComp<TransformComponent>(uid).LocalPosition == position &&
+                SComp<MetaDataComponent>(uid).EntityPrototype?.ID == "FrontlineRefinery");
+
+        void AssertGoods(int outputAmount)
+        {
+            AssertContainer(refinery, FrontlineRefineryComponent.InputContainerId, "FrontlineRawIron", inputAmount);
+            AssertContainer(refinery, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", outputAmount);
+            var other = FindRefinery(new Vector2(44.5f, -19.5f));
+            Assert.That(refineries.GetJobs(other), Is.Empty, "Do not restore the paid claim into both refineries.");
+            AssertContainer(other, FrontlineRefineryComponent.InputContainerId, "FrontlineRawIron", 0);
+            AssertContainer(other, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", 0);
+            foreach (var (type, amount) in new[] { ("FrontlineRawIron", inputAmount), ("BasicMaterials", outputAmount) })
+            {
+                Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack => stack.StackTypeId == type &&
+                    SComp<TransformComponent>(stack.Owner).MapID == ticker.DefaultMap).Sum(stack => stack.Count),
+                    Is.EqualTo(amount), "Retained goods must not also appear loose or in another machine.");
+            }
+        }
+
+        void AssertContainer(EntityUid owner, string id, string type, int amount)
+        {
+            Assert.That(containers.TryGetContainer(owner, id, out var container), Is.True);
+            Assert.That(container.ContainedEntities.All(uid => SEntMan.EntityExists(uid) &&
+                !SEntMan.IsQueuedForDeletion(uid) && SComp<MetaDataComponent>(uid).EntityLifeStage < EntityLifeStage.Terminating), Is.True);
+            var goods = container.ContainedEntities.Select(uid => SComp<StackComponent>(uid)).ToArray();
+            Assert.That(goods.All(stack => stack.StackTypeId == type && !stack.Unlimited && stack.Count > 0), Is.True);
+            Assert.That(goods.Sum(stack => stack.Count), Is.EqualTo(amount), $"{id} must retain exactly {amount} {type}.");
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                factions.ClearFaction(session.UserId);
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            if (writeFault)
+            {
+                await Server.WaitPost(() =>
+                {
+                    // Commit an empty same-war claim through native cleanup before paying for new work.
+                    ticker.RestartRound();
+                    ticker.SetGamePreset("PersistentWar");
+                    ticker.ToggleReadyAll(true);
+                    ticker.StartRound(true);
+                });
+            }
+            await Pair.RunUntilSynced();
+            await Server.WaitPost(() =>
+            {
+                selected = factions.TrySelectFaction(session.UserId, new FactionId("FrontlineFactionOne"));
+                ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
+                refinery = FindRefinery(new Vector2(6.5f, -19.5f));
+                var coordinates = SComp<TransformComponent>(refinery).Coordinates;
+                Server.System<SharedTransformSystem>().SetCoordinates(session.AttachedEntity!.Value,
+                    coordinates.Offset(new Vector2(0, 1)));
+                // Owning insertion API; submission is the public player/container-only API, not the BUI.
+                input = stacks.SpawnAtPosition(13, "FrontlineRawIron", coordinates);
+                inserted = refineries.TryInsertInput(refinery, input);
+                submitted = refineries.TrySubmitPlayerJob(refinery, session.AttachedEntity.Value, recipe);
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(selected && inserted && submitted, Is.True);
+                Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(8));
+                Assert.That(refineries.GetJobs(refinery), Has.Count.EqualTo(1));
+            });
+            await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(refineries.GetJobs(refinery), Is.Empty);
+                AssertContainer(refinery, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", 5);
+            });
+            await Server.WaitPost(() => submitted = refineries.TrySubmitPlayerJob(refinery,
+                session.AttachedEntity!.Value, recipe));
+            await Pair.RunTicksSync(30);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(submitted, Is.True);
+                Assert.That(refineries.GetJobs(refinery), Has.Count.EqualTo(1));
+                Assert.That(refineries.GetJobs(refinery)[0].Remaining, Is.InRange(SGameTiming.TickPeriod, duration - SGameTiming.TickPeriod));
+                AssertGoods(5); // Three independent claims: paid pending work, committed output, unused input.
+            });
+            if (writeFault)
+            {
+                await Server.WaitPost(() =>
+                {
+                    // Catch expected restart/assertion exceptions here so the posted callback cannot kill the server.
+                    try
+                    {
+                        using var committedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                        var committed = committedStream.ReadToEnd();
+                        var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(committed)!;
+                        Assert.That(saved.WarId, Is.EqualTo(war.State!.WarId));
+                        Assert.That(saved.Refineries.All(entry => entry.Jobs.Count == 0 &&
+                            entry.Inputs.Count == 0 && entry.Outputs.Count == 0), Is.True);
+                        var liveJobs = refineries.GetJobs(refinery).ToArray();
+                        var liveMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                        data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                        data.CreateDir(WarStrategicSnapshotSystem.TemporaryPath);
+                        Assert.That(data.IsDir(WarStrategicSnapshotSystem.TemporaryPath), Is.True);
+                        Assert.Throws<ArgumentException>(() => ticker.RestartRound(),
+                            "Write failure must stop native cleanup before paid claims are flushed.");
+                        Assert.That(Server.UnhandledException, Is.Null);
+                        Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
+                        Assert.That(ticker.CurrentPreset?.ID, Is.EqualTo("PersistentWar"));
+                        Assert.That(SEntMan.EntityExists(liveMap) && SEntMan.EntityExists(refinery) &&
+                            SEntMan.EntityExists(input), Is.True);
+                        Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(liveMap));
+                        Assert.That(FindRefinery(new Vector2(6.5f, -19.5f)), Is.EqualTo(refinery));
+                        Assert.That(refineries.GetJobs(refinery).Select(job => (job.Recipe, job.Remaining.Ticks)),
+                            Is.EqualTo(liveJobs.Select(job => (job.Recipe, job.Remaining.Ticks))),
+                            "Failed capture must retain the ordered paid recipe and exact remaining ticks.");
+                        AssertGoods(5);
+                        using var unchangedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                        Assert.That(unchangedStream.ReadToEnd(), Is.EqualTo(committed),
+                            "Failed writing must not replace the last committed disk claim.");
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e;
+                    }
+                    finally
+                    {
+                        data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                    }
+                });
+                Assert.That(Server.UnhandledException, Is.Null);
+                if (failure != null)
+                    throw failure;
+            }
+            await Server.WaitPost(() =>
+            {
+                if (writeFault)
+                {
+                    // Retry must capture this surviving map's updated, not stale, input claim.
+                    inputAmount = 2;
+                    stacks.SetCount((input, SComp<StackComponent>(input)), inputAmount);
+                }
+                remaining = refineries.GetJobs(refinery)[0].Remaining;
+                oldRefinery = refinery;
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+                refinery = FindRefinery(new Vector2(6.5f, -19.5f));
+                // Observe restore before any native Update spends processing time.
+                restoredJobs = refineries.GetJobs(refinery).ToArray();
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldRefinery) || SEntMan.EntityExists(input), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                Assert.That(restoredJobs, Has.Length.EqualTo(1),
+                    "Technical restart must restore the paid refinery job instead of reloading an empty queue.");
+                Assert.That(restoredJobs[0].Recipe, Is.EqualTo(recipe));
+                Assert.That(restoredJobs[0].Remaining, Is.EqualTo(remaining), "Restore exact paid progress, not a fresh recipe duration.");
+                using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                var claim = saved.Refineries.Single(entry => entry.RefineryId == SComp<FrontlineRefineryComponent>(refinery).RefineryId);
+                Assert.That(claim.Jobs.Select(job => (job.Recipe, job.RemainingTicks)),
+                    Is.EqualTo(new[] { (recipe.Id, remaining.Ticks) }));
+                Assert.That(claim.Inputs.Select(stack => (stack.StackId, stack.Count)),
+                    Is.EqualTo(new[] { ("FrontlineRawIron", inputAmount) }));
+                Assert.That(claim.Outputs.Select(stack => (stack.StackId, stack.Count)),
+                    Is.EqualTo(new[] { ("BasicMaterials", 5) }));
+                AssertGoods(5);
+            });
+            await Pair.RunTicksSync(1);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(refineries.GetJobs(refinery), Has.Count.EqualTo(1));
+                Assert.That(refineries.GetJobs(refinery)[0].Remaining, Is.GreaterThan(TimeSpan.Zero).And.LessThan(remaining),
+                    "Restoration after MapInit must activate the paid queue for native processing.");
+                AssertGoods(5);
+            });
+            await Pair.RunSeconds((float) remaining.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(refineries.GetJobs(refinery), Is.Empty);
+                AssertGoods(10);
+            });
+            await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(refineries.GetJobs(refinery), Is.Empty);
+                AssertGoods(10); // Completion is once-only and must not consume the unused raw iron.
+            });
+        }
+        finally
+        {
+            // Native cleanup on RED too; fixture teardown deletes all saves and restores the preset.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+
+    public enum FactorySnapshotRecovery
+    {
+        None,
+        MissingPrimary,
+        TruncatedPrimary,
+    }
+
+    [TestCase(false, FactorySnapshotRecovery.None)]
+    [TestCase(true, FactorySnapshotRecovery.None)]
+    [TestCase(false, FactorySnapshotRecovery.MissingPrimary)]
+    [TestCase(false, FactorySnapshotRecovery.TruncatedPrimary)]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesPaidFactoryQueueAndRetainedCrates(bool writeFault, FactorySnapshotRecovery recovery)
+    {
+        ProtoId<FrontlineFactoryRecipePrototype> recipe = "FrontlineFactoryBrutepack";
+        ProtoId<FrontlineSupplyProductPrototype> product = "Brutepack1";
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var factories = Server.System<FrontlineFactorySystem>();
+        var stacks = Server.System<StackSystem>();
+        var containers = Server.System<SharedContainerSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var session = ServerSession!;
+        var duration = factories.GetAvailableRecipes().Single(entry => entry.ID == recipe.Id).Duration;
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        EntityUid factory = default;
+        EntityUid oldFactory = default;
+        EntityUid oldMap = default;
+        EntityUid input = default;
+        WarState beforeRestart = default!;
+        FrontlineFactoryJob[] restoredJobs = default!;
+        TimeSpan remaining = default;
+        var selected = false;
+        var inserted = false;
+        var submitted = false;
+        var inputAmount = 3;
+        Exception failure = null;
+
+        var recoverBackup = recovery != FactorySnapshotRecovery.None;
+        ProtoId<FrontlineSupplyProductPrototype> retainedProduct = recoverBackup ? "SoldierSupplies" : product;
+        var retainedAmount = recoverBackup ? 7 : 2;
+        string committedBackup = null;
+        string interrupted = null;
+
+        // base_test.yaml has factories at (5,-20) and (45,-20); anchoring snaps to tile centers.
+        // Test lookup only: persistence uses stable mapper factory IDs, never positions or UIDs.
+        EntityUid FindFactory(Vector2 position) => SEntMan.EntityQuery<FrontlineFactoryComponent>()
+            .Select(component => component.Owner).Single(uid =>
+                SComp<TransformComponent>(uid).MapID == ticker.DefaultMap &&
+                SComp<TransformComponent>(uid).LocalPosition == position &&
+                SComp<MetaDataComponent>(uid).EntityPrototype?.ID == "FrontlineFactory");
+
+        void AssertGoods(int crateCount)
+        {
+            Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.InputContainerId, out var inputs), Is.True);
+            Assert.That(inputs.ContainedEntities, Has.Count.EqualTo(1));
+            var retainedInput = inputs.ContainedEntities.Single();
+            Assert.That(SEntMan.EntityExists(retainedInput) && !SEntMan.IsQueuedForDeletion(retainedInput), Is.True);
+            Assert.That(SComp<MetaDataComponent>(retainedInput).EntityLifeStage, Is.LessThan(EntityLifeStage.Terminating));
+            var stack = SComp<StackComponent>(retainedInput);
+            Assert.That(stack.StackTypeId, Is.EqualTo(new ProtoId<StackPrototype>("BasicMaterials")));
+            Assert.That(stack.Unlimited, Is.False);
+            Assert.That(stack.Count, Is.EqualTo(inputAmount));
+            Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId, out var outputs), Is.True);
+            Assert.That(outputs.ContainedEntities, Has.Count.EqualTo(crateCount));
+            foreach (var uid in outputs.ContainedEntities)
+            {
+                Assert.That(SEntMan.EntityExists(uid) && !SEntMan.IsQueuedForDeletion(uid), Is.True);
+                Assert.That(SComp<MetaDataComponent>(uid).EntityLifeStage, Is.LessThan(EntityLifeStage.Terminating));
+                Assert.That(SComp<MetaDataComponent>(uid).EntityPrototype?.ID, Is.EqualTo("FrontlineFactoryMedicalCrate"));
+                var crate = SComp<FrontlineSupplyCrateComponent>(uid);
+                var retained = uid == outputs.ContainedEntities.First();
+                Assert.That(crate.Product, Is.EqualTo(retained ? retainedProduct : product));
+                Assert.That(crate.Amount, Is.EqualTo(retained ? retainedAmount : 2));
+            }
+            Assert.That(outputs.ContainedEntities.Sum(uid => SComp<FrontlineSupplyCrateComponent>(uid).Amount),
+                Is.EqualTo(retainedAmount + (crateCount - 1) * 2));
+            var other = FindFactory(new Vector2(45.5f, -19.5f));
+            Assert.That(factories.GetJobs(other), Is.Empty, "Do not restore the paid claim into both factories.");
+            Assert.That(containers.TryGetContainer(other, FrontlineFactoryComponent.InputContainerId, out var otherInputs), Is.True);
+            Assert.That(otherInputs.ContainedEntities, Is.Empty);
+            Assert.That(containers.TryGetContainer(other, FrontlineFactoryComponent.OutputContainerId, out var otherOutputs), Is.True);
+            Assert.That(otherOutputs.ContainedEntities, Is.Empty);
+            Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(crate =>
+                    SComp<TransformComponent>(crate.Owner).MapID == ticker.DefaultMap).Select(crate => crate.Owner),
+                Is.EquivalentTo(outputs.ContainedEntities), "No loose crates, duplicate batches or other-machine claims.");
+            Assert.That(SEntMan.EntityQuery<StackComponent>().Where(material => material.StackTypeId == "BasicMaterials" &&
+                SComp<TransformComponent>(material.Owner).MapID == ticker.DefaultMap).Select(material => material.Owner),
+                Is.EquivalentTo(inputs.ContainedEntities), "Unused material must not also appear loose or in another machine.");
+            Assert.That(SEntMan.EntityQuery<MetaDataComponent>().Count(metadata => metadata.EntityPrototype?.ID == product.Id &&
+                SComp<TransformComponent>(metadata.Owner).MapID == ticker.DefaultMap), Is.Zero,
+                "Sealed batches must not also materialize their withdrawal goods.");
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                factions.ClearFaction(session.UserId);
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            if (writeFault)
+            {
+                await Server.WaitPost(() =>
+                {
+                    // Commit an empty same-war claim through native cleanup before paying for new work.
+                    ticker.RestartRound();
+                    ticker.SetGamePreset("PersistentWar");
+                    ticker.ToggleReadyAll(true);
+                    ticker.StartRound(true);
+                });
+            }
+            await Pair.RunUntilSynced();
+            await Server.WaitPost(() =>
+            {
+                selected = factions.TrySelectFaction(session.UserId, new FactionId("FrontlineFactionOne"));
+                ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
+                factory = FindFactory(new Vector2(5.5f, -19.5f));
+                var coordinates = SComp<TransformComponent>(factory).Coordinates;
+                Server.System<SharedTransformSystem>().SetCoordinates(session.AttachedEntity!.Value,
+                    coordinates.Offset(new Vector2(0, 1)));
+                // Owning insertion plus public player/container submission, not held interaction or BUI coverage.
+                input = stacks.SpawnAtPosition(13, "BasicMaterials", coordinates);
+                inserted = factories.TryInsertInput(factory, input);
+                submitted = factories.TrySubmitPlayerJob(factory, session.AttachedEntity.Value, recipe);
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(selected && inserted && submitted, Is.True);
+                Assert.That(session.AttachedEntity, Is.Not.Null);
+                Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(8));
+                Assert.That(factories.GetJobs(factory), Has.Count.EqualTo(1));
+            });
+            await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(factories.GetJobs(factory), Is.Empty);
+                Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId, out var outputs), Is.True);
+                Assert.That(outputs.ContainedEntities, Has.Count.EqualTo(1));
+                var crate = outputs.ContainedEntities.Single();
+                Assert.That(SComp<MetaDataComponent>(crate).EntityPrototype?.ID, Is.EqualTo("FrontlineFactoryMedicalCrate"));
+                Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Product, Is.EqualTo(product));
+                Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Amount, Is.EqualTo(2));
+            });
+            await Server.WaitPost(() =>
+            {
+                if (recoverBackup)
+                {
+                    // A real completed batch with public per-entity metadata distinct from prototype defaults.
+                    var crate = SComp<FrontlineSupplyCrateComponent>(SComp<FrontlineFactoryComponent>(factory)
+                        .OutputContainer.ContainedEntities.Single());
+                    crate.Product = retainedProduct;
+                    crate.Amount = retainedAmount;
+                }
+                submitted = factories.TrySubmitPlayerJob(factory, session.AttachedEntity!.Value, recipe);
+            });
+            await Pair.RunTicksSync(30);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(submitted, Is.True);
+                Assert.That(factories.GetJobs(factory), Has.Count.EqualTo(1));
+                Assert.That(factories.GetJobs(factory)[0].Remaining,
+                    Is.InRange(SGameTiming.TickPeriod, duration - SGameTiming.TickPeriod));
+                AssertGoods(1); // Paid pending work, retained output and unused input are independent claims.
+            });
+            if (writeFault)
+            {
+                await Server.WaitPost(() =>
+                {
+                    // Catch expected restart/assertion exceptions so the posted callback cannot kill the server.
+                    try
+                    {
+                        using var committedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                        var committed = committedStream.ReadToEnd();
+                        var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(committed)!;
+                        Assert.That(saved.WarId, Is.EqualTo(war.State!.WarId));
+                        Assert.That(saved.Factories, Has.Count.EqualTo(2));
+                        Assert.That(saved.Factories.All(entry => entry.Jobs.Count == 0 &&
+                            entry.Inputs.Count == 0 && entry.Outputs.Count == 0), Is.True);
+                        var liveJobs = factories.GetJobs(factory).ToArray();
+                        var liveMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                        Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId,
+                            out var outputs), Is.True);
+                        var liveOutputs = outputs.ContainedEntities.ToArray();
+                        data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                        data.CreateDir(WarStrategicSnapshotSystem.TemporaryPath);
+                        Assert.That(data.IsDir(WarStrategicSnapshotSystem.TemporaryPath), Is.True);
+                        Assert.Throws<ArgumentException>(() => ticker.RestartRound(),
+                            "Write failure must stop native cleanup before paid claims are flushed.");
+                        Assert.That(Server.UnhandledException, Is.Null);
+                        Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
+                        Assert.That(ticker.CurrentPreset?.ID, Is.EqualTo("PersistentWar"));
+                        Assert.That(SEntMan.EntityExists(liveMap) && SEntMan.EntityExists(factory) &&
+                            SEntMan.EntityExists(input), Is.True);
+                        Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(liveMap));
+                        Assert.That(FindFactory(new Vector2(5.5f, -19.5f)), Is.EqualTo(factory));
+                        Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.InputContainerId,
+                            out var inputs), Is.True);
+                        Assert.That(inputs.ContainedEntities, Is.EqualTo(new[] { input }));
+                        Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId,
+                            out var retainedOutputs), Is.True);
+                        Assert.That(retainedOutputs.ContainedEntities, Is.EqualTo(liveOutputs));
+                        Assert.That(factories.GetJobs(factory).Select(job => (job.Recipe, job.Remaining.Ticks)),
+                            Is.EqualTo(liveJobs.Select(job => (job.Recipe, job.Remaining.Ticks))),
+                            "Failed capture must retain the ordered paid recipe and exact remaining ticks.");
+                        AssertGoods(1);
+                        using var unchangedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                        Assert.That(unchangedStream.ReadToEnd(), Is.EqualTo(committed),
+                            "Failed writing must not replace the last committed disk claim.");
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e;
+                    }
+                    finally
+                    {
+                        data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                    }
+                });
+                Assert.That(Server.UnhandledException, Is.Null);
+                if (failure != null)
+                    throw failure;
+            }
+            await Server.WaitPost(() =>
+            {
+                if (writeFault)
+                {
+                    // Retry must capture this surviving map's updated, not stale, input claim.
+                    inputAmount = 2;
+                    stacks.SetCount((input, SComp<StackComponent>(input)), inputAmount);
+                }
+                remaining = factories.GetJobs(factory)[0].Remaining;
+                oldFactory = factory;
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                try
+                {
+                    if (recoverBackup)
+                    {
+                        // Rotate actual committed native bytes, not a hand-built snapshot or entity IDs.
+                        data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                        data.Rename(WarStrategicSnapshotSystem.SavePath, WarStrategicSnapshotSystem.BackupPath);
+                        using (var reader = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.BackupPath)))
+                            committedBackup = reader.ReadToEnd();
+                        var committed = JsonSerializer.Deserialize<WarStrategicSnapshot>(committedBackup)!;
+                        Assert.That(committed.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                        Assert.That(committed.WarId, Is.EqualTo(beforeRestart.WarId));
+                        var paid = committed.Factories.Single(entry => entry.FactoryId == "frontline-test-factory-west");
+                        Assert.That(paid.Jobs.Select(job => (job.Recipe, job.RemainingTicks)),
+                            Is.EqualTo(new[] { (recipe.Id, remaining.Ticks) }));
+                        Assert.That(paid.Inputs.Select(stack => (stack.StackId, stack.Prototype, stack.Count)),
+                            Is.EqualTo(new[] { ("BasicMaterials", "BasicMaterials1", inputAmount) }));
+                        Assert.That(paid.Outputs.Select(crate => (crate.Prototype, crate.Product, crate.Amount)),
+                            Is.EqualTo(new[] { ("FrontlineFactoryMedicalCrate", retainedProduct.Id, retainedAmount) }));
+                        interrupted = committedBackup[..^1]; // Remove the closing object delimiter: syntax, not header/semantic invalidity.
+                        Assert.Catch<JsonException>(() => JsonSerializer.Deserialize<WarStrategicSnapshot>(interrupted));
+                        if (recovery == FactorySnapshotRecovery.TruncatedPrimary)
+                        {
+                            using var writer = new StreamWriter(data.OpenWrite(WarStrategicSnapshotSystem.SavePath));
+                            writer.Write(interrupted);
+                        }
+                        Assert.That(data.Exists(WarStrategicSnapshotSystem.SavePath),
+                            Is.EqualTo(recovery == FactorySnapshotRecovery.TruncatedPrimary));
+                        // Uncommitted interrupted output is never a recovery candidate, even without a primary.
+                        using (var writer = new StreamWriter(data.OpenWrite(WarStrategicSnapshotSystem.TemporaryPath)))
+                            writer.Write(interrupted);
+                    }
+                    ticker.SetGamePreset("PersistentWar");
+                    ticker.ToggleReadyAll(true);
+                    Assert.DoesNotThrow(() => ticker.StartRound(true),
+                        "A syntactically truncated or missing primary must recover the same-war committed backup before player spawning.");
+                    Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound), "Backup recovery must finish native round startup.");
+                    factory = FindFactory(new Vector2(5.5f, -19.5f));
+                    // Capture through the owning read API before any native Update spends restored progress.
+                    restoredJobs = factories.GetJobs(factory).ToArray();
+                    if (recoverBackup)
+                    {
+                        Assert.That(JsonSerializer.Serialize(factories.CaptureSnapshot(ticker.DefaultMap).OrderBy(entry => entry.FactoryId)),
+                            Is.EqualTo(JsonSerializer.Serialize(JsonSerializer.Deserialize<WarStrategicSnapshot>(committedBackup)!
+                                .Factories.OrderBy(entry => entry.FactoryId))));
+                    }
+                }
+                catch (Exception e)
+                {
+                    failure = e; // A behavioral RED must reach the test thread, not kill the posted server callback.
+                }
+            });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(restoredJobs, Has.Length.EqualTo(1),
+                    "Technical restart must restore the paid factory job instead of reloading an empty queue.");
+                Assert.That(restoredJobs[0].Recipe, Is.EqualTo(recipe));
+                Assert.That(restoredJobs[0].Remaining.Ticks, Is.EqualTo(remaining.Ticks),
+                    "Restore exact paid progress, not a fresh recipe duration.");
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldFactory) || SEntMan.EntityExists(input), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                using var stream = data.OpenRead(recoverBackup ? WarStrategicSnapshotSystem.BackupPath : WarStrategicSnapshotSystem.SavePath);
+                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                if (recoverBackup)
+                {
+                    using var backup = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.BackupPath));
+                    Assert.That(backup.ReadToEnd(), Is.EqualTo(committedBackup), "Recovery must preserve the committed backup claim.");
+                    using var temporary = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.TemporaryPath));
+                    Assert.That(temporary.ReadToEnd(), Is.EqualTo(interrupted), "Uncommitted temporary output must be ignored.");
+                }
+                Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                Assert.That(saved.Factories, Has.Count.EqualTo(2));
+                var claim = saved.Factories.Single(entry => entry.FactoryId == "frontline-test-factory-west");
+                Assert.That(claim.FactoryId, Is.EqualTo(SComp<FrontlineFactoryComponent>(factory).FactoryId));
+                Assert.That(claim.Prototype, Is.EqualTo("FrontlineFactory"));
+                Assert.That(claim.Jobs.Select(job => (job.Recipe, job.RemainingTicks)),
+                    Is.EqualTo(new[] { (recipe.Id, remaining.Ticks) }));
+                Assert.That(claim.Inputs.Select(stack => (stack.StackId, stack.Prototype, stack.Count)),
+                    Is.EqualTo(new[] { ("BasicMaterials", "BasicMaterials1", inputAmount) }));
+                Assert.That(claim.Outputs.Select(crate => (crate.Prototype, crate.Product, crate.Amount)),
+                    Is.EqualTo(new[] { ("FrontlineFactoryMedicalCrate", retainedProduct.Id, retainedAmount) }));
+                var otherClaim = saved.Factories.Single(entry => entry.FactoryId == "frontline-test-factory-east");
+                Assert.That(otherClaim.Prototype, Is.EqualTo("FrontlineFactory"));
+                Assert.That(otherClaim.Jobs, Is.Empty);
+                Assert.That(otherClaim.Inputs, Is.Empty);
+                Assert.That(otherClaim.Outputs, Is.Empty);
+                AssertGoods(1);
+            });
+            await Pair.RunTicksSync(1);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(factories.GetJobs(factory), Has.Count.EqualTo(1));
+                Assert.That(factories.GetJobs(factory)[0].Remaining, Is.GreaterThan(TimeSpan.Zero).And.LessThan(remaining),
+                    "Restoration after MapInit must activate the paid queue for native processing.");
+                AssertGoods(1);
+            });
+            await Pair.RunSeconds((float) remaining.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(factories.GetJobs(factory), Is.Empty);
+                AssertGoods(2);
+            });
+            await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(factories.GetJobs(factory), Is.Empty);
+                AssertGoods(2); // Once-only completion must not debit the unused BasicMaterials.
+            });
+            if (recoverBackup)
+            {
+                await Server.WaitPost(() =>
+                {
+                    try
+                    {
+                        // Capture the surviving map's current claims before native cleanup deletes its entities.
+                        var currentFactories = JsonSerializer.Serialize(factories.CaptureSnapshot(ticker.DefaultMap)
+                            .OrderBy(entry => entry.FactoryId));
+                        Assert.That(factories.GetJobs(factory), Is.Empty);
+                        AssertGoods(2);
+                        ticker.RestartRound();
+                        Assert.That(war.State, Is.EqualTo(beforeRestart));
+                        using (var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
+                        {
+                            var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                            Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                            Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                            Assert.That(JsonSerializer.Serialize(saved.Factories.OrderBy(entry => entry.FactoryId)),
+                                Is.EqualTo(currentFactories), "The next save must commit every current factory claim by stable ID.");
+                            var claim = saved.Factories.Single(entry => entry.FactoryId == "frontline-test-factory-west");
+                            Assert.That(claim.Jobs, Is.Empty);
+                            Assert.That(claim.Inputs.Select(stack => (stack.StackId, stack.Prototype, stack.Count)),
+                                Is.EqualTo(new[] { ("BasicMaterials", "BasicMaterials1", inputAmount) }));
+                            Assert.That(claim.Outputs.Select(crate => (crate.Prototype, crate.Product, crate.Amount)),
+                                Is.EqualTo(new[]
+                                {
+                                    ("FrontlineFactoryMedicalCrate", retainedProduct.Id, retainedAmount),
+                                    ("FrontlineFactoryMedicalCrate", product.Id, 2),
+                                }));
+                        }
+                        Assert.That(data.Exists(WarStrategicSnapshotSystem.TemporaryPath), Is.False,
+                            "Successful promotion must leave no uncommitted temporary snapshot.");
+                        using var backup = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.BackupPath));
+                        Assert.That(backup.ReadToEnd(), Is.EqualTo(committedBackup),
+                            "The next save after recovery must retain the valid last committed backup, not rotate the corrupt primary over it.");
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e; // Report assertion failures on the test thread, preserving native cleanup.
+                    }
+                });
+                Assert.That(Server.UnhandledException, Is.Null);
+                if (failure != null)
+                    throw failure;
+            }
+        }
+        finally
+        {
+            // Native cleanup on RED too; fixture teardown deletes all saves and restores the preset.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+
+    [Test]
+    public async Task IncompleteFactorySnapshotRefusesCommitAndRepairedClaimsRetryOnSameMap()
+    {
+        const int warId = 42;
+        const string westId = "frontline-test-factory-west";
+        const string eastId = "frontline-test-factory-east";
+        ProtoId<FrontlineFactoryRecipePrototype> recipe = "FrontlineFactoryBrutepack";
+        ProtoId<FrontlineSupplyProductPrototype> product = "SoldierSupplies";
+        var snapshots = Server.System<WarStrategicSnapshotSystem>();
+        var factories = Server.System<FrontlineFactorySystem>();
+        var refineries = Server.System<FrontlineRefinerySystem>();
+        var fields = Server.System<FrontlineResourceFieldSystem>();
+        var containers = Server.System<SharedContainerSystem>();
+        var stacks = Server.System<StackSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var source = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        EntityUid freshMap = EntityUid.Invalid;
+        Exception failure = null;
+
+        Dictionary<string, EntityUid> Objectives(MapId mapId) =>
+            Server.System<TerritorySystem>().GetTerritories(mapId).ToDictionary(id => id.Id,
+                id => id.Id is "frontline-one" or "frontline-five"
+                    ? FindMapEntity<TownHallComponent>(mapId, hall => hall.TerritoryId == id.Id)
+                    : FindMapEntity<TownHallRuinComponent>(mapId, ruin => ruin.TerritoryId == id.Id));
+
+        void AssertEmptyMachines(MapId mapId, EntityUid fundedFactory = default)
+        {
+            var mapFactories = SEntMan.EntityQuery<FrontlineFactoryComponent>()
+                .Where(component => SComp<TransformComponent>(component.Owner).MapID == mapId).ToArray();
+            var mapRefineries = SEntMan.EntityQuery<FrontlineRefineryComponent>()
+                .Where(component => SComp<TransformComponent>(component.Owner).MapID == mapId).ToArray();
+            Assert.That(mapFactories, Has.Length.EqualTo(2));
+            Assert.That(mapRefineries, Has.Length.EqualTo(2));
+            foreach (var factory in mapFactories)
+            {
+                if (factory.Owner == fundedFactory)
+                    continue;
+                Assert.That(factories.GetJobs(factory.Owner), Is.Empty);
+                Assert.That(factory.InputContainer.ContainedEntities, Is.Empty);
+                Assert.That(factory.OutputContainer.ContainedEntities, Is.Empty);
+            }
+            foreach (var refinery in mapRefineries)
+            {
+                Assert.That(refineries.GetJobs(refinery.Owner), Is.Empty);
+                Assert.That(refinery.InputContainer.ContainedEntities, Is.Empty);
+                Assert.That(refinery.OutputContainer.ContainedEntities, Is.Empty);
+            }
+        }
+
+        try
+        {
+            // Load both initialized maps before paying: LoadTestMap itself advances native ticks.
+            var fresh = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+            freshMap = fresh.MapUid;
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    Server.System<PersistentWarMapValidatorSystem>().Validate(source.MapUid);
+                    Server.System<PersistentWarMapValidatorSystem>().Validate(fresh.MapUid);
+                    var sourceFactory = FindMapEntity<FrontlineFactoryComponent>(source.MapId,
+                        component => component.FactoryId == westId);
+                    var coordinates = SComp<TransformComponent>(sourceFactory).Coordinates;
+                    var input = stacks.SpawnAtPosition(8, "BasicMaterials", coordinates);
+                    Assert.That(factories.TryInsertInput(sourceFactory, input), Is.True);
+                    Assert.That(factories.TrySubmitContainedJob(sourceFactory, recipe), Is.True);
+                    Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(3), "The native job must really debit five materials.");
+                    var paidJobs = factories.GetJobs(sourceFactory).Select(job => (job.Recipe.Id, job.Remaining.Ticks)).ToArray();
+                    Assert.That(paidJobs, Is.EqualTo(new[] { (recipe.Id,
+                        factories.GetAvailableRecipes().Single(entry => entry.ID == recipe.Id).Duration.Ticks) }));
+                    Assert.That(paidJobs.Single().Ticks, Is.GreaterThan(0));
+
+                    var output = SEntMan.SpawnEntity("FrontlineFactoryMedicalCrate", coordinates);
+                    var crate = SComp<FrontlineSupplyCrateComponent>(output);
+                    Assert.That(crate.Product.Id, Is.EqualTo("Brutepack1"));
+                    Assert.That(crate.Amount, Is.EqualTo(2));
+                    // Public per-entity fields have no Access restriction; never mutate the prototype.
+                    crate.Product = product;
+                    crate.Amount = 7;
+                    Assert.That(containers.Insert(output, SComp<FrontlineFactoryComponent>(sourceFactory).OutputContainer), Is.True);
+
+                    var bases = Objectives(source.MapId).Select(entry =>
+                    {
+                        var hall = SEntMan.TryGetComponent<TownHallComponent>(entry.Value, out var component);
+                        return new WarBaseSnapshot(entry.Key, hall ? "hall" : "ruin",
+                            SComp<MetaDataComponent>(entry.Value).EntityPrototype!.ID, hall ? component!.FactionId : null,
+                            hall ? SComp<FrontlineStockpileComponent>(entry.Value).Counts
+                                .ToDictionary(count => count.Key.Id, count => count.Value) : new Dictionary<string, int>())
+                        {
+#pragma warning disable CS0618 // Exact damage is persistence data, not a player-facing health measurement.
+                            DamageHundredths = Server.System<DamageableSystem>().GetAllDamage(entry.Value).DamageDict
+                                .ToDictionary(damage => damage.Key.Id, damage => damage.Value.Value),
+#pragma warning restore CS0618
+                            RuinMaterialDeposited = hall ? 0 : SComp<TownHallRuinComponent>(entry.Value).DepositedBasicMaterials,
+                        };
+                    }).ToList();
+                    var full = new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, warId, bases)
+                    {
+                        Resources = fields.CaptureSnapshot(source.MapId),
+                        Refineries = refineries.CaptureSnapshot(source.MapId),
+                        Factories = factories.CaptureSnapshot(source.MapId),
+                    };
+                    Assert.That(full.SnapshotVersion, Is.EqualTo(5));
+                    Assert.That(full.Factories.Select(entry => entry.FactoryId), Is.EquivalentTo(new[] { westId, eastId }));
+                    var west = full.Factories.Single(entry => entry.FactoryId == westId);
+                    Assert.That(west.Prototype, Is.EqualTo("FrontlineFactory"));
+                    Assert.That(west.Jobs.Select(job => (job.Recipe, job.RemainingTicks)), Is.EqualTo(paidJobs));
+                    Assert.That(west.Inputs.Select(stack => (stack.StackId, stack.Prototype, stack.Count)),
+                        Is.EqualTo(new[] { ("BasicMaterials", "BasicMaterials1", 3) }));
+                    Assert.That(west.Outputs.Select(claim => (claim.Prototype, claim.Product, claim.Amount)),
+                        Is.EqualTo(new[] { ("FrontlineFactoryMedicalCrate", product.Id, 7) }));
+                    AssertEmptyMachines(source.MapId, sourceFactory);
+
+                    var objectives = Objectives(fresh.MapId);
+                    var freshResources = JsonSerializer.Serialize(fields.CaptureSnapshot(fresh.MapId));
+                    var nodes = SEntMan.EntityQuery<FrontlineResourceNodeComponent>()
+                        .Where(node => SComp<TransformComponent>(node.Owner).MapID == fresh.MapId).Select(node => node.Owner).ToArray();
+                    var freshFactories = SEntMan.EntityQuery<FrontlineFactoryComponent>()
+                        .Where(component => SComp<TransformComponent>(component.Owner).MapID == fresh.MapId)
+                        .ToDictionary(component => component.FactoryId, component => component.Owner);
+                    AssertEmptyMachines(fresh.MapId);
+                    data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                    using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
+                        JsonSerializer.Serialize(stream, full with { Factories = full.Factories.Where(entry => entry.FactoryId != eastId).ToList() });
+                    string incomplete;
+                    using (var reader = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath)))
+                        incomplete = reader.ReadToEnd();
+                    var refusal = Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId));
+                    Assert.That(refusal!.Message, Is.EqualTo("Factory snapshot must cover every map factory."));
+                    Assert.That(SEntMan.EntityExists(fresh.MapUid) && !SEntMan.IsQueuedForDeletion(fresh.MapUid), Is.True);
+                    Assert.That(Objectives(fresh.MapId), Is.EquivalentTo(objectives), "Refusal must precede destructive objective commit.");
+                    foreach (var uid in objectives.Values.Concat(nodes).Concat(freshFactories.Values))
+                        Assert.That(SEntMan.EntityExists(uid) && !SEntMan.IsQueuedForDeletion(uid), Is.True);
+                    Assert.That(JsonSerializer.Serialize(fields.CaptureSnapshot(fresh.MapId)), Is.EqualTo(freshResources));
+                    AssertEmptyMachines(fresh.MapId);
+                    Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
+                        SComp<TransformComponent>(stack.Owner).MapID == fresh.MapId), Is.Empty);
+                    Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(claim =>
+                        SComp<TransformComponent>(claim.Owner).MapID == fresh.MapId), Is.Empty, "No staged paid goods may survive refusal.");
+                    using (var reader = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath)))
+                        Assert.That(reader.ReadToEnd(), Is.EqualTo(incomplete));
+
+                    // Same map, same war, original complete claims; no Update can spend paid progress here.
+                    using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
+                        JsonSerializer.Serialize(stream, full);
+                    snapshots.Restore(fresh.MapUid, warId);
+                    Assert.That(SEntMan.EntityExists(fresh.MapUid), Is.True);
+                    foreach (var uid in objectives.Values)
+                        Assert.That(SEntMan.EntityExists(uid), Is.False, "Repaired JSON must actually restore, not silently accept fresh defaults.");
+                    var restoredFactory = FindMapEntity<FrontlineFactoryComponent>(fresh.MapId, component => component.FactoryId == westId);
+                    Assert.That(restoredFactory, Is.EqualTo(freshFactories[westId]));
+                    Assert.That(FindMapEntity<FrontlineFactoryComponent>(fresh.MapId, component => component.FactoryId == eastId),
+                        Is.EqualTo(freshFactories[eastId]));
+                    Assert.That(factories.GetJobs(restoredFactory).Select(job => (job.Recipe.Id, job.Remaining.Ticks)), Is.EqualTo(paidJobs));
+                    Assert.That(JsonSerializer.Serialize(factories.CaptureSnapshot(fresh.MapId).OrderBy(entry => entry.FactoryId)),
+                        Is.EqualTo(JsonSerializer.Serialize(full.Factories.OrderBy(entry => entry.FactoryId))));
+                    AssertEmptyMachines(fresh.MapId, restoredFactory);
+                    var restored = SComp<FrontlineFactoryComponent>(restoredFactory);
+                    Assert.That(restored.InputContainer.ContainedEntities, Has.Count.EqualTo(1));
+                    var restoredInput = restored.InputContainer.ContainedEntities.Single();
+                    Assert.That(SComp<MetaDataComponent>(restoredInput).EntityPrototype?.ID, Is.EqualTo("BasicMaterials1"));
+                    Assert.That(SComp<StackComponent>(restoredInput).StackTypeId.Id, Is.EqualTo("BasicMaterials"));
+                    Assert.That(SComp<StackComponent>(restoredInput).Count, Is.EqualTo(3));
+                    Assert.That(SComp<StackComponent>(restoredInput).Unlimited, Is.False);
+                    Assert.That(restored.OutputContainer.ContainedEntities, Has.Count.EqualTo(1));
+                    var restoredOutput = restored.OutputContainer.ContainedEntities.Single();
+                    Assert.That(SComp<MetaDataComponent>(restoredOutput).EntityPrototype?.ID, Is.EqualTo("FrontlineFactoryMedicalCrate"));
+                    Assert.That(SComp<FrontlineSupplyCrateComponent>(restoredOutput).Product, Is.EqualTo(product));
+                    Assert.That(SComp<FrontlineSupplyCrateComponent>(restoredOutput).Amount, Is.EqualTo(7));
+                    foreach (var uid in new[] { restoredInput, restoredOutput })
+                    {
+                        Assert.That(SEntMan.EntityExists(uid) && !SEntMan.IsQueuedForDeletion(uid), Is.True);
+                        Assert.That(SComp<MetaDataComponent>(uid).EntityLifeStage, Is.LessThan(EntityLifeStage.Terminating));
+                    }
+                    Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
+                        SComp<TransformComponent>(stack.Owner).MapID == fresh.MapId).Select(stack => stack.Owner),
+                        Is.EquivalentTo(restored.InputContainer.ContainedEntities), "No extra or loose materials.");
+                    Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(claim =>
+                        SComp<TransformComponent>(claim.Owner).MapID == fresh.MapId).Select(claim => claim.Owner),
+                        Is.EquivalentTo(restored.OutputContainer.ContainedEntities), "No extra or loose sealed goods.");
+                    Assert.That(SEntMan.EntityQuery<MetaDataComponent>().Where(metadata =>
+                        SComp<TransformComponent>(metadata.Owner).MapID == fresh.MapId && metadata.EntityPrototype?.ID == "Brutepack1"),
+                        Is.Empty, "Restoring a sealed entitlement must not spawn withdrawal goods.");
+                    using var repaired = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                    Assert.That(repaired.ReadToEnd(), Is.EqualTo(JsonSerializer.Serialize(full)));
+                }
+                catch (Exception e)
+                {
+                    failure = e; // Posted assertion failures belong on the test thread after native cleanup.
+                }
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() =>
+            {
+                if (SEntMan.EntityExists(freshMap))
+                    SEntMan.DeleteEntity(freshMap);
+                if (SEntMan.EntityExists(source.MapUid))
+                    SEntMan.DeleteEntity(source.MapUid);
+            });
+        }
+        Assert.That(Server.UnhandledException, Is.Null);
+        if (failure != null)
+            throw failure;
+    }
+
+    // Exact damage is the persistence contract, not a player-facing health measurement.
+#pragma warning disable CS0618
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesObjectiveDamageAndRuinRepairProgress()
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var territories = Server.System<TerritorySystem>();
+        var damage = Server.System<DamageableSystem>();
+        var hands = Server.System<SharedHandsSystem>();
+        var interaction = Server.System<SharedInteractionSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var session = ServerSession!;
+        var faction = new FactionId("FrontlineFactionOne");
+        EntityUid oldMap = default;
+        EntityUid liveHall = default;
+        EntityUid destroyedHall = default;
+        EntityUid ruin = default;
+        EntityUid materials = default;
+        WarState beforeRestart = default!;
+        DamageSpecifier damageBefore = default!;
+        var progressBefore = 0;
+        var selected = false;
+        var damaged = false;
+        var destroyed = false;
+        var pickedUp = false;
+        var repairStarted = false;
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                factions.ClearFaction(session.UserId);
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitPost(() =>
+            {
+                selected = factions.TrySelectFaction(session.UserId, faction);
+                ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                liveHall = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                    hall => hall.TerritoryId == "frontline-one");
+                destroyedHall = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                    hall => hall.TerritoryId == "frontline-five");
+                // Below the native 50 breakage / 100 destruction thresholds; retain both exact types.
+                damaged = damage.TryChangeDamage(liveHall, new DamageSpecifier
+                {
+                    DamageDict = new() { ["Blunt"] = FixedPoint2.New(7.25), ["Slash"] = FixedPoint2.New(3.5) },
+                }, ignoreResistances: true, ignoreGlobalModifiers: true);
+                destroyed = damage.TryChangeDamage(destroyedHall, new DamageSpecifier
+                {
+                    DamageDict = new() { ["Blunt"] = FixedPoint2.New(100) },
+                }, ignoreResistances: true, ignoreGlobalModifiers: true);
+            });
+            await Pair.RunTicksSync(2);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(selected && damaged && destroyed, Is.True);
+                Assert.That(session.AttachedEntity, Is.Not.Null);
+                Assert.That(SEntMan.EntityExists(liveHall), Is.True);
+                Assert.That(SEntMan.EntityExists(destroyedHall), Is.False,
+                    "Native damage/destruction must remove the hall before testing persistence.");
+                Assert.That(territories.GetState(new TerritoryId("frontline-five"), ticker.DefaultMap),
+                    Is.EqualTo(TerritoryState.Neutral));
+            });
+            await Server.WaitPost(() =>
+            {
+                ruin = FindMapEntity<TownHallRuinComponent>(ticker.DefaultMap,
+                    objective => objective.TerritoryId == "frontline-five");
+                var body = session.AttachedEntity!.Value;
+                var coordinates = SComp<TransformComponent>(ruin).Coordinates;
+                Server.System<SharedTransformSystem>().SetCoordinates(body, coordinates);
+                materials = Server.System<StackSystem>().SpawnAtPosition(2, "BasicMaterials", coordinates);
+                pickedUp = hands.TryPickupAnyHand(body, materials);
+                repairStarted = interaction.InteractDoAfter(body, materials, ruin, coordinates, true);
+            });
+            await Pair.RunSeconds(2.1f);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(pickedUp && repairStarted, Is.True);
+                Assert.That(damage.GetAllDamage(liveHall).DamageDict["Blunt"], Is.EqualTo(FixedPoint2.New(7.25)));
+                Assert.That(damage.GetAllDamage(liveHall).DamageDict["Slash"], Is.EqualTo(FixedPoint2.New(3.5)));
+                Assert.That(SComp<TownHallRuinComponent>(ruin).DepositedBasicMaterials, Is.EqualTo(1));
+                Assert.That(SComp<TownHallRuinComponent>(ruin).RequiredBasicMaterials, Is.GreaterThan(1));
+                Assert.That(SComp<StackComponent>(materials).Count, Is.EqualTo(1),
+                    "Partial progress must come from consuming a real held BasicMaterials stack.");
+                Assert.That(territories.CountOwned(faction, ticker.DefaultMap), Is.EqualTo(1));
+                Assert.That(war.State!.Status, Is.EqualTo(WarStatus.Active), "Setup must remain below victory.");
+            });
+            await Server.WaitPost(() =>
+            {
+                damageBefore = damage.GetAllDamage(liveHall);
+                progressBefore = SComp<TownHallRuinComponent>(ruin).DepositedBasicMaterials;
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitAssertion(() => Assert.Multiple(() =>
+            {
+                using var stream = Server.ResolveDependency<IResourceManager>().UserData
+                    .OpenRead(WarStrategicSnapshotSystem.SavePath);
+                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                var savedHall = saved.Bases.Single(entry => entry.TerritoryId == "frontline-one");
+                var savedRuin = saved.Bases.Single(entry => entry.TerritoryId == "frontline-five");
+                Assert.That(savedHall.ObjectiveKind, Is.EqualTo("hall"));
+                Assert.That(savedHall.DamageHundredths, Is.EquivalentTo(damageBefore.DamageDict
+                    .ToDictionary(pair => pair.Key.Id, pair => pair.Value.Value)),
+                    "Disk snapshot must contain exact integer hundredths for each damage type.");
+                Assert.That(savedRuin.ObjectiveKind, Is.EqualTo("ruin"));
+                Assert.That(savedRuin.RuinMaterialDeposited, Is.EqualTo(progressBefore),
+                    "Disk snapshot must contain paid repair progress before native map reload.");
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                Assert.That(SEntMan.EntityExists(liveHall), Is.False);
+                Assert.That(SEntMan.EntityExists(ruin), Is.False);
+                var restoredRuin = FindMapEntity<TownHallRuinComponent>(ticker.DefaultMap,
+                    objective => objective.TerritoryId == "frontline-five");
+                Assert.That(SEntMan.HasComponent<TownHallComponent>(restoredRuin), Is.False,
+                    "A destroyed hall must remain a ruin after normal preset reload.");
+                Assert.That(SComp<TownHallRuinComponent>(restoredRuin).DepositedBasicMaterials,
+                    Is.EqualTo(progressBefore), "Technical restart must not erase paid ruin repair progress.");
+                var restoredHall = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                    hall => hall.TerritoryId == "frontline-one");
+                Assert.That(damage.GetAllDamage(restoredHall).DamageDict, Is.EquivalentTo(damageBefore.DamageDict),
+                    "Technical restart must retain exact per-type objective damage, not heal the hall.");
+            }));
+        }
+        finally
+        {
+            // Native cleanup on behavioral RED too; fixture teardown removes saves and restores the preset.
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
+    }
+#pragma warning restore CS0618
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartSaveFailureRetainsLiveBasesForRetry()
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var territoryIds = new[] { "frontline-one", "frontline-three", "frontline-five" };
+        EntityUid oldMap = default;
+        EntityUid[] bases = default!;
+        Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>[] counts = default!;
+        WarState state = default!;
+        Exception failure = null;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            war.StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunUntilSynced();
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                // Post exceptions kill the server; retain assertion failures for the test thread.
+                try
+                {
+                    Assert.That(Server.System<TownHallSystem>().ForceCapture(new TerritoryId("frontline-three"),
+                        new FactionId("FrontlineFactionOne"), ticker.DefaultMap), Is.True);
+                    oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                    state = war.State!;
+                    bases = territoryIds.Select(id => FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                        hall => hall.TerritoryId == id)).ToArray();
+                    counts = bases.Select((uid, i) => new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                        { ["SoldierSupplies"] = i * 7, ["BasicMaterials"] = 11 + i * 12 }).ToArray();
+                    for (var i = 0; i < bases.Length; i++)
+                    {
+                        var live = SComp<FrontlineStockpileComponent>(bases[i]).Counts;
+                        live.Clear();
+                        foreach (var (product, count) in counts[i])
+                            live[product] = count;
+                    }
+                    data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                    data.CreateDir(WarStrategicSnapshotSystem.TemporaryPath);
+                    Assert.That(data.IsDir(WarStrategicSnapshotSystem.TemporaryPath), Is.True);
+                    // Native VirtualWritableDirProvider.Open(Create) rejects a directory with ArgumentException.
+                    Assert.Multiple(() =>
+                    {
+                        Assert.Throws<ArgumentException>(() => ticker.RestartRound(),
+                            "A failed save must escape native cleanup before FlushEntities.");
+                        Assert.That(Server.UnhandledException, Is.Null);
+                        Assert.That(SEntMan.EntityExists(oldMap), Is.True);
+                        Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(oldMap));
+                        Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby),
+                            "RestartRound changes RunLevel before cleanup; retry must work from this partial transition.");
+                        Assert.That(ticker.CurrentPreset?.ID, Is.EqualTo("PersistentWar"));
+                        Assert.That(war.State, Is.EqualTo(state));
+                        for (var i = 0; i < bases.Length; i++)
+                        {
+                            Assert.That(SEntMan.EntityExists(bases[i]), Is.True);
+                            if (SEntMan.EntityExists(bases[i]))
+                            {
+                                Assert.That(FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                                    hall => hall.TerritoryId == territoryIds[i]), Is.EqualTo(bases[i]));
+                                Assert.That(SComp<FrontlineStockpileComponent>(bases[i]).Counts, Is.EquivalentTo(counts[i]));
+                            }
+                        }
+                    });
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+                finally
+                {
+                    data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                }
+            });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
+
+            await Server.WaitPost(() =>
+            {
+                // A later successful cleanup must still track this map and save its current, not stale, counts.
+                counts[1]["BasicMaterials"] = 53;
+                SComp<FrontlineStockpileComponent>(bases[1]).Counts["BasicMaterials"] = 53;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(Server.UnhandledException, Is.Null);
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(war.State, Is.EqualTo(state));
+                Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                for (var i = 0; i < bases.Length; i++)
+                {
+                    Assert.That(SEntMan.EntityExists(bases[i]), Is.False);
+                    var restored = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                        hall => hall.TerritoryId == territoryIds[i]);
+                    Assert.That(SComp<TownHallComponent>(restored).FactionId,
+                        Is.EqualTo(i == 2 ? "FrontlineFactionTwo" : "FrontlineFactionOne"));
+                    Assert.That(SComp<FrontlineStockpileComponent>(restored).Counts, Is.EquivalentTo(counts[i]));
+                }
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() => data.Delete(WarStrategicSnapshotSystem.TemporaryPath));
+        }
+    }
+
+    [Test]
+    public async Task PausedMapCapturePreservesResourceFieldsNodesAndSlots()
+    {
+        var fields = Server.System<FrontlineResourceFieldSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var map = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        Exception failure = null;
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    var field = FindMapEntity<FrontlineResourceFieldComponent>(map.MapId, _ => true);
+                    var component = SComp<FrontlineResourceFieldComponent>(field);
+                    component.RemainingReserveNodes = 2;
+                    var partial = component.ActiveNodes.Single(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId == "iron-west");
+                    SComp<FrontlineResourceNodeComponent>(partial).RemainingYield = 15;
+                    var before = JsonSerializer.Serialize(fields.CaptureSnapshot(map.MapId));
+                    maps.SetPaused(map.MapId, true);
+                    Assert.That(SComp<MetaDataComponent>(field).EntityPaused, Is.True);
+                    foreach (var node in component.ActiveNodes)
+                    {
+                        Assert.That(SComp<MetaDataComponent>(node).EntityPaused, Is.True);
+                        Assert.That(SComp<MetaDataComponent>(SComp<FrontlineResourceNodeComponent>(node).SpawnPoint).EntityPaused,
+                            Is.True);
+                    }
+                    var saved = fields.CaptureSnapshot(map.MapId);
+                    Assert.That(saved, Has.Count.EqualTo(1), "Paused controllers still own durable resource claims.");
+                    Assert.That(saved.Single().Nodes, Has.Count.EqualTo(3), "Paused nodes and their mapper slots must remain covered.");
+                    Assert.That(JsonSerializer.Serialize(saved), Is.EqualTo(before));
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+                finally
+                {
+                    maps.SetPaused(map.MapId, false);
+                }
+            });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
+        }
+        finally
+        {
+            await Server.WaitPost(() => SEntMan.DeleteEntity(map.MapUid));
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task PausedResourceCaptureDoesNotSpendCooldown(bool replenishing)
+    {
+        var fields = Server.System<FrontlineResourceFieldSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var timing = Server.ResolveDependency<Robust.Shared.Timing.IGameTiming>();
+        var map = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        EntityUid field = default;
+        long remaining = 0;
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                field = FindMapEntity<FrontlineResourceFieldComponent>(map.MapId, _ => true);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                if (replenishing)
+                {
+                    component.RemainingReserveNodes = 0;
+                    foreach (var node in component.ActiveNodes.ToArray())
+                        SEntMan.DeleteEntity(node);
+                    component.ReplenishmentDelay = TimeSpan.FromSeconds(60);
+                    component.NextReplenishment = timing.CurTime + component.ReplenishmentDelay;
+                }
+                else
+                {
+                    component.ReplacementDelay = TimeSpan.FromSeconds(60);
+                    component.NextReplacement = timing.CurTime + component.ReplacementDelay;
+                }
+                maps.SetPaused(map.MapId, true);
+                var saved = fields.CaptureSnapshot(map.MapId).Single();
+                remaining = replenishing ? saved.ReplenishmentRemainingTicks : saved.ReplacementRemainingTicks;
+            });
+            await Pair.RunTicksSync(10);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(Server.System<MetaDataSystem>().GetPauseTime(field), Is.GreaterThan(TimeSpan.Zero));
+                var saved = fields.CaptureSnapshot(map.MapId).Single();
+                Assert.That(replenishing ? saved.ReplenishmentRemainingTicks : saved.ReplacementRemainingTicks,
+                    Is.EqualTo(remaining), "Paused time must not spend a durable resource cooldown.");
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() =>
+            {
+                maps.SetPaused(map.MapId, false);
+                SEntMan.DeleteEntity(map.MapUid);
+            });
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task QueuedDepletedResourceControllerBlocksRestartBeforeEntityFlush(bool paused)
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var fields = Server.System<FrontlineResourceFieldSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        Exception failure = null;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            war.StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunTicksSync(1);
+        // Produce a real committed save, then load its matching campaign map.
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.ToggleReadyAll(true);
+            ticker.StartRound(true);
+        });
+        await Pair.RunTicksSync(1);
+        await Server.WaitPost(() =>
+        {
+            try
+            {
+                var map = maps.GetMapOrInvalid(ticker.DefaultMap);
+                var field = FindMapEntity<FrontlineResourceFieldComponent>(ticker.DefaultMap, _ => true);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                // Valid owned depleted setup; native node termination schedules the cooldown.
+                component.RemainingReserveNodes = 0;
+                foreach (var node in component.ActiveNodes.ToArray())
+                    SEntMan.DeleteEntity(node);
+                Assert.That(component.State, Is.EqualTo(FrontlineResourceFieldState.Depleted));
+                Assert.That(component.ActiveNodes, Is.Empty);
+                Assert.That(fields.CaptureSnapshot(ticker.DefaultMap), Has.Count.EqualTo(1));
+                var objectives = SEntMan.EntityQuery<TownHallComponent>()
+                    .Where(hall => SComp<TransformComponent>(hall.Owner).MapID == ticker.DefaultMap)
+                    .Select(hall => hall.Owner).ToArray();
+                string saved;
+                using (var before = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
+                    saved = new StreamReader(before).ReadToEnd();
+
+                if (paused)
+                {
+                    // Leave objectives live; pause the controller and its slots so omission cannot hide behind an orphan-slot error.
+                    var metadata = Server.System<MetaDataSystem>();
+                    metadata.SetEntityPaused(field, true);
+                    foreach (var slot in SEntMan.EntityQuery<FrontlineResourceSpawnPointComponent>().Where(slot =>
+                                 slot.FieldId == component.FieldId && SComp<TransformComponent>(slot.Owner).MapID == ticker.DefaultMap).ToArray())
+                    {
+                        metadata.SetEntityPaused(slot.Owner, true);
+                        Assert.That(SComp<MetaDataComponent>(slot.Owner).EntityPaused, Is.True);
+                    }
+                    Assert.That(SComp<MetaDataComponent>(field).EntityPaused, Is.True);
+                }
+                // Do not yield: capture must see the native queue before deletion settles.
+                SEntMan.QueueDeleteEntity(field);
+                Assert.That(SEntMan.IsQueuedForDeletion(field), Is.True);
+                Assert.Multiple(() =>
+                {
+                    Assert.Throws<InvalidDataException>(() => ticker.RestartRound(),
+                        "A queued controller must not be silently omitted from a supposedly complete save.");
+                    Assert.That(SEntMan.EntityExists(map), Is.True, "Capture refusal must precede FlushEntities.");
+                    Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(map));
+                    foreach (var objective in objectives)
+                        Assert.That(SEntMan.EntityExists(objective), Is.True);
+                    using var after = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                    Assert.That(new StreamReader(after).ReadToEnd(), Is.EqualTo(saved),
+                        "Do not replace the last restorable save with a snapshot missing its depleted field.");
+                });
+            }
+            catch (Exception e)
+            {
+                // Assertion failures belong on the test thread, not the server's unhandled boundary.
+                failure = e;
+            }
+        });
+        Assert.That(Server.UnhandledException, Is.Null);
+        if (failure != null)
+            throw failure;
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task OldEntityTerminationCannotCommitInvalidResourceSnapshot(bool spawnExtraNode)
+    {
+        const int warId = 42;
+        const string fieldId = "frontline-test-iron";
+        var snapshots = Server.System<WarStrategicSnapshotSystem>();
+        var fields = Server.System<FrontlineResourceFieldSystem>();
+        var probe = Server.System<QueueStagedResourceOnOldNodeTerminationSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var source = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        string saved = null;
+        Exception failure = null;
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    var field = FindMapEntity<FrontlineResourceFieldComponent>(source.MapId, _ => true);
+                    var component = SComp<FrontlineResourceFieldComponent>(field);
+                    Assert.That(component.ActiveNodes, Has.Count.EqualTo(3));
+                    component.RemainingReserveNodes = 2;
+                    var partial = component.ActiveNodes.Single(uid => SComp<FrontlineResourceNodeComponent>(uid).SlotId == "iron-west");
+                    SComp<FrontlineResourceNodeComponent>(partial).RemainingYield = 15;
+                    var bases = Server.System<TerritorySystem>().GetTerritories(source.MapId).Select(id =>
+                    {
+                        var hall = id.Id is "frontline-one" or "frontline-five";
+                        var uid = hall
+                            ? FindMapEntity<TownHallComponent>(source.MapId, objective => objective.TerritoryId == id.Id)
+                            : FindMapEntity<TownHallRuinComponent>(source.MapId, objective => objective.TerritoryId == id.Id);
+                        if (hall)
+                        {
+                            var counts = SComp<FrontlineStockpileComponent>(uid).Counts;
+                            counts.Clear();
+                            counts["SoldierSupplies"] = 7;
+                            counts["BasicMaterials"] = 11;
+                        }
+                        return new WarBaseSnapshot(id.Id, hall ? "hall" : "ruin",
+                            SComp<MetaDataComponent>(uid).EntityPrototype!.ID,
+                            hall ? SComp<TownHallComponent>(uid).FactionId : null,
+                            hall ? SComp<FrontlineStockpileComponent>(uid).Counts.ToDictionary(entry => entry.Key.Id, entry => entry.Value)
+                                : new Dictionary<string, int>());
+                    }).ToList();
+                    var resources = fields.CaptureSnapshot(source.MapId);
+                    Assert.That(resources.Single().RemainingReserveNodes, Is.EqualTo(2));
+                    Assert.That(resources.Single().Nodes.Select(node => node.RemainingYield), Is.EquivalentTo(new[] { 15, 20, 20 }));
+                    saved = JsonSerializer.Serialize(new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, warId, bases)
+                    {
+                        Resources = resources,
+                        Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(source.MapId),
+                        Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(source.MapId),
+                    });
+                    data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                    using var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath);
+                    using var writer = new StreamWriter(stream);
+                    writer.Write(saved);
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            });
+            if (failure != null)
+                throw failure;
+
+            var fresh = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    // EntitySystems survive pooled map cleanup; each case needs fresh observer state.
+                    probe.Fired = false;
+                    probe.StagedNode = EntityUid.Invalid;
+                    probe.DetachedDuringCallback = false;
+                    probe.QueuedDuringCallback = false;
+                    probe.YieldDuringCallback = 0;
+                    probe.SpawnExtraNode = spawnExtraNode;
+                    probe.OldNode = spawnExtraNode
+                        ? FindMapEntity<TownHallComponent>(fresh.MapId, hall => hall.TerritoryId == "frontline-one")
+                        : FindMapEntity<FrontlineResourceNodeComponent>(fresh.MapId,
+                            node => node.FieldId == fieldId && node.SlotId == "iron-west");
+                    Assert.That(SEntMan.HasComponent<TagComponent>(probe.OldNode), Is.True);
+                    if (!spawnExtraNode)
+                        Assert.That(SComp<FrontlineResourceNodeComponent>(probe.OldNode).RemainingYield, Is.EqualTo(20));
+                    probe.Enabled = true;
+                    Assert.Multiple(() =>
+                    {
+                        // Abort startup is allowed; retaining the original entity IDs is not required.
+                        Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId),
+                            "Native old-entity deletion changed the map's resource claims after preflight; restore must fail closed.");
+                        Assert.That(probe.Fired, Is.True, "The observer must run on real EntityTerminatingEvent, not a synthetic event.");
+                        Assert.That(probe.StagedNode, Is.Not.EqualTo(EntityUid.Invalid));
+                        Assert.That(probe.DetachedDuringCallback, Is.True);
+                        Assert.That(probe.QueuedDuringCallback, Is.EqualTo(!spawnExtraNode));
+                        Assert.That(probe.YieldDuringCallback, Is.EqualTo(spawnExtraNode ? 20 : 15));
+                        Assert.That(SEntMan.EntityExists(fresh.MapUid), Is.False, "Reject the entire unaccepted map after commit started.");
+                        Assert.That(SEntMan.EntityExists(probe.StagedNode), Is.False, "No extra or staged yield may survive refusal.");
+                        Assert.That(Server.UnhandledException, Is.Null);
+                        using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                        Assert.That(new StreamReader(stream).ReadToEnd(), Is.EqualTo(saved));
+                    });
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+                finally
+                {
+                    probe.Enabled = false;
+                }
+            });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
+            await Pair.RunTicksSync(2);
+
+            // Retry startup on a clean map from the same disk claim, not fresh reserve/yield defaults.
+            var retry = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    snapshots.Restore(retry.MapUid, warId);
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            });
+            if (failure != null)
+                throw failure;
+            await Pair.RunTicksSync(1);
+            await Server.WaitAssertion(() =>
+            {
+                var field = FindMapEntity<FrontlineResourceFieldComponent>(retry.MapId, component => component.FieldId == fieldId);
+                var component = SComp<FrontlineResourceFieldComponent>(field);
+                Assert.That(component.RemainingReserveNodes, Is.EqualTo(2), "Retry must not mint the fresh-map reserve of 3.");
+                Assert.That(component.ActiveNodes, Has.Count.EqualTo(3));
+                foreach (var uid in component.ActiveNodes)
+                {
+                    var node = SComp<FrontlineResourceNodeComponent>(uid);
+                    Assert.That(SEntMan.EntityExists(uid), Is.True);
+                    Assert.That(SEntMan.IsQueuedForDeletion(uid), Is.False);
+                    Assert.That(node.Field, Is.EqualTo(field));
+                    Assert.That(node.RemainingYield, Is.EqualTo(node.SlotId == "iron-west" ? 15 : 20));
+                }
+                Assert.That(fields.CaptureSnapshot(retry.MapId).Single().Nodes, Has.Count.EqualTo(3));
+                var mapNodes = new List<EntityUid>();
+                var query = SEntMan.AllEntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+                while (query.MoveNext(out var uid, out _, out var transform))
+                {
+                    if (transform.MapID == retry.MapId)
+                        mapNodes.Add(uid);
+                }
+                Assert.That(mapNodes, Is.EquivalentTo(component.ActiveNodes), "No detached or paused extra yield may survive retry.");
+                Assert.That(mapNodes.Sum(uid => SComp<FrontlineResourceNodeComponent>(uid).RemainingYield), Is.EqualTo(55));
+                foreach (var territory in new[] { "frontline-one", "frontline-five" })
+                {
+                    var hall = FindMapEntity<TownHallComponent>(retry.MapId, objective => objective.TerritoryId == territory);
+                    Assert.That(SComp<FrontlineStockpileComponent>(hall).Counts,
+                        Is.EquivalentTo(new Dictionary<ProtoId<FrontlineSupplyProductPrototype>, int>
+                            { ["SoldierSupplies"] = 7, ["BasicMaterials"] = 11 }));
+                }
+                using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                Assert.That(new StreamReader(stream).ReadToEnd(), Is.EqualTo(saved));
+                Assert.That(Server.UnhandledException, Is.Null);
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() => probe.Enabled = false);
+        }
+    }
+
+    public sealed class QueueStagedResourceOnOldNodeTerminationSystem : EntitySystem
+    {
+        public bool Enabled;
+        public bool Fired;
+        public bool SpawnExtraNode;
+        private static readonly EntProtoId ExtraNodePrototype = "FrontlineIronResourceNode";
+        public EntityUid OldNode;
+        public EntityUid StagedNode = EntityUid.Invalid;
+        public bool DetachedDuringCallback;
+        public bool QueuedDuringCallback;
+        public int YieldDuringCallback;
+
+        public override void Initialize()
+        {
+            // BaseStructure supplies Tag; this component/native event pair is otherwise unclaimed.
+            SubscribeLocalEvent<TagComponent, EntityTerminatingEvent>(OnOldNodeTerminating);
+        }
+
+        private void OnOldNodeTerminating(Entity<TagComponent> ent, ref EntityTerminatingEvent args)
+        {
+            if (!Enabled || Fired || ent.Owner != OldNode)
+                return;
+            Fired = true;
+            if (SpawnExtraNode)
+            {
+                // Runs after resource commit, during real old-base Del; no synthetic event or field ownership.
+                var coordinates = Transform(ent).Coordinates;
+                if (TerminatingOrDeleted(coordinates.EntityId))
+                    return;
+                StagedNode = Spawn(ExtraNodePrototype, coordinates);
+                var extra = Comp<FrontlineResourceNodeComponent>(StagedNode);
+                DetachedDuringCallback = extra.Field == EntityUid.Invalid && string.IsNullOrEmpty(extra.FieldId) &&
+                    extra.SpawnPoint == EntityUid.Invalid && string.IsNullOrEmpty(extra.SlotId);
+                YieldDuringCallback = extra.RemainingYield;
+                QueuedDuringCallback = EntityManager.IsQueuedForDeletion(StagedNode);
+                return;
+            }
+            var old = Comp<FrontlineResourceNodeComponent>(ent);
+            var mapId = Transform(ent).MapID;
+            var query = EntityQueryEnumerator<FrontlineResourceNodeComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out var node, out var transform))
+            {
+                if (uid == OldNode || transform.MapID != mapId || node.SlotId != old.SlotId ||
+                    node.Field != EntityUid.Invalid || !string.IsNullOrEmpty(node.FieldId) || TerminatingOrDeleted(uid))
+                    continue;
+                StagedNode = uid;
+                DetachedDuringCallback = node.SpawnPoint == EntityUid.Invalid;
+                YieldDuringCallback = node.RemainingYield;
+                QueueDel(uid);
+                QueuedDuringCallback = EntityManager.IsQueuedForDeletion(uid);
+                return;
+            }
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task RefineryRestoreQueueObserverFailureCannotLeaveLaterStagedOutputObtainable(bool includeFactory)
+    {
+        const int warId = 42;
+        var snapshots = Server.System<WarStrategicSnapshotSystem>();
+        var refineries = Server.System<FrontlineRefinerySystem>();
+        var stacks = Server.System<StackSystem>();
+        var containers = Server.System<SharedContainerSystem>();
+        var hands = Server.System<SharedHandsSystem>();
+        var probe = Server.System<ObserveRefineryRestoreInsertionSystem>();
+        var factories = Server.System<FrontlineFactorySystem>();
+        var manager = (EntityManager) SEntMan; // Public native C# event, not an ECS event.
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var fresh = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        var provisional = new List<EntityUid>();
+        var factoryProvisional = new List<EntityUid>();
+        var queued = new List<EntityUid>();
+        var queueFailure = new InvalidOperationException("One-shot native machine queue observer failure.");
+        var threw = false;
+        var guardedDuringQueue = true;
+        EntityUid refinery = default;
+        EntityUid player = default;
+        EntityUid factory = default;
+        EntityUid factoryPlayer = default;
+        EntityUid retryMap = EntityUid.Invalid;
+        string saved = null;
+        Exception failure = null;
+
+        void OnQueued(EntityUid uid)
+        {
+            if (!provisional.Contains(uid) && !factoryProvisional.Contains(uid))
+                return;
+            queued.Add(uid);
+            guardedDuringQueue &= !refineries.TryTakePlayerOutput(refinery, player);
+            if (includeFactory)
+                guardedDuringQueue &= !factories.TryTakePlayerOutput(factory, factoryPlayer);
+            if (uid == (includeFactory ? factoryProvisional[0] : provisional[0]) && !threw)
+            {
+                threw = true;
+                // QueueDeleteEntity has recorded the UID, but has not started native termination.
+                throw queueFailure;
+            }
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    refinery = FindMapEntity<FrontlineRefineryComponent>(fresh.MapId, _ => true);
+                    var output = SComp<FrontlineRefineryComponent>(refinery).OutputContainer;
+                    var coordinates = SComp<TransformComponent>(refinery).Coordinates.Offset(new Vector2(0, 1));
+                    player = SEntMan.SpawnEntity("MobHuman", coordinates);
+                    // Positive control: the same actor can really take retained output at this machine.
+                    var control = stacks.SpawnAtPosition(5, "BasicMaterials", coordinates);
+                    Assert.That(containers.Insert(control, output), Is.True);
+                    Assert.That(refineries.TryTakePlayerOutput(refinery, player), Is.True);
+                    Assert.That(hands.GetActiveItem(player), Is.EqualTo(control));
+                    SEntMan.DeleteEntity(control);
+                    Assert.That(hands.GetActiveItem(player), Is.Null);
+
+                    factory = FindMapEntity<FrontlineFactoryComponent>(fresh.MapId,
+                        component => component.FactoryId == "frontline-test-factory-west");
+                    var factoryOutput = SComp<FrontlineFactoryComponent>(factory).OutputContainer;
+                    if (includeFactory)
+                    {
+                        var factoryCoordinates = SComp<TransformComponent>(factory).Coordinates.Offset(new Vector2(0, 1));
+                        factoryPlayer = SEntMan.SpawnEntity("MobHuman", factoryCoordinates);
+                        var factoryControl = SEntMan.SpawnEntity("FrontlineFactoryMedicalCrate", factoryCoordinates);
+                        var crate = SComp<FrontlineSupplyCrateComponent>(factoryControl);
+                        crate.Product = "SoldierSupplies";
+                        crate.Amount = 7;
+                        Assert.That(containers.Insert(factoryControl, factoryOutput), Is.True);
+                        Assert.That(factories.TryTakePlayerOutput(factory, factoryPlayer), Is.True);
+                        Assert.That(hands.GetActiveItem(factoryPlayer), Is.EqualTo(factoryControl));
+                        SEntMan.DeleteEntity(factoryControl);
+                        Assert.That(hands.GetActiveItem(factoryPlayer), Is.Null);
+                    }
+
+                    var bases = Server.System<TerritorySystem>().GetTerritories(fresh.MapId).Select(id =>
+                    {
+                        var hall = id.Id is "frontline-one" or "frontline-five";
+                        var uid = hall
+                            ? FindMapEntity<TownHallComponent>(fresh.MapId, objective => objective.TerritoryId == id.Id)
+                            : FindMapEntity<TownHallRuinComponent>(fresh.MapId, objective => objective.TerritoryId == id.Id);
+                        return new WarBaseSnapshot(id.Id, hall ? "hall" : "ruin",
+                            SComp<MetaDataComponent>(uid).EntityPrototype!.ID,
+                            hall ? SComp<TownHallComponent>(uid).FactionId : null,
+                            hall ? SComp<FrontlineStockpileComponent>(uid).Counts.ToDictionary(entry => entry.Key.Id, entry => entry.Value)
+                                : new Dictionary<string, int>());
+                    }).ToList();
+                    var claims = refineries.CaptureSnapshot(fresh.MapId);
+                    var index = claims.FindIndex(entry => entry.RefineryId == SComp<FrontlineRefineryComponent>(refinery).RefineryId);
+                    claims[index] = claims[index] with
+                    {
+                        Outputs = new()
+                        {
+                            new WarRefineryStackSnapshot("BasicMaterials", "BasicMaterials1", 5),
+                            new WarRefineryStackSnapshot("BasicMaterials", "BasicMaterials1", 7),
+                        },
+                    };
+                    var factoryClaims = factories.CaptureSnapshot(fresh.MapId);
+                    if (includeFactory)
+                    {
+                        var factoryIndex = factoryClaims.FindIndex(entry => entry.FactoryId == "frontline-test-factory-west");
+                        factoryClaims[factoryIndex] = factoryClaims[factoryIndex] with
+                        {
+                            Outputs = new()
+                            {
+                                new WarFactoryCrateSnapshot("FrontlineFactoryMedicalCrate", "SoldierSupplies", 7),
+                                new WarFactoryCrateSnapshot("FrontlineFactoryMedicalCrate", "Brutepack1", 3),
+                            },
+                        };
+                    }
+                    data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                    using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
+                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, warId, bases)
+                        {
+                            Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(fresh.MapId),
+                            Refineries = claims,
+                            Factories = factoryClaims,
+                        });
+                    using (var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
+                        saved = new StreamReader(stream).ReadToEnd();
+
+                    probe.Observe = args =>
+                    {
+                        if (includeFactory && args.Container == factoryOutput)
+                        {
+                            Assert.That(provisional, Is.Empty, "Factory StageSnapshot must precede refinery staging.");
+                            factoryProvisional.Add(args.Entity);
+                            return;
+                        }
+                        if (args.Container != output)
+                            return;
+                        Assert.That(factoryProvisional, Has.Count.EqualTo(includeFactory ? 2 : 0));
+                        provisional.Add(args.Entity);
+                        if (provisional.Count == 2)
+                        {
+                            // Real insertion + owning SetCount callback invalidate an earlier tracked claim.
+                            var first = provisional[0];
+                            stacks.SetCount((first, SComp<StackComponent>(first)), 6);
+                        }
+                    };
+                    manager.EntityQueueDeleted += OnQueued;
+                    var refusal = Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId));
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(refusal!.Message, Is.EqualTo("Restored refinery contents changed during native callbacks."),
+                            "Cleanup failure must not replace the original precommit restoration refusal.");
+                        Assert.That(provisional, Has.Count.EqualTo(2));
+                        Assert.That(threw, Is.True, "The first provisional claim must reach the native queue observer.");
+                        Assert.That(guardedDuringQueue, Is.True);
+                        Assert.That(factoryProvisional, Has.Count.EqualTo(includeFactory ? 2 : 0));
+                        Assert.That(queued, Is.EqualTo(factoryProvisional.Concat(provisional).ToArray()),
+                            "Factory queue-all must survive its own observer failure, then cleanup must visit every refinery claim.");
+                        foreach (var uid in provisional)
+                            Assert.That(!SEntMan.EntityExists(uid) || SEntMan.IsQueuedForDeletion(uid), Is.True,
+                                "EVERY provisional refinery claim must be queued/deleted before restoring guards release.");
+                        foreach (var uid in factoryProvisional)
+                            Assert.That(!SEntMan.EntityExists(uid) || SEntMan.IsQueuedForDeletion(uid), Is.True,
+                                "EVERY provisional factory claim must be queued/deleted before restoring guards release.");
+                        // No tick may hide the leak between FinishSnapshotRestore and queue draining.
+                        Assert.That(refineries.TryTakePlayerOutput(refinery, player), Is.False,
+                            "A refused restore must not release a later provisional output to a player's hand.");
+                        Assert.That(hands.GetActiveItem(player), Is.Null);
+                        if (includeFactory)
+                        {
+                            Assert.That(factories.TryTakePlayerOutput(factory, factoryPlayer), Is.False);
+                            Assert.That(hands.GetActiveItem(factoryPlayer), Is.Null);
+                            Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(crate =>
+                                SComp<TransformComponent>(crate.Owner).MapID == fresh.MapId && !SEntMan.IsQueuedForDeletion(crate.Owner)),
+                                Is.Empty, "No unqueued loose or retained sealed claim may leak before a tick.");
+                            Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
+                                SComp<TransformComponent>(stack.Owner).MapID == fresh.MapId && !SEntMan.IsQueuedForDeletion(stack.Owner)),
+                                Is.Empty, "No unqueued loose or retained material may leak before a tick.");
+                            Assert.That(SEntMan.EntityQuery<MetaDataComponent>().Where(metadata =>
+                                SComp<TransformComponent>(metadata.Owner).MapID == fresh.MapId && metadata.EntityPrototype?.ID == "Brutepack1"),
+                                Is.Empty, "Refusal must not materialize sealed withdrawal goods before a tick.");
+                        }
+                        var retry = Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId));
+                        Assert.That(retry!.Message, Is.EqualTo("Strategic restore requires a live map."));
+                        using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                        Assert.That(new StreamReader(stream).ReadToEnd(), Is.EqualTo(saved));
+                    });
+                }
+                catch (Exception e)
+                {
+                    failure = e; // Assertion failures must not escape the posted server callback.
+                }
+                finally
+                {
+                    probe.Observe = null;
+                    manager.EntityQueueDeleted -= OnQueued;
+                }
+            });
+            if (includeFactory && failure == null)
+            {
+                // LoadTestMap advances ticks; fault observers are detached before clean-map retry.
+                var retry = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+                retryMap = retry.MapUid;
+                await Server.WaitPost(() =>
+                {
+                    try
+                    {
+                        var original = JsonSerializer.Deserialize<WarStrategicSnapshot>(saved)!;
+                        snapshots.Restore(retry.MapUid, warId);
+                        // ECS enumeration order is not persistent identity; paid claim order stays exact.
+                        Assert.That(JsonSerializer.Serialize(factories.CaptureSnapshot(retry.MapId).OrderBy(entry => entry.FactoryId)),
+                            Is.EqualTo(JsonSerializer.Serialize(original.Factories.OrderBy(entry => entry.FactoryId))));
+                        Assert.That(JsonSerializer.Serialize(refineries.CaptureSnapshot(retry.MapId).OrderBy(entry => entry.RefineryId)),
+                            Is.EqualTo(JsonSerializer.Serialize(original.Refineries.OrderBy(entry => entry.RefineryId))));
+                        var restoredFactory = FindMapEntity<FrontlineFactoryComponent>(retry.MapId,
+                            component => component.FactoryId == "frontline-test-factory-west");
+                        var restoredRefinery = FindMapEntity<FrontlineRefineryComponent>(retry.MapId,
+                            component => component.RefineryId == original.Refineries.Single(entry => entry.Outputs.Count != 0).RefineryId);
+                        Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(crate =>
+                            SComp<TransformComponent>(crate.Owner).MapID == retry.MapId).Select(crate => crate.Owner),
+                            Is.EquivalentTo(SComp<FrontlineFactoryComponent>(restoredFactory).OutputContainer.ContainedEntities),
+                            "Retry must not create extra or loose sealed goods.");
+                        Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
+                            SComp<TransformComponent>(stack.Owner).MapID == retry.MapId).Select(stack => stack.Owner),
+                            Is.EquivalentTo(SComp<FrontlineRefineryComponent>(restoredRefinery).OutputContainer.ContainedEntities),
+                            "Retry must not create extra or loose materials.");
+                        Assert.That(SEntMan.EntityQuery<MetaDataComponent>().Where(metadata =>
+                            SComp<TransformComponent>(metadata.Owner).MapID == retry.MapId && metadata.EntityPrototype?.ID == "Brutepack1"),
+                            Is.Empty, "Sealed claims must not materialize withdrawal goods.");
+                        using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                        Assert.That(new StreamReader(stream).ReadToEnd(), Is.EqualTo(saved));
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e;
+                    }
+                });
+            }
+        }
+        finally
+        {
+            await Server.WaitPost(() =>
+            {
+                probe.Observe = null;
+                manager.EntityQueueDeleted -= OnQueued;
+                SEntMan.QueueDeleteEntity(fresh.MapUid);
+                if (SEntMan.EntityExists(retryMap))
+                    SEntMan.QueueDeleteEntity(retryMap);
+            });
+            await Pair.RunTicksSync(2); // Native disposal also settles the leaked/held output on RED.
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(SEntMan.EntityExists(fresh.MapUid), Is.False);
+                Assert.That(provisional.All(uid => !SEntMan.EntityExists(uid)), Is.True);
+                Assert.That(factoryProvisional.All(uid => !SEntMan.EntityExists(uid)), Is.True);
+                Assert.That(SEntMan.EntityExists(retryMap), Is.False);
+            });
+        }
+        Assert.That(Server.UnhandledException, Is.Null);
+        if (failure != null)
+            throw failure;
+    }
+
+    public sealed class ObserveRefineryRestoreInsertionSystem : EntitySystem
+    {
+        public Action<EntInsertedIntoContainerMessage> Observe;
+
+        public override void Initialize()
+        {
+            // BaseStructure supplies Tag; this native component/event pair is otherwise unclaimed.
+            SubscribeLocalEvent<TagComponent, EntInsertedIntoContainerMessage>(OnInserted);
+        }
+
+        private void OnInserted(Entity<TagComponent> ent, ref EntInsertedIntoContainerMessage args)
+        {
+            Observe?.Invoke(args);
+        }
+    }
+
+    [TestCase(2, 0)]
+    [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 0)]
+    [TestCase(1, 41)]
+    [TestCase(2, 41)]
+    [TestCase(6, 41)]
+    [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 42)]
+    public async Task MalformedStrategicHeaderCannotBypassValidationAsAnotherWar(int version, int savedWarId)
+    {
+        const int currentWarId = 42;
+        var snapshot = Server.System<WarStrategicSnapshotSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var map = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
+        Exception failure = null;
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                try
+                {
+                    Server.System<PersistentWarMapValidatorSystem>().Validate(map.MapUid);
+                    var objectives = Server.System<TerritorySystem>().GetTerritories(map.MapId).ToDictionary(id => id.Id,
+                        id => id.Id is "frontline-one" or "frontline-five"
+                            ? FindMapEntity<TownHallComponent>(map.MapId, hall => hall.TerritoryId == id.Id)
+                            : FindMapEntity<TownHallRuinComponent>(map.MapId, ruin => ruin.TerritoryId == id.Id));
+                    var bases = objectives.Select(entry =>
+                    {
+                        var hall = SEntMan.TryGetComponent<TownHallComponent>(entry.Value, out var component);
+                        return new WarBaseSnapshot(entry.Key, hall ? "hall" : "ruin",
+                            SComp<MetaDataComponent>(entry.Value).EntityPrototype!.ID, hall ? component!.FactionId : null,
+                            hall ? SComp<FrontlineStockpileComponent>(entry.Value).Counts
+                                .ToDictionary(count => count.Key.Id, count => count.Value) : new Dictionary<string, int>());
+                    }).ToList();
+                    var resourceEntries = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(map.MapId);
+                    if (version == WarStrategicSnapshotSystem.SnapshotVersion && savedWarId == currentWarId)
+                        resourceEntries[0] = resourceEntries[0] with { FieldId = "unknown-field" };
+                    data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                    using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
+                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(version, savedWarId, bases)
+                        {
+                            Resources = resourceEntries,
+                            Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(map.MapId),
+                            Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(map.MapId),
+                        });
+                    Assert.Multiple(() =>
+                    {
+                        Assert.Throws<InvalidDataException>(() => snapshot.Restore(map.MapUid, currentWarId));
+                        foreach (var entry in bases)
+                        {
+                            var uid = entry.ObjectiveKind == "hall"
+                                ? FindMapEntity<TownHallComponent>(map.MapId, hall => hall.TerritoryId == entry.TerritoryId)
+                                : FindMapEntity<TownHallRuinComponent>(map.MapId, ruin => ruin.TerritoryId == entry.TerritoryId);
+                            Assert.That(uid, Is.EqualTo(objectives[entry.TerritoryId]));
+                            if (entry.ObjectiveKind == "hall")
+                                Assert.That(SComp<FrontlineStockpileComponent>(uid).Counts,
+                                    Is.EquivalentTo(entry.Counts.ToDictionary(count => new ProtoId<FrontlineSupplyProductPrototype>(count.Key), count => count.Value)));
+                        }
+                    });
+                    // Repaired JSON must be read on this same map: refusal must not set _loadedMap.
+                    foreach (var entry in bases.Where(entry => entry.ObjectiveKind == "hall"))
+                        entry.Counts["SoldierSupplies"] = 7;
+                    using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
+                        JsonSerializer.Serialize(stream, new WarStrategicSnapshot(WarStrategicSnapshotSystem.SnapshotVersion, currentWarId, bases)
+                        {
+                            Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(map.MapId),
+                            Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(map.MapId),
+                            Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(map.MapId),
+                        });
+                    snapshot.Restore(map.MapUid, currentWarId);
+                    foreach (var entry in bases)
+                    {
+                        Assert.That(SEntMan.EntityExists(objectives[entry.TerritoryId]), Is.False);
+                        if (entry.ObjectiveKind == "hall")
+                        {
+                            var restored = FindMapEntity<TownHallComponent>(map.MapId, hall => hall.TerritoryId == entry.TerritoryId);
+                            Assert.That(SComp<FrontlineStockpileComponent>(restored).Counts,
+                                Is.EquivalentTo(entry.Counts.ToDictionary(count => new ProtoId<FrontlineSupplyProductPrototype>(count.Key), count => count.Value)));
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
+        }
+        finally
+        {
+            await Server.WaitPost(() =>
+            {
+                data.Delete(WarStrategicSnapshotSystem.SavePath);
+                data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                data.Delete(WarStrategicSnapshotSystem.BackupPath);
+            });
+        }
     }
 
     [Test]
@@ -1500,6 +3963,12 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(halls.ForceCapture(territory, factionOne, ticker.DefaultMap), Is.True);
             }
 
+            var cores = SEntMan.EntityQueryEnumerator<TownHallComponent, TransformComponent>();
+            while (cores.MoveNext(out var core, out _, out var xform))
+            {
+                if (xform.MapID == ticker.DefaultMap)
+                    SComp<FrontlineStockpileComponent>(core).Counts["SoldierSupplies"] = 77;
+            }
             Assert.That(victory.CheckForVictory(), Is.True);
             oldWar = war.State!;
             Assert.That(oldWar.Status, Is.EqualTo(WarStatus.Ended));
@@ -1522,6 +3991,13 @@ public sealed class PersistentWarRuleTest : GameTest
         });
         await Server.WaitAssertion(() =>
         {
+            var resources = Server.ResolveDependency<IResourceManager>();
+            using var stream = resources.UserData.Open(WarStrategicSnapshotSystem.SavePath, FileMode.Open);
+            var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+            Assert.That(saved.WarId, Is.EqualTo(oldWar.WarId),
+                "Cleanup must save the old loaded map's war, not the already-created new war.");
+            Assert.That(saved.Bases.Where(entry => entry.ObjectiveKind == "hall")
+                .All(entry => entry.Counts["SoldierSupplies"] == 77), Is.True);
             Assert.That(war.State?.WarId, Is.EqualTo(oldWar.WarId + 1));
             Assert.That(war.State?.Status, Is.EqualTo(WarStatus.Active));
             Assert.That(war.State?.Winner, Is.Null);
@@ -1551,11 +4027,13 @@ public sealed class PersistentWarRuleTest : GameTest
             var ruins = 0;
 
             var hallQuery = SEntMan.EntityQueryEnumerator<TownHallComponent, TransformComponent>();
-            while (hallQuery.MoveNext(out _, out var hall, out var transform))
+            while (hallQuery.MoveNext(out var core, out var hall, out var transform))
             {
                 if (transform.MapID != mapId)
                     continue;
 
+                Assert.That(SComp<FrontlineStockpileComponent>(core).Counts["SoldierSupplies"],
+                    Is.EqualTo(20), "Newwar must use fresh YAML supplies, not old inventory.");
                 if (hall.FactionId == "FrontlineFactionOne")
                     factionOneHalls++;
                 else if (hall.FactionId == "FrontlineFactionTwo")

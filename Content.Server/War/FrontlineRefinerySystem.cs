@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using Content.Server.Stack;
 using Content.Shared.Hands.EntitySystems;
@@ -9,6 +10,7 @@ using Content.Shared.UserInterface;
 using Content.Shared.War;
 using Robust.Server.GameObjects;
 using Robust.Shared.Containers;
+using Robust.Shared.Map;
 using Robust.Shared.Prototypes;
 
 namespace Content.Server.War;
@@ -28,6 +30,8 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
     private readonly HashSet<EntityUid> _submitting = new();
     private readonly HashSet<EntityUid> _completing = new();
     private readonly HashSet<EntityUid> _taking = new();
+    private readonly HashSet<EntityUid> _movingInputs = new();
+    private readonly HashSet<EntityUid> _restoring = new();
     private float _uiUpdateAccumulator;
 
     public override void Initialize()
@@ -68,7 +72,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
 
     private void OnInteractUsing(Entity<FrontlineRefineryComponent> refinery, ref InteractUsingEvent args)
     {
-        if (args.Handled)
+        if (args.Handled || _restoring.Contains(refinery.Owner))
             return;
 
         if (!CanAcceptInput(args.Used))
@@ -77,8 +81,17 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
             return;
         }
 
-        if (_hands.TryDropIntoContainer(args.User, args.Used, refinery.Comp.InputContainer))
-            args.Handled = true;
+        if (!_movingInputs.Add(refinery.Owner))
+            return;
+        try
+        {
+            if (_hands.TryDropIntoContainer(args.User, args.Used, refinery.Comp.InputContainer))
+                args.Handled = true;
+        }
+        finally
+        {
+            _movingInputs.Remove(refinery.Owner);
+        }
     }
 
     private void OnBeforeUiOpen(Entity<FrontlineRefineryComponent> refinery, ref BeforeActivatableUIOpenEvent args)
@@ -111,7 +124,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
     public bool TryTakePlayerOutput(EntityUid refineryUid, EntityUid playerUid)
     {
         if (!IsCompletionEntityAlive(refineryUid) || !IsCompletionEntityAlive(playerUid) ||
-            _completing.Contains(refineryUid) ||
+            _completing.Contains(refineryUid) || _restoring.Contains(refineryUid) ||
             !TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
             !_taking.Add(refineryUid))
             return false;
@@ -312,22 +325,31 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
 
     private bool IsSpawnableStack(ProtoId<StackPrototype> stackId)
     {
-        return _prototypes.TryIndex(stackId, out var stack) &&
+        return !string.IsNullOrWhiteSpace(stackId.Id) && _prototypes.TryIndex(stackId, out var stack) &&
                !stack.Abstract &&
                !string.IsNullOrWhiteSpace(stack.Spawn.Id) &&
-               _prototypes.TryIndex<EntityPrototype>(stack.Spawn, out var spawn) &&
-               spawn.HasComp<StackComponent>(_componentFactory);
+               _prototypes.TryIndex<EntityPrototype>(stack.Spawn, out var spawn) && !spawn.Abstract &&
+               spawn.TryGetComponent<StackComponent>(out var component, _componentFactory) &&
+               !component.Unlimited && component.StackTypeId == stackId;
     }
 
     public bool TryInsertInput(EntityUid refineryUid, EntityUid inputUid)
     {
         if (!TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
+            _restoring.Contains(refineryUid) ||
             TerminatingOrDeleted(refineryUid) ||
             TerminatingOrDeleted(inputUid) ||
-            !CanAcceptInput(inputUid))
+            !CanAcceptInput(inputUid) || !_movingInputs.Add(refineryUid))
             return false;
 
-        return _containers.Insert(inputUid, refinery.InputContainer);
+        try
+        {
+            return _containers.Insert(inputUid, refinery.InputContainer);
+        }
+        finally
+        {
+            _movingInputs.Remove(refineryUid);
+        }
     }
 
     private bool CanAcceptInput(EntityUid inputUid)
@@ -339,10 +361,18 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
 
     public void EjectInputs(EntityUid refineryUid)
     {
-        if (!TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery))
+        if (_restoring.Contains(refineryUid) || !TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
+            !_movingInputs.Add(refineryUid))
             return;
 
-        _containers.EmptyContainer(refinery.InputContainer);
+        try
+        {
+            _containers.EmptyContainer(refinery.InputContainer);
+        }
+        finally
+        {
+            _movingInputs.Remove(refineryUid);
+        }
     }
 
     public bool TryEjectPlayerInputs(EntityUid refineryUid, EntityUid playerUid)
@@ -378,6 +408,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         IReadOnlyCollection<EntityUid> inputs)
     {
         if (!TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
+            _restoring.Contains(refineryUid) ||
             TerminatingOrDeleted(refineryUid) ||
             !_prototypes.TryIndex(recipeId, out var recipe) ||
             !IsValidRecipe(recipe) ||
@@ -587,6 +618,222 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         }
     }
 
+    private Dictionary<string, Entity<FrontlineRefineryComponent>> GetRefineries(MapId mapId)
+    {
+        var result = new Dictionary<string, Entity<FrontlineRefineryComponent>>();
+        var query = AllEntityQuery<FrontlineRefineryComponent, TransformComponent>();
+        while (query.MoveNext(out var uid, out var refinery, out var transform))
+        {
+            if (transform.MapID != mapId)
+                continue;
+            if (!IsCompletionEntityAlive(uid) || string.IsNullOrWhiteSpace(refinery.RefineryId) ||
+                !result.TryAdd(refinery.RefineryId, (uid, refinery)) ||
+                _submitting.Contains(uid) || _completing.Contains(uid) || _taking.Contains(uid) || _movingInputs.Contains(uid) ||
+                !_containers.TryGetContainer(uid, FrontlineRefineryComponent.InputContainerId, out var input) ||
+                input != refinery.InputContainer ||
+                !_containers.TryGetContainer(uid, FrontlineRefineryComponent.OutputContainerId, out var output) ||
+                output != refinery.OutputContainer)
+                throw new InvalidDataException("Refinery identity, containers or economic operation is unsettled.");
+        }
+        return result;
+    }
+
+    private List<WarRefineryStackSnapshot> CaptureStacks(BaseContainer container)
+    {
+        var result = new List<WarRefineryStackSnapshot>();
+        var seen = new HashSet<EntityUid>();
+        foreach (var uid in container.ContainedEntities)
+        {
+            if (!seen.Add(uid) || !IsCompletionEntityAlive(uid) ||
+                !_containers.TryGetContainingContainer(uid, out var owner) || owner != container ||
+                !TryComp<StackComponent>(uid, out var stack) || stack.Unlimited)
+                throw new InvalidDataException("Refinery contains an invalid or unsettled physical claim.");
+            var entry = new WarRefineryStackSnapshot(stack.StackTypeId.Id,
+                MetaData(uid).EntityPrototype?.ID ?? throw new InvalidDataException("Refinery stack has no prototype."),
+                stack.Count);
+            ValidateStack(entry);
+            result.Add(entry);
+        }
+        return result;
+    }
+
+    public List<WarRefinerySnapshot> CaptureSnapshot(MapId mapId)
+    {
+        var result = new List<WarRefinerySnapshot>();
+        foreach (var (id, entity) in GetRefineries(mapId))
+        {
+            if (_restoring.Contains(entity.Owner))
+                throw new InvalidDataException("Refinery restoration must settle before capture.");
+            result.Add(new WarRefinerySnapshot(id,
+                MetaData(entity.Owner).EntityPrototype?.ID ?? throw new InvalidDataException("Refinery has no prototype."),
+                entity.Comp.Jobs.Select(job => new WarRefineryJobSnapshot(job.Recipe.Id, job.Remaining.Ticks)).ToList(),
+                CaptureStacks(entity.Comp.InputContainer), CaptureStacks(entity.Comp.OutputContainer)));
+        }
+        ValidateSnapshot(mapId, result);
+        return result;
+    }
+
+    private void ValidateStack(WarRefineryStackSnapshot entry)
+    {
+        if (entry == null || string.IsNullOrWhiteSpace(entry.StackId) || string.IsNullOrWhiteSpace(entry.Prototype) ||
+            !IsSpawnableStack(new ProtoId<StackPrototype>(entry.StackId)) ||
+            !_prototypes.TryIndex(new EntProtoId(entry.Prototype), out var prototype) || prototype.Abstract ||
+            !prototype.TryGetComponent<StackComponent>(out var stack, _componentFactory) ||
+            stack.Unlimited || stack.StackTypeId.Id != entry.StackId || entry.Count <= 0 ||
+            entry.Count > _stack.GetMaxCount(stack))
+            throw new InvalidDataException("Invalid refinery stack prototype, type or count.");
+    }
+
+    internal void ValidateSnapshot(MapId mapId, List<WarRefinerySnapshot> entries)
+    {
+        var refineries = GetRefineries(mapId);
+        if (entries.Count != refineries.Count)
+            throw new InvalidDataException("Refinery snapshot must cover every map refinery.");
+        var seen = new HashSet<string>();
+        foreach (var entry in entries)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.RefineryId) || !seen.Add(entry.RefineryId) ||
+                !refineries.TryGetValue(entry.RefineryId, out var entity) ||
+                string.IsNullOrWhiteSpace(entry.Prototype) || MetaData(entity.Owner).EntityPrototype?.ID != entry.Prototype ||
+                !_prototypes.TryIndex(new EntProtoId(entry.Prototype), out var prototype) || prototype.Abstract ||
+                !prototype.HasComp<FrontlineRefineryComponent>(_componentFactory) ||
+                entry.Jobs == null || entry.Inputs == null || entry.Outputs == null)
+                throw new InvalidDataException("Invalid refinery identity, prototype or claims.");
+            foreach (var job in entry.Jobs)
+            {
+                if (job == null || string.IsNullOrWhiteSpace(job.Recipe) ||
+                    !_prototypes.TryIndex(new ProtoId<FrontlineRefineryRecipePrototype>(job.Recipe), out var recipe) ||
+                    !IsValidRecipe(recipe) || job.RemainingTicks < 0 || job.RemainingTicks > recipe.Duration.Ticks)
+                    throw new InvalidDataException("Invalid paid refinery recipe or remaining time.");
+            }
+            foreach (var stack in entry.Inputs.Concat(entry.Outputs))
+                ValidateStack(stack);
+        }
+    }
+
+    internal void StageSnapshot(MapId mapId, List<WarRefinerySnapshot> entries, List<EntityUid> staged,
+        List<EntityUid> restoring)
+    {
+        var refineries = GetRefineries(mapId);
+        // v1 restores onto clean mapper machines only, never overwrites another paid ledger.
+        foreach (var entity in refineries.Values)
+        {
+            if (entity.Comp.Jobs.Count != 0 || entity.Comp.InputContainer.ContainedEntities.Count != 0 ||
+                entity.Comp.OutputContainer.ContainedEntities.Count != 0 || !_restoring.Add(entity.Owner))
+                throw new InvalidDataException("Refinery restore requires a clean mapper machine.");
+            restoring.Add(entity.Owner);
+        }
+        foreach (var entry in entries)
+        {
+            var entity = refineries[entry.RefineryId];
+            StageStacks(entity, entity.Comp.InputContainer, entry.Inputs);
+            StageStacks(entity, entity.Comp.OutputContainer, entry.Outputs);
+        }
+        ValidateStagedSnapshot(mapId, entries, staged);
+
+        void StageStacks(Entity<FrontlineRefineryComponent> entity, BaseContainer container,
+            List<WarRefineryStackSnapshot> stacks)
+        {
+            foreach (var entry in stacks)
+            {
+                if (!IsCompletionEntityAlive(entity.Owner))
+                    throw new InvalidDataException("Refinery was lost during staging.");
+                var uid = Spawn(new EntProtoId(entry.Prototype));
+                staged.Add(uid); // Track before eventful SetCount and Insert, as for completion.
+                if (!IsCompletionEntityAlive(uid) || !TryComp<StackComponent>(uid, out var stack) ||
+                    stack.Unlimited || stack.StackTypeId.Id != entry.StackId)
+                    throw new InvalidDataException("Restored refinery stack did not initialize correctly.");
+                _stack.SetCount((uid, stack), entry.Count);
+                if (!IsCompletionEntityAlive(entity.Owner) || !IsCompletionEntityAlive(uid) ||
+                    !_containers.Insert(uid, container) || !IsCompletionEntityAlive(uid) ||
+                    !container.Contains(uid) || stack.Count != entry.Count || stack.StackTypeId.Id != entry.StackId)
+                    throw new InvalidDataException("Restored refinery stack was not retained exactly.");
+            }
+        }
+    }
+
+    internal void ValidateStagedSnapshot(MapId mapId, List<WarRefinerySnapshot> entries,
+        List<EntityUid> staged, bool committed = false)
+    {
+        ValidateSnapshot(mapId, entries);
+        var refineries = GetRefineries(mapId);
+        if (staged.Count != entries.Sum(entry => entry.Inputs.Count + entry.Outputs.Count) ||
+            staged.Distinct().Count() != staged.Count)
+            throw new InvalidDataException("Restored refinery physical claims changed.");
+        var index = 0;
+        foreach (var entry in entries)
+        {
+            var entity = refineries[entry.RefineryId];
+            if (!_restoring.Contains(entity.Owner) ||
+                (committed ? !entity.Comp.Jobs.Select(job => new WarRefineryJobSnapshot(job.Recipe.Id, job.Remaining.Ticks))
+                    .SequenceEqual(entry.Jobs) : entity.Comp.Jobs.Count != 0))
+                throw new InvalidDataException("Restored refinery queue changed.");
+            CheckStacks(entity.Comp.InputContainer, entry.Inputs);
+            CheckStacks(entity.Comp.OutputContainer, entry.Outputs);
+        }
+
+        void CheckStacks(BaseContainer container, List<WarRefineryStackSnapshot> stacks)
+        {
+            var expected = staged.Skip(index).Take(stacks.Count).ToArray();
+            if (!container.ContainedEntities.SequenceEqual(expected) ||
+                !CaptureStacks(container).SequenceEqual(stacks))
+                throw new InvalidDataException("Restored refinery contents changed during native callbacks.");
+            index += stacks.Count;
+        }
+    }
+
+    internal void CommitSnapshot(MapId mapId, List<WarRefinerySnapshot> entries, List<EntityUid> staged)
+    {
+        ValidateStagedSnapshot(mapId, entries, staged);
+        var refineries = GetRefineries(mapId);
+        foreach (var entry in entries)
+        {
+            var entity = refineries[entry.RefineryId];
+            entity.Comp.Jobs = entry.Jobs.Select(job => new FrontlineRefineryJob
+            {
+                Recipe = new ProtoId<FrontlineRefineryRecipePrototype>(job.Recipe),
+                Remaining = TimeSpan.FromTicks(job.RemainingTicks),
+            }).ToList();
+            if (entity.Comp.Jobs.Count > 0)
+                _active.Add(entity.Owner); // Restore is after MapInit; resume through native Update only.
+        }
+        ValidateStagedSnapshot(mapId, entries, staged, committed: true);
+    }
+
+    internal void DeleteStagedStacks(List<EntityUid> staged)
+    {
+        // Queue every claim before eventful deletion; cleanup exceptions still abort map acceptance.
+        Exception? queueFailure = null;
+        foreach (var uid in staged)
+        {
+            if (TerminatingOrDeleted(uid))
+                continue;
+
+            try
+            {
+                QueueDel(uid);
+            }
+            catch (Exception e)
+            {
+                // Native QueueDeleteEntity queues before notifying; quarantine the remaining claims too.
+                queueFailure ??= e;
+            }
+        }
+        if (queueFailure != null)
+            throw queueFailure;
+        foreach (var uid in staged)
+        {
+            if (!TerminatingOrDeleted(uid))
+                Del(uid);
+        }
+    }
+
+    internal void FinishSnapshotRestore(List<EntityUid> restoring)
+    {
+        foreach (var uid in restoring)
+            _restoring.Remove(uid);
+    }
+
     public override void Update(float frameTime)
     {
         base.Update(frameTime);
@@ -604,26 +851,25 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
                 continue;
             }
 
-            if (MetaData(uid).EntityPaused || _completing.Contains(uid))
+            if (MetaData(uid).EntityPaused || _completing.Contains(uid) || _restoring.Contains(uid))
                 continue;
 
             var jobsBefore = refinery.Jobs.Count;
 
-            for (var i = refinery.Jobs.Count - 1; i >= 0; i--)
+            // Invalid paid jobs stay quarantined in the ledger; capture/restore refuses them.
+            var processing = refinery.Jobs
+                .Where(job => !string.IsNullOrWhiteSpace(job.Recipe.Id) &&
+                    _prototypes.TryIndex(job.Recipe, out var recipe) && IsValidRecipe(recipe))
+                .Take(Math.Max(1, refinery.ProcessingSlots))
+                .Reverse().ToArray();
+            foreach (var job in processing)
             {
-                var job = refinery.Jobs[i];
-                if (!_prototypes.TryIndex(job.Recipe, out var recipe) || !IsValidRecipe(recipe))
-                    refinery.Jobs.RemoveAt(i);
-            }
-
-            var processing = Math.Min(Math.Max(1, refinery.ProcessingSlots), refinery.Jobs.Count);
-            for (var i = processing - 1; i >= 0; i--)
-            {
-                var job = refinery.Jobs[i];
-                if (!_prototypes.TryIndex(job.Recipe, out var recipe) || !IsValidRecipe(recipe))
+                if (string.IsNullOrWhiteSpace(job.Recipe.Id) ||
+                    !_prototypes.TryIndex(job.Recipe, out var recipe) || !IsValidRecipe(recipe))
                     continue;
 
-                job.Remaining -= TimeSpan.FromSeconds(frameTime);
+                job.Remaining = TimeSpan.FromTicks(Math.Max(0,
+                    job.Remaining.Ticks - TimeSpan.FromSeconds(frameTime).Ticks));
                 if (job.Remaining > TimeSpan.Zero)
                     continue;
 

@@ -248,6 +248,7 @@ entities:
       parent: 2
     - type: FrontlineResourceSpawnPoint
       fieldId: frontline-test-iron
+      slotId: iron-west
 - proto: FrontlineResourceSpawnPoint
   entities:
   - uid: 21
@@ -257,6 +258,7 @@ entities:
       parent: 2
     - type: FrontlineResourceSpawnPoint
       fieldId: frontline-test-iron
+      slotId: iron-east
 - proto: Pickaxe
   entities:
   - uid: 22

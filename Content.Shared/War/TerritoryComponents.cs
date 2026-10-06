@@ -152,6 +152,9 @@ public sealed partial class FrontlineResourceSpawnPointComponent : Component
 {
     [DataField(required: true)]
     public string FieldId = string.Empty;
+
+    [DataField]
+    public string SlotId = string.Empty;
 }
 
 [RegisterComponent]
@@ -177,6 +180,9 @@ public sealed partial class FrontlineResourceNodeComponent : Component
 
     [DataField]
     public string FieldId = string.Empty;
+
+    [DataField]
+    public string SlotId = string.Empty;
 
     public EntityUid Field;
     public EntityUid SpawnPoint;

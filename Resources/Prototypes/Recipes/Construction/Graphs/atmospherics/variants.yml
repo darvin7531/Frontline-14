@@ -1,0 +1,634 @@
+# ponytail: one file per kind bounds default LoadDirectory per-file PLINQ variant writers.
+# Does not serialize concurrent explicit loads/reloads; retain native CreateVariants collections.
+# Relocated content only; original licensing/import references and asset paths are unchanged.
+
+# Source: Resources/Prototypes/Recipes/Construction/Graphs/atmospherics/atmos_binary.yml
+- type: constructionGraph
+  id: !type:CreateVariants
+    values: [ GasBinary, GasBinaryAlt1, GasBinaryAlt2 ]
+  start: start
+  graph:
+  - node: start
+    edges:
+    - to: pressurepump
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: volumepump
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: passivegate
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: valve
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: signalvalve
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: pressureregulator
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: port
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: dualportventpump
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: radiator
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: bendradiator
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+  - node: pressurepump
+    entity: !type:CreateVariants
+      values: [ GasPressurePump, GasPressurePumpAlt1, GasPressurePumpAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: volumepump
+    entity: !type:CreateVariants
+      values: [ GasVolumePump, GasVolumePumpAlt1, GasVolumePumpAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: passivegate
+    entity: !type:CreateVariants
+      values: [ GasPassiveGate, GasPassiveGateAlt1, GasPassiveGateAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: valve
+    entity: !type:CreateVariants
+      values: [ GasValve, GasValveAlt1, GasValveAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: signalvalve
+    entity: !type:CreateVariants
+      values: [ SignalControlledValve, SignalControlledValveAlt1, SignalControlledValveAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: pressureregulator
+    entity: !type:CreateVariants
+      values: [ GasPressureRegulator, GasPressureRegulatorAlt1, GasPressureRegulatorAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: port
+    entity: !type:CreateVariants
+      values: [ GasPort, GasPortAlt1, GasPortAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: dualportventpump
+    entity: !type:CreateVariants
+      values: [ GasDualPortVentPump, GasDualPortVentPumpAlt1, GasDualPortVentPumpAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Screwing
+        doAfter: 1
+      - tool: Welding
+        doAfter: 1
+
+  - node: radiator
+    entity: HeatExchanger
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Screwing
+        doAfter: 1
+      - tool: Welding
+        doAfter: 1
+
+  - node: bendradiator
+    entity: HeatExchangerBend
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Screwing
+        doAfter: 1
+      - tool: Welding
+        doAfter: 1
+
+# Source: Resources/Prototypes/Recipes/Construction/Graphs/atmospherics/atmos_pipes.yml
+- type: constructionGraph
+  id: !type:CreateVariants
+    values: [ GasPipe, GasPipeAlt1, GasPipeAlt2 ]
+  start: start
+  graph:
+  - node: start
+    edges:
+    - to: half
+      steps:
+      - material: Steel
+        amount: 1
+        doAfter: 1
+
+    - to: straight
+      steps:
+      - material: Steel
+        amount: 1
+        doAfter: 1
+
+    - to: bend
+      steps:
+      - material: Steel
+        amount: 1
+        doAfter: 1
+
+    - to: tjunction
+      steps:
+      - material: Steel
+        amount: 1
+        doAfter: 1
+
+    - to: fourway
+      steps:
+      - material: Steel
+        amount: 1
+        doAfter: 1
+
+  - node: half
+    entity: !type:CreateVariants
+      values: [ GasPipeHalf, GasPipeHalfAlt1, GasPipeHalfAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 1
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: straight
+    entity: !type:CreateVariants
+      values: [ GasPipeStraight, GasPipeStraightAlt1, GasPipeStraightAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 1
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: bend
+    entity: !type:CreateVariants
+      values: [ GasPipeBend, GasPipeBendAlt1, GasPipeBendAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 1
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: tjunction
+    entity: !type:CreateVariants
+      values: [ GasPipeTJunction, GasPipeTJunctionAlt1, GasPipeTJunctionAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 1
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: fourway
+    entity: !type:CreateVariants
+      values: [ GasPipeFourway, GasPipeFourwayAlt1, GasPipeFourwayAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 1
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+# Source: Resources/Prototypes/Recipes/Construction/Graphs/atmospherics/atmos_trinary.yml
+- type: constructionGraph
+  id: !type:CreateVariants
+    values: [ GasTrinary, GasTrinaryAlt1, GasTrinaryAlt2 ]
+  start: start
+  graph:
+  - node: start
+    edges:
+    # Filter
+    - to: filter
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: filterflipped
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    # Mixer
+    - to: mixer
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: mixerflipped
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: pneumaticvalve
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+  # Filter
+  - node: filter
+    entity: !type:CreateVariants
+      values: [ GasFilter, GasFilterAlt1, GasFilterAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: filterflipped
+    entity: !type:CreateVariants
+      values: [ GasFilterFlipped, GasFilterFlippedAlt1, GasFilterFlippedAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  # Mixer
+  - node: mixer
+    entity: !type:CreateVariants
+      values: [ GasMixer, GasMixerAlt1, GasMixerAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: mixerflipped
+    entity: !type:CreateVariants
+      values: [ GasMixerFlipped, GasMixerFlippedAlt1, GasMixerFlippedAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+  - node: pneumaticvalve
+    entity: !type:CreateVariants
+      values: [ PressureControlledValve, PressureControlledValveAlt1, PressureControlledValveAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+# Source: Resources/Prototypes/Recipes/Construction/Graphs/atmospherics/atmos_unary.yml
+- type: constructionGraph
+  id: !type:CreateVariants
+    values: [ GasUnary, GasUnaryAlt1, GasUnaryAlt2 ]
+  start: start
+  graph:
+  - node: start
+    edges:
+    - to: ventpump
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: passivevent
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: ventscrubber
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+    - to: outletinjector
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+  - node: ventpump
+    entity: !type:CreateVariants
+      values: [ GasVentPump, GasVentPumpAlt1, GasVentPumpAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Screwing
+        doAfter: 1
+      - tool: Welding
+        doAfter: 1
+
+  - node: passivevent
+    entity: !type:CreateVariants
+      values: [ GasPassiveVent, GasPassiveVentAlt1, GasPassiveVentAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Screwing
+        doAfter: 1
+      - tool: Welding
+        doAfter: 1
+
+  - node: ventscrubber
+    entity: !type:CreateVariants
+      values: [ GasVentScrubber, GasVentScrubberAlt1, GasVentScrubberAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Screwing
+        doAfter: 1
+      - tool: Welding
+        doAfter: 1
+
+  - node: outletinjector
+    entity: !type:CreateVariants
+      values: [ GasOutletInjector, GasOutletInjectorAlt1, GasOutletInjectorAlt2 ]
+    edges:
+    - to: start
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      steps:
+      - tool: Welding
+        doAfter: 1
+
+# Source: Resources/Prototypes/Recipes/Construction/Graphs/atmospherics/gas_pipe_sensor.yml
+- type: constructionGraph
+  id: !type:CreateVariants
+    values: [ GasPipeSensor, GasPipeSensorAlt1, GasPipeSensorAlt2 ]
+  start: start
+  graph:
+  - node: start
+    edges:
+    - to: sensor
+      steps:
+      - material: Steel
+        amount: 2
+        doAfter: 1
+
+  - node: sensor
+    entity: !type:CreateVariants
+      values: [ GasPipeSensor, GasPipeSensorAlt1, GasPipeSensorAlt2 ]
+    actions:
+    - !type:SetAnchor
+    edges:
+    - to: start
+      completed:
+      - !type:SpawnPrototype
+        prototype: SheetSteel1
+        amount: 2
+      - !type:DeleteEntity
+      conditions:
+      - !type:EntityAnchored
+        anchored: false
+      steps:
+      - tool: Welding
+        doAfter: 1

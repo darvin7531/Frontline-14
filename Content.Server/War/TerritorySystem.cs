@@ -11,12 +11,14 @@ public sealed partial class TerritorySystem : EntitySystem
         return GetTerritories(mapId).Count(territory => TryGetOwner(territory, out var owner, mapId) && owner == faction);
     }
 
-    public HashSet<TerritoryId> GetTerritories(MapId? mapId = null)
+    public HashSet<TerritoryId> GetTerritories(MapId? mapId = null, bool includePaused = false)
     {
         var territoryIds = new HashSet<TerritoryId>();
-        var territories = EntityQueryEnumerator<TerritoryComponent, TransformComponent>();
+        var territories = AllEntityQuery<TerritoryComponent, TransformComponent>();
         while (territories.MoveNext(out var uid, out var territory, out var transform))
         {
+            if (!includePaused && MetaData(uid).EntityPaused)
+                continue;
             if (!TerminatingOrDeleted(uid) && (mapId == null || transform.MapID == mapId))
                 territoryIds.Add(new TerritoryId(territory.TerritoryId));
         }
@@ -62,11 +64,13 @@ public sealed partial class TerritorySystem : EntitySystem
         return faction != default;
     }
 
-    public bool Contains(TerritoryId territory, EntityCoordinates coordinates)
+    public bool Contains(TerritoryId territory, EntityCoordinates coordinates, bool includePaused = false)
     {
-        var territories = EntityQueryEnumerator<TerritoryComponent, TransformComponent>();
+        var territories = AllEntityQuery<TerritoryComponent, TransformComponent>();
         while (territories.MoveNext(out var uid, out var definition, out var xform))
         {
+            if (!includePaused && MetaData(uid).EntityPaused)
+                continue;
             if (TerminatingOrDeleted(uid) || definition.TerritoryId != territory.Id || xform.GridUid != coordinates.EntityId)
                 continue;
 

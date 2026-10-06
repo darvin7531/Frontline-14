@@ -63,6 +63,18 @@ public sealed partial class FrontlineStockpileSystem : EntitySystem
                  _prototypes.TryIndex(product.Entity.Value, out var entity) && !entity.Abstract));
     }
 
+    public bool ValidCounts(IReadOnlyDictionary<string, int> counts) =>
+        counts.All(entry => entry.Value >= 0 && TryProduct(entry.Key, out _));
+
+    /// <summary>Replace, never add to prototype starting supplies. Caller preflights the entire snapshot.</summary>
+    public void RestoreCounts(EntityUid core, IReadOnlyDictionary<string, int> counts)
+    {
+        var stockpile = Comp<FrontlineStockpileComponent>(core);
+        stockpile.Counts.Clear();
+        foreach (var (product, count) in counts)
+            stockpile.Counts[product] = count;
+    }
+
     public override void Initialize()
     {
         SubscribeLocalEvent<FrontlineStockpileComponent, BeforeActivatableUIOpenEvent>(OnOpen);
