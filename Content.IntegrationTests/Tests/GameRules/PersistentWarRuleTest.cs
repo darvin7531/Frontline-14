@@ -1301,10 +1301,19 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
-    [TestCase(false)]
-    [TestCase(true)]
+    public enum FactorySnapshotRecovery
+    {
+        None,
+        MissingPrimary,
+        TruncatedPrimary,
+    }
+
+    [TestCase(false, FactorySnapshotRecovery.None)]
+    [TestCase(true, FactorySnapshotRecovery.None)]
+    [TestCase(false, FactorySnapshotRecovery.MissingPrimary)]
+    [TestCase(false, FactorySnapshotRecovery.TruncatedPrimary)]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
-    public async Task TechnicalRestartPreservesPaidFactoryQueueAndRetainedCrates(bool writeFault)
+    public async Task TechnicalRestartPreservesPaidFactoryQueueAndRetainedCrates(bool writeFault, FactorySnapshotRecovery recovery)
     {
         ProtoId<FrontlineFactoryRecipePrototype> recipe = "FrontlineFactoryBrutepack";
         ProtoId<FrontlineSupplyProductPrototype> product = "Brutepack1";
@@ -1330,6 +1339,12 @@ public sealed class PersistentWarRuleTest : GameTest
         var submitted = false;
         var inputAmount = 3;
         Exception failure = null;
+
+        var recoverBackup = recovery != FactorySnapshotRecovery.None;
+        ProtoId<FrontlineSupplyProductPrototype> retainedProduct = recoverBackup ? "SoldierSupplies" : product;
+        var retainedAmount = recoverBackup ? 7 : 2;
+        string committedBackup = null;
+        string interrupted = null;
 
         // base_test.yaml has factories at (5,-20) and (45,-20); anchoring snaps to tile centers.
         // Test lookup only: persistence uses stable mapper factory IDs, never positions or UIDs.
@@ -1358,11 +1373,12 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(SComp<MetaDataComponent>(uid).EntityLifeStage, Is.LessThan(EntityLifeStage.Terminating));
                 Assert.That(SComp<MetaDataComponent>(uid).EntityPrototype?.ID, Is.EqualTo("FrontlineFactoryMedicalCrate"));
                 var crate = SComp<FrontlineSupplyCrateComponent>(uid);
-                Assert.That(crate.Product, Is.EqualTo(product));
-                Assert.That(crate.Amount, Is.EqualTo(2));
+                var retained = uid == outputs.ContainedEntities.First();
+                Assert.That(crate.Product, Is.EqualTo(retained ? retainedProduct : product));
+                Assert.That(crate.Amount, Is.EqualTo(retained ? retainedAmount : 2));
             }
             Assert.That(outputs.ContainedEntities.Sum(uid => SComp<FrontlineSupplyCrateComponent>(uid).Amount),
-                Is.EqualTo(crateCount * 2));
+                Is.EqualTo(retainedAmount + (crateCount - 1) * 2));
             var other = FindFactory(new Vector2(45.5f, -19.5f));
             Assert.That(factories.GetJobs(other), Is.Empty, "Do not restore the paid claim into both factories.");
             Assert.That(containers.TryGetContainer(other, FrontlineFactoryComponent.InputContainerId, out var otherInputs), Is.True);
@@ -1434,8 +1450,18 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Product, Is.EqualTo(product));
                 Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Amount, Is.EqualTo(2));
             });
-            await Server.WaitPost(() => submitted = factories.TrySubmitPlayerJob(factory,
-                session.AttachedEntity!.Value, recipe));
+            await Server.WaitPost(() =>
+            {
+                if (recoverBackup)
+                {
+                    // A real completed batch with public per-entity metadata distinct from prototype defaults.
+                    var crate = SComp<FrontlineSupplyCrateComponent>(SComp<FrontlineFactoryComponent>(factory)
+                        .OutputContainer.ContainedEntities.Single());
+                    crate.Product = retainedProduct;
+                    crate.Amount = retainedAmount;
+                }
+                submitted = factories.TrySubmitPlayerJob(factory, session.AttachedEntity!.Value, recipe);
+            });
             await Pair.RunTicksSync(30);
             await Server.WaitAssertion(() =>
             {
@@ -1516,13 +1542,61 @@ public sealed class PersistentWarRuleTest : GameTest
                 oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
                 beforeRestart = war.State!;
                 ticker.RestartRound();
-                ticker.SetGamePreset("PersistentWar");
-                ticker.ToggleReadyAll(true);
-                ticker.StartRound(true);
-                factory = FindFactory(new Vector2(5.5f, -19.5f));
-                // Capture through the owning read API before any native Update spends restored progress.
-                restoredJobs = factories.GetJobs(factory).ToArray();
+                try
+                {
+                    if (recoverBackup)
+                    {
+                        // Rotate actual committed native bytes, not a hand-built snapshot or entity IDs.
+                        data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                        data.Rename(WarStrategicSnapshotSystem.SavePath, WarStrategicSnapshotSystem.BackupPath);
+                        using (var reader = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.BackupPath)))
+                            committedBackup = reader.ReadToEnd();
+                        var committed = JsonSerializer.Deserialize<WarStrategicSnapshot>(committedBackup)!;
+                        Assert.That(committed.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+                        Assert.That(committed.WarId, Is.EqualTo(beforeRestart.WarId));
+                        var paid = committed.Factories.Single(entry => entry.FactoryId == "frontline-test-factory-west");
+                        Assert.That(paid.Jobs.Select(job => (job.Recipe, job.RemainingTicks)),
+                            Is.EqualTo(new[] { (recipe.Id, remaining.Ticks) }));
+                        Assert.That(paid.Inputs.Select(stack => (stack.StackId, stack.Prototype, stack.Count)),
+                            Is.EqualTo(new[] { ("BasicMaterials", "BasicMaterials1", inputAmount) }));
+                        Assert.That(paid.Outputs.Select(crate => (crate.Prototype, crate.Product, crate.Amount)),
+                            Is.EqualTo(new[] { ("FrontlineFactoryMedicalCrate", retainedProduct.Id, retainedAmount) }));
+                        interrupted = committedBackup[..^1]; // Remove the closing object delimiter: syntax, not header/semantic invalidity.
+                        Assert.Catch<JsonException>(() => JsonSerializer.Deserialize<WarStrategicSnapshot>(interrupted));
+                        if (recovery == FactorySnapshotRecovery.TruncatedPrimary)
+                        {
+                            using var writer = new StreamWriter(data.OpenWrite(WarStrategicSnapshotSystem.SavePath));
+                            writer.Write(interrupted);
+                        }
+                        Assert.That(data.Exists(WarStrategicSnapshotSystem.SavePath),
+                            Is.EqualTo(recovery == FactorySnapshotRecovery.TruncatedPrimary));
+                        // Uncommitted interrupted output is never a recovery candidate, even without a primary.
+                        using (var writer = new StreamWriter(data.OpenWrite(WarStrategicSnapshotSystem.TemporaryPath)))
+                            writer.Write(interrupted);
+                    }
+                    ticker.SetGamePreset("PersistentWar");
+                    ticker.ToggleReadyAll(true);
+                    Assert.DoesNotThrow(() => ticker.StartRound(true),
+                        "A syntactically truncated or missing primary must recover the same-war committed backup before player spawning.");
+                    Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound), "Backup recovery must finish native round startup.");
+                    factory = FindFactory(new Vector2(5.5f, -19.5f));
+                    // Capture through the owning read API before any native Update spends restored progress.
+                    restoredJobs = factories.GetJobs(factory).ToArray();
+                    if (recoverBackup)
+                    {
+                        Assert.That(JsonSerializer.Serialize(factories.CaptureSnapshot(ticker.DefaultMap).OrderBy(entry => entry.FactoryId)),
+                            Is.EqualTo(JsonSerializer.Serialize(JsonSerializer.Deserialize<WarStrategicSnapshot>(committedBackup)!
+                                .Factories.OrderBy(entry => entry.FactoryId))));
+                    }
+                }
+                catch (Exception e)
+                {
+                    failure = e; // A behavioral RED must reach the test thread, not kill the posted server callback.
+                }
             });
+            Assert.That(Server.UnhandledException, Is.Null);
+            if (failure != null)
+                throw failure;
             await Server.WaitAssertion(() =>
             {
                 Assert.That(restoredJobs, Has.Length.EqualTo(1),
@@ -1534,8 +1608,15 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(war.State, Is.EqualTo(beforeRestart));
                 Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldFactory) || SEntMan.EntityExists(input), Is.False);
                 Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
-                using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                using var stream = data.OpenRead(recoverBackup ? WarStrategicSnapshotSystem.BackupPath : WarStrategicSnapshotSystem.SavePath);
                 var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                if (recoverBackup)
+                {
+                    using var backup = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.BackupPath));
+                    Assert.That(backup.ReadToEnd(), Is.EqualTo(committedBackup), "Recovery must preserve the committed backup claim.");
+                    using var temporary = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.TemporaryPath));
+                    Assert.That(temporary.ReadToEnd(), Is.EqualTo(interrupted), "Uncommitted temporary output must be ignored.");
+                }
                 Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
                 Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
                 Assert.That(saved.Factories, Has.Count.EqualTo(2));
@@ -1547,7 +1628,7 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(claim.Inputs.Select(stack => (stack.StackId, stack.Prototype, stack.Count)),
                     Is.EqualTo(new[] { ("BasicMaterials", "BasicMaterials1", inputAmount) }));
                 Assert.That(claim.Outputs.Select(crate => (crate.Prototype, crate.Product, crate.Amount)),
-                    Is.EqualTo(new[] { ("FrontlineFactoryMedicalCrate", product.Id, 2) }));
+                    Is.EqualTo(new[] { ("FrontlineFactoryMedicalCrate", retainedProduct.Id, retainedAmount) }));
                 var otherClaim = saved.Factories.Single(entry => entry.FactoryId == "frontline-test-factory-east");
                 Assert.That(otherClaim.Prototype, Is.EqualTo("FrontlineFactory"));
                 Assert.That(otherClaim.Jobs, Is.Empty);
