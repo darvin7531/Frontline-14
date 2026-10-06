@@ -1,6 +1,10 @@
 #nullable enable
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Content.IntegrationTests.Fixtures;
+using Content.Shared.Construction.Prototypes;
+using Robust.Shared.ContentPack;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Serialization.Markdown;
@@ -11,6 +15,70 @@ namespace Content.IntegrationTests.Tests.PrototypeTests;
 
 public sealed class PrototypeTests : GameTest
 {
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task ProductionVariantCollectionsPreserveOrderedMembership(bool client)
+    {
+        RobustIntegrationTest.IntegrationInstance instance = client ? Pair.Client : Pair.Server;
+        var prototypes = instance.ResolveDependency<IPrototypeManager>();
+        var resources = instance.ResolveDependency<IResourceManager>();
+        await instance.WaitAssertion(() =>
+        {
+            var collections = new List<(string Kind, string File, string[] Members)>();
+            foreach (var root in new[] { "/EnginePrototypes/", "/Prototypes/" })
+            {
+                foreach (var path in resources.ContentFindFiles(root)
+                             .Where(path => path.Extension == "yml" && !path.Filename.StartsWith(".")))
+                {
+                    using var reader = new StreamReader(resources.ContentFileRead(path));
+                    collections.AddRange(PrototypeVariantLayoutTest.ReadCollections(reader, path.ToString()));
+                }
+            }
+
+            Assert.That(collections, Is.Not.Empty);
+            Assert.Multiple(() =>
+            {
+                foreach (var (kind, file, members) in collections)
+                {
+                    // Follow the native client's ignored kinds; never skip an unregistered server kind.
+                    if (client && prototypes.IsIgnored(kind))
+                        continue;
+
+                    Assert.That(prototypes.IsIgnored(kind), Is.False, $"{kind} in {file}");
+                    switch (kind)
+                    {
+                        case "entity":
+                            AssertVariantCollection<EntityPrototype>(prototypes, members, file);
+                            break;
+                        case "constructionGraph":
+                            AssertVariantCollection<ConstructionGraphPrototype>(prototypes, members, file);
+                            break;
+                        case "construction":
+                            AssertVariantCollection<ConstructionPrototype>(prototypes, members, file);
+                            break;
+                        default:
+                            Assert.Fail($"Add typed variant-membership coverage for {kind} in {file}.");
+                            break;
+                    }
+                }
+            });
+        });
+    }
+
+    private static void AssertVariantCollection<T>(IPrototypeManager prototypes, string[] members, string file)
+        where T : class, IPrototype
+    {
+        Assert.That(prototypes.TryGetKindFrom<T>(out _), Is.True, $"{typeof(T).Name} in {file}");
+        var expected = members.Select(member => new ProtoId<T>(member)).ToArray();
+        foreach (var member in expected)
+        {
+            var message = $"{typeof(T).Name} {member} in {file}";
+            Assert.That(prototypes.HasIndex(member), Is.True, message);
+            Assert.That(prototypes.TryGetVariantCollection(member, out var actual), Is.True, message);
+            Assert.That(actual, Is.EqualTo(expected), message);
+        }
+    }
+
     /// <summary>
     /// This test writes all known server prototypes as yaml files, then validates that the result is valid yaml.
     /// Can help prevent instances where prototypes have bad C# default values.
