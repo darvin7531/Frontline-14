@@ -271,7 +271,18 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
                 return;
             }
             using var stream = data.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            using var document = JsonDocument.Parse(stream);
+            JsonDocument parsed;
+            try
+            {
+                parsed = JsonDocument.Parse(stream);
+            }
+            catch (JsonException) when (path == SavePath && data.Exists(BackupPath))
+            {
+                // Recover syntax corruption only; schema and paid-claim validation still refuse invalid data.
+                using var backup = data.Open(BackupPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                parsed = JsonDocument.Parse(backup);
+            }
+            using var document = parsed;
             RejectDuplicateKeys(document.RootElement);
             var snapshot = document.RootElement.Deserialize<WarStrategicSnapshot>() ??
                            throw new InvalidDataException("Empty strategic snapshot.");
