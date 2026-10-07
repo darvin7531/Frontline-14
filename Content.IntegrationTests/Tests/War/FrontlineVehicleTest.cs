@@ -217,6 +217,7 @@ public sealed class FrontlineVehicleTest : InteractionTest
             Assert.That(enter.ClientExclusive, Is.False, "Entry must use the native network request.");
             verbs.ExecuteVerb(CTarget.Value, enter);
         });
+        await RunTicks(3);
         await AwaitEntry();
         await Server.WaitAssertion(() =>
         {
