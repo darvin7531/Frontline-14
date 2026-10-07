@@ -3,6 +3,7 @@ using System.Linq;
 using System.Numerics;
 using Content.Client.Gameplay;
 using Content.IntegrationTests.Tests.Interaction;
+using Content.Server.GameTicking;
 using Content.Shared.Interaction.Components;
 using Content.Shared.Inventory.VirtualItem;
 using Content.Shared.Mobs;
@@ -72,6 +73,9 @@ public sealed class FrontlineVehicleTest : InteractionTest
     public override async Task DoSetup()
     {
         await base.DoSetup();
+        // InteractionTest attaches the human directly; register its native ticker lifecycle too.
+        await Server.WaitPost(() => Server.System<GameTicker>().PlayerJoinGame(ServerSession!));
+        await RunTicks(5);
         for (var x = -8; x <= 8; x++)
         for (var y = -2; y <= 2; y++)
             await SetTile(Plating, FromServer(ToServer(PlayerCoords).Offset(new Vector2(x, y))), MapData.Grid);
@@ -181,11 +185,11 @@ public sealed class FrontlineVehicleTest : InteractionTest
                 var session = Server.ResolveDependency<IPlayerManager>().Sessions.Single();
                 Assert.That(session.UserId, Is.EqualTo(account));
                 Server.PlayerMan.SetAttachedEntity(session, original);
+                Server.System<GameTicker>().PlayerJoinGame(session);
             });
             await RunTicks(10);
             await Client.WaitPost(() => ClientSession = Client.Session!);
             CPlayer = ToClient(Player);
-            await Client.WaitPost(() => Client.ResolveDependency<IStateManager>().RequestStateChange<GameplayState>());
             await SetKey(EngineKeyFunctions.MoveRight, BoundKeyState.Up, cursorEntity: Target);
             await RunTicks(5);
         }
