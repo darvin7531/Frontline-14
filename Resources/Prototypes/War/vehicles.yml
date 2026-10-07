@@ -1,0 +1,159 @@
+# Native one-seat driving composition; concrete vehicle types only override data.
+# Temporary sprite is referenced in-place: janicart.rsi/meta.json, CC-BY-SA-3.0,
+# tgstation commit 40d89d11ea4a5cb81d61dc1018b46f4e7d32c62a. No copied art.
+- type: entity
+  id: FrontlineVehicleBase
+  abstract: true
+  categories: [ Frontline ]
+  components:
+  - type: Sprite
+    sprite: Objects/Vehicles/janicart.rsi
+    state: vehicle
+  - type: Clickable
+  - type: InteractionOutline
+  - type: InputMover
+  - type: MobMover
+  - type: MovementSpeedModifier
+    baseWalkSpeed: 2
+    baseSprintSpeed: 3
+    baseAcceleration: 20
+    baseFriction: 20
+  - type: GravityAffected
+  - type: Physics
+    bodyType: KinematicController
+  - type: Fixtures
+    fixtures:
+      body:
+        shape: !type:PhysShapeCircle
+          radius: 0.35
+        density: 100
+        mask:
+        - MobMask
+        layer:
+        - MobLayer
+  - type: Vehicle
+  - type: VehicleHandBlocker
+    blockedHands: 1
+  - type: ContainerVehicle
+    containerId: driver
+    ejectOperatorOnDisconnect: true
+    ejectOperatorOnDeath: true
+  - type: ContainerVehicleEntry
+    entryDelay: 1
+  - type: ContainerContainer
+    containers:
+      driver: !type:ContainerSlot
+
+- type: entity
+  id: FrontlineLogisticsTruck
+  parent: FrontlineVehicleBase
+  name: frontline logistics truck
+  description: A one-driver transport with ten physical cargo slots for sealed supply crates and material stacks.
+  components:
+  - type: MovementSpeedModifier
+    baseWalkSpeed: 3
+    baseSprintSpeed: 4.5
+  # ItemSlots ensures one ContainerSlot per entry; no grid-size limit on Huge crates.
+  # No swapping: loading a full truck must not replace an existing paid cargo entity.
+  - type: ItemSlots
+    slots:
+      cargo01:
+        priority: 1
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
+      cargo02:
+        priority: 2
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
+      cargo03:
+        priority: 3
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
+      cargo04:
+        priority: 4
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
+      cargo05:
+        priority: 5
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
+      cargo06:
+        priority: 6
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
+      cargo07:
+        priority: 7
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
+      cargo08:
+        priority: 8
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
+      cargo09:
+        priority: 9
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
+      cargo10:
+        priority: 10
+        swap: false
+        insertSound: null
+        ejectSound: null
+        ejectOnBreak: true
+        whitelist:
+          components:
+          - FrontlineSupplyCrate
+          - Stack
