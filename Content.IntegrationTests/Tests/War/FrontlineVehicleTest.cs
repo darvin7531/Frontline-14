@@ -63,6 +63,7 @@ public sealed class FrontlineVehicleTest : InteractionTest
     blockedHands: 1
   - type: ContainerVehicle
     containerId: driver
+    ejectOperatorOnDisconnect: true
   - type: ContainerVehicleEntry
     entryDelay: 1
   - type: ContainerContainer
