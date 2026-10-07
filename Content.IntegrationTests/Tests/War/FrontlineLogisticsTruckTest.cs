@@ -444,8 +444,9 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         }
     }
 
-    [Test]
-    public async Task ProductionTruckFatalDamagePreservesDriverAndAllCargo()
+    [TestCase(1)]
+    [TestCase(10000)]
+    public async Task ProductionTruckFatalDamagePreservesDriverAndAllCargo(int excessDamage)
     {
         await SetTile(Plating, grid: MapData.Grid);
         await AddGravity();
@@ -541,7 +542,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
             var thresholds = SEntMan.GetComponent<DestructibleComponent>(truck).Thresholds
                 .Select(threshold => threshold.Trigger).OfType<DamageTrigger>().ToArray();
             Assert.That(thresholds, Is.Not.Empty);
-            var damage = new DamageSpecifier(ProtoMan.Index(blunt), thresholds.Max(trigger => trigger.Damage) + 1);
+            var damage = new DamageSpecifier(ProtoMan.Index(blunt), thresholds.Max(trigger => trigger.Damage) + excessDamage);
             Assert.That(damageable.TryChangeDamage(truck, damage, ignoreResistances: true, ignoreGlobalModifiers: true), Is.True);
             Assert.That(SEntMan.IsQueuedForDeletion(truck), Is.True, "Native fatal damage must actually destroy the truck.");
         });
