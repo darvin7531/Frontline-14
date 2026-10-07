@@ -20,4 +20,8 @@ public sealed partial class ContainerVehicleComponent : Component
     /// <summary>Eject the operator on disconnect, but not on other player detachment.</summary>
     [DataField]
     public bool EjectOperatorOnDisconnect;
+
+    /// <summary>Eject a dead operator while preserving their physical body.</summary>
+    [DataField]
+    public bool EjectOperatorOnDeath;
 }

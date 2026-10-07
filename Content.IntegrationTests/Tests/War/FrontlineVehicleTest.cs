@@ -28,7 +28,7 @@ namespace Content.IntegrationTests.Tests.War;
 public sealed class FrontlineVehicleTest : InteractionTest
 {
     protected override string PlayerPrototype => "MobHuman";
-    public override PoolSettings PoolSettings => new() { Connected = true };
+    public override PoolSettings PoolSettings => new() { Connected = true, DummyTicker = false, Dirty = true };
 
     // Native composition only: one physical driver slot, no mech/key/cargo systems.
     [TestPrototypes]
@@ -66,6 +66,7 @@ public sealed class FrontlineVehicleTest : InteractionTest
   - type: ContainerVehicle
     containerId: driver
     ejectOperatorOnDisconnect: true
+    ejectOperatorOnDeath: true
   - type: ContainerVehicleEntry
     entryDelay: 1
   - type: ContainerContainer

@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Content.Shared.Buckle.Components;
+using Content.Shared.Mobs;
 using Content.Shared.Vehicle.Components;
 using Robust.Shared.Containers;
 using Robust.Shared.Enums;
@@ -11,6 +12,18 @@ namespace Content.Shared.Vehicle.Systems;
 public sealed partial class VehicleSystem
 {
     [Dependency] private INetManager _net = default!;
+
+    [SubscribeLocalEvent]
+    private void OnOperatorMobStateChanged(Entity<VehicleOperatorComponent> ent, ref MobStateChangedEvent args)
+    {
+        if (!_net.IsServer || _timing.ApplyingState || args.NewMobState != MobState.Dead ||
+            TerminatingOrDeleted(ent) || ent.Comp.Vehicle is not { } vehicle || TerminatingOrDeleted(vehicle) ||
+            !TryComp<ContainerVehicleComponent>(vehicle, out var containerVehicle) ||
+            !containerVehicle.EjectOperatorOnDeath || GetOperatorOrNull(vehicle) != ent.Owner)
+            return;
+
+        TryExit(vehicle);
+    }
 
     [SubscribeLocalEvent]
     private void OnOperatorPlayerDetached(Entity<VehicleOperatorComponent> ent, ref PlayerDetachedEvent args)
