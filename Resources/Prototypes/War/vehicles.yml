@@ -53,6 +53,19 @@
   - type: MovementSpeedModifier
     baseWalkSpeed: 3
     baseSprintSpeed: 4.5
+  - type: ContainerContainer
+    containers:
+      driver: !type:ContainerSlot
+      cargo01: !type:ContainerSlot
+      cargo02: !type:ContainerSlot
+      cargo03: !type:ContainerSlot
+      cargo04: !type:ContainerSlot
+      cargo05: !type:ContainerSlot
+      cargo06: !type:ContainerSlot
+      cargo07: !type:ContainerSlot
+      cargo08: !type:ContainerSlot
+      cargo09: !type:ContainerSlot
+      cargo10: !type:ContainerSlot
   # ItemSlots ensures one ContainerSlot per entry; no grid-size limit on Huge crates.
   # No swapping: loading a full truck must not replace an existing paid cargo entity.
   - type: ItemSlots
