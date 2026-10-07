@@ -423,7 +423,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
             return (distance, walk, sprint, clientWalk, clientSprint);
         }
 
-        ushort CurrentTile() => MapSystem.GetTileRef(MapData.Grid,
+        int CurrentTile() => MapSystem.GetTileRef(MapData.Grid,
             SEntMan.GetComponent<TransformComponent>(truck).Coordinates).Tile.TypeId;
 
         void AssertDriverAndCargo()
