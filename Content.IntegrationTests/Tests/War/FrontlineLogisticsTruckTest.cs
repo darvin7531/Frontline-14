@@ -25,6 +25,8 @@ using Robust.Shared.Containers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Input;
 using Robust.Shared.Localization;
+using Robust.Shared.Map;
+using Robust.Shared.Maths;
 using Robust.Shared.Prototypes;
 
 namespace Content.IntegrationTests.Tests.War;
@@ -287,6 +289,158 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
             Assert.That(material.StackTypeId.Id, Is.EqualTo("BasicMaterials"));
             Assert.That(material.Count, Is.EqualTo(17));
             Assert.That(material.Unlimited, Is.False);
+        }
+    }
+
+    [Test]
+    public async Task ProductionTruckClientRoadDirtRoadTravelPreservesDriverAndCargo()
+    {
+        // FloorAsphalt is only a migration alias to FloorConcrete. Reuse the real tile,
+        // not a new asset/prototype; neither concrete nor dirt has a native speed penalty.
+        const string road = "FloorConcrete";
+        const string dirt = "FloorDirt";
+        await Server.WaitPost(() =>
+        {
+            for (var x = -2; x <= 26; x++)
+            for (var y = -1; y <= 1; y++)
+                MapSystem.SetTile(MapData.Grid, new Vector2i(x, y),
+                    new Tile(TileMan[x >= 8 && x < 16 ? dirt : road].TileId));
+        });
+        await AddGravity();
+        await AddAtmosphere();
+        await SpawnTarget("FrontlineLogisticsTruck");
+        var truck = STarget!.Value;
+        var slots = Server.System<ItemSlotsSystem>();
+        var vehicles = Server.System<VehicleSystem>();
+        EntityUid cargo = default;
+        string slotId = default!;
+        string product = default!;
+        int amount = default;
+        await Server.WaitPost(() =>
+        {
+            var component = SEntMan.GetComponent<ItemSlotsComponent>(truck);
+            slotId = component.Slots.Keys.OrderBy(id => id).First();
+            cargo = SEntMan.SpawnEntity("FrontlineFactoryWeaponCrate", ToServer(PlayerCoords));
+            var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo);
+            product = crate.Product.Id;
+            amount = crate.Amount;
+            Assert.That(HandSys.TryPickupAnyHand(SPlayer, cargo), Is.True);
+            Assert.That(slots.TryInsertFromHand(truck, component.Slots[slotId], (SPlayer, Hands)), Is.True);
+        });
+        await Pair.RunUntilSynced();
+        await Client.WaitPost(() =>
+        {
+            var verbs = Client.System<Content.Client.Verbs.VerbSystem>();
+            var enter = verbs.GetLocalVerbs(CTarget!.Value, CPlayer, typeof(AlternativeVerb))
+                .Single(verb => verb.Text == Loc.GetString("container-vehicle-verb-enter"));
+            Assert.That(enter.ClientExclusive, Is.False);
+            Assert.That(enter.Disabled, Is.False);
+            verbs.ExecuteVerb(CTarget.Value, enter);
+        });
+        await RunTicks(3);
+        await Server.WaitAssertion(() => Assert.That(ActiveDoAfters.Count(), Is.EqualTo(1)));
+        await Pair.RunSeconds(1.25f);
+        await Server.WaitAssertion(AssertDriverAndCargo);
+        await Pair.RunUntilSynced();
+
+        // One continuous client-held input actually crosses both boundaries. Sample only
+        // after warmup, with identical half-second windows; never teleport/reset velocity.
+        await SetKey(EngineKeyFunctions.MoveRight, BoundKeyState.Down, cursorEntity: Target);
+        try
+        {
+            var onRoad = await Sample(road);
+            await ReachSurface(dirt);
+            var offRoad = await Sample(dirt);
+            await ReachSurface(road);
+            var restored = await Sample(road);
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(onRoad.Distance, Is.GreaterThan(0.5f));
+                Assert.That(offRoad.Distance / onRoad.Distance, Is.InRange(0.48f, 0.62f),
+                    "Equal steady-input travel must reflect the roadmap's 50–60% off-road speed (2% travel tolerance).");
+                Assert.That(restored.Distance / onRoad.Distance, Is.InRange(0.95f, 1.05f),
+                    "Returning to road must restore travel, not retain/compound the dirt modifier.");
+                foreach (var sample in new[] { onRoad, restored })
+                {
+                    Assert.That(sample.Walk, Is.EqualTo(1f));
+                    Assert.That(sample.Sprint, Is.EqualTo(1f));
+                    Assert.That(sample.ClientWalk, Is.EqualTo(1f));
+                    Assert.That(sample.ClientSprint, Is.EqualTo(1f));
+                }
+                Assert.That(offRoad.Walk, Is.InRange(0.5f, 0.6f));
+                Assert.That(offRoad.Sprint, Is.InRange(0.5f, 0.6f));
+                Assert.That(offRoad.ClientWalk, Is.EqualTo(offRoad.Walk).Within(0.001f));
+                Assert.That(offRoad.ClientSprint, Is.EqualTo(offRoad.Sprint).Within(0.001f));
+            }
+        }
+        finally
+        {
+            await SetKey(EngineKeyFunctions.MoveRight, BoundKeyState.Up, cursorEntity: Target);
+            await RunTicks(1);
+        }
+
+        async Task ReachSurface(string surface)
+        {
+            for (var i = 0; i < 120; i++)
+            {
+                await RunTicks(5);
+                var reached = false;
+                await Server.WaitPost(() => reached = CurrentTile() == TileMan[surface].TileId);
+                if (reached)
+                    return;
+            }
+            Assert.Fail($"Truck did not reach {surface} within the bounded client-input budget.");
+        }
+
+        async Task<(float Distance, float Walk, float Sprint, float ClientWalk, float ClientSprint)> Sample(string surface)
+        {
+            await Pair.RunSeconds(0.5f);
+            Vector2 start = default;
+            float distance = default, walk = default, sprint = default, clientWalk = default, clientSprint = default;
+            await Server.WaitPost(() =>
+            {
+                Assert.That(CurrentTile(), Is.EqualTo(TileMan[surface].TileId));
+                start = Transform.GetWorldPosition(truck);
+            });
+            await Pair.RunSeconds(0.5f);
+            await Server.WaitPost(() =>
+            {
+                Assert.That(CurrentTile(), Is.EqualTo(TileMan[surface].TileId), "Entire sample must stay on its actual surface.");
+                var end = Transform.GetWorldPosition(truck);
+                distance = end.X - start.X;
+                Assert.That(end.Y, Is.EqualTo(start.Y).Within(0.01f));
+                var movement = SEntMan.GetComponent<MovementSpeedModifierComponent>(truck);
+                walk = movement.WalkSpeedModifier;
+                sprint = movement.SprintSpeedModifier;
+                AssertDriverAndCargo();
+            });
+            await Client.WaitPost(() =>
+            {
+                var movement = CEntMan.GetComponent<MovementSpeedModifierComponent>(CTarget!.Value);
+                clientWalk = movement.WalkSpeedModifier;
+                clientSprint = movement.SprintSpeedModifier;
+            });
+            return (distance, walk, sprint, clientWalk, clientSprint);
+        }
+
+        ushort CurrentTile() => MapSystem.GetTileRef(MapData.Grid,
+            SEntMan.GetComponent<TransformComponent>(truck).Coordinates).Tile.TypeId;
+
+        void AssertDriverAndCargo()
+        {
+            Assert.That(ServerSession!.AttachedEntity, Is.EqualTo(SPlayer));
+            Assert.That(SEntMan.GetComponent<VehicleComponent>(truck).Operator, Is.EqualTo(SPlayer));
+            Assert.That(SEntMan.GetComponent<VehicleOperatorComponent>(SPlayer).Vehicle, Is.EqualTo(truck));
+            Assert.That(SEntMan.GetComponent<RelayInputMoverComponent>(SPlayer).RelayEntity, Is.EqualTo(truck));
+            Assert.That(SEntMan.GetComponent<MovementRelayTargetComponent>(truck).Source, Is.EqualTo(SPlayer));
+            Assert.That(vehicles.TryGetOperatorContainer(truck, out var seat), Is.True);
+            Assert.That(seat!.ContainedEntities, Is.EqualTo(new[] { SPlayer }));
+            Assert.That(SEntMan.GetComponent<MobStateComponent>(SPlayer).CurrentState, Is.EqualTo(MobState.Alive));
+            Assert.That(slots.GetItemOrNull(truck, slotId), Is.EqualTo(cargo));
+            Assert.That(SEntMan.GetComponent<TransformComponent>(cargo).ParentUid, Is.EqualTo(truck));
+            var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo);
+            Assert.That(crate.Product.Id, Is.EqualTo(product));
+            Assert.That(crate.Amount, Is.EqualTo(amount));
         }
     }
 
