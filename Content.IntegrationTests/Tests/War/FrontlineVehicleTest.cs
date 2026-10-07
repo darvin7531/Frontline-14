@@ -4,8 +4,6 @@ using System.Numerics;
 using Content.Client.Gameplay;
 using Content.IntegrationTests.Tests.Interaction;
 using Content.Server.GameTicking;
-using Content.Shared.Body;
-using Content.Shared.Interaction;
 using Content.Shared.Interaction.Components;
 using Content.Shared.Inventory.VirtualItem;
 using Content.Shared.Mobs;
@@ -22,7 +20,6 @@ using Robust.Shared.Containers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Input;
 using Robust.Shared.Network;
-using Robust.Shared.Player;
 
 namespace Content.IntegrationTests.Tests.War;
 
@@ -181,7 +178,7 @@ public sealed class FrontlineVehicleTest : InteractionTest
             // Restore the actual connection even when the seat-vacancy assertion is RED.
             await Task.WhenAll(Client.WaitIdleAsync(), Server.WaitIdleAsync());
             Client.SetConnectTarget(Server);
-            await Client.WaitPost(() => Client.ResolveDependency<IClientNetManager>().ClientConnect(null, 0, accountName));
+            await Client.WaitPost(() => Client.ResolveDependency<IClientNetManager>().ClientConnect(null!, 0, accountName));
             await RunTicks(10);
             await Task.WhenAll(Client.WaitIdleAsync(), Server.WaitIdleAsync());
             await Server.WaitPost(() =>
@@ -211,7 +208,16 @@ public sealed class FrontlineVehicleTest : InteractionTest
         await RunTicks(10);
         CPlayer = ToClient(Player);
         await Client.WaitPost(() => Client.ResolveDependency<IStateManager>().RequestStateChange<GameplayState>());
-        await EnterThroughClient("replacement after reconnect");
+        // Use the exact vehicle's native verb; replacement drag-drop targeting remains unresolved.
+        await Pair.RunUntilSynced();
+        await Client.WaitPost(() =>
+        {
+            var verbs = Client.System<Content.Client.Verbs.VerbSystem>();
+            var enter = verbs.GetLocalVerbs(CTarget!.Value, CPlayer, typeof(AlternativeVerb)).Single();
+            Assert.That(enter.ClientExclusive, Is.False, "Entry must use the native network request.");
+            verbs.ExecuteVerb(CTarget.Value, enter);
+        });
+        await AwaitEntry();
         await Server.WaitAssertion(() =>
         {
             AssertDriver(vehicle, SPlayer);
@@ -220,50 +226,17 @@ public sealed class FrontlineVehicleTest : InteractionTest
         });
     }
 
-    private async Task EnterThroughClient(string phase = "initial")
+    private async Task EnterThroughClient()
     {
-        // Observe native gates without bypassing the client request or changing fixture state.
-        var serverEntry = string.Empty;
-        var clientEntry = string.Empty;
-        await Server.WaitPost(() =>
-        {
-            var session = Server.ResolveDependency<IPlayerManager>().Sessions.Single();
-            SEntMan.TryGetComponent<ActorComponent>(SPlayer, out var actor);
-            serverEntry = $"server player={Player}, attached={session.AttachedEntity}, " +
-                $"actorSessionCurrent={actor?.PlayerSession == session}, coords={Position(Player)}, " +
-                $"cachedPlayerCoords={PlayerCoords}, targetCoords={Position(Target!.Value)}, " +
-                $"range={InteractSys.InRangeUnobstructed(SPlayer, STarget!.Value)}, " +
-                $"canEnter={Server.System<VehicleSystem>().CanEnter(STarget.Value, SPlayer)}, " +
-                $"cachedDoAfterCurrent={DoAfters == SEntMan.GetComponentOrNull<Content.Shared.DoAfter.DoAfterComponent>(SPlayer)}";
-        });
-        var dropCoords = NetPosition(Target!.Value);
-        await Client.WaitPost(() =>
-        {
-            var state = Client.ResolveDependency<IStateManager>().CurrentState;
-            var local = Client.ResolveDependency<Robust.Client.Player.IPlayerManager>().LocalEntity;
-            var interaction = Client.System<SharedInteractionSystem>();
-            var hits = state is GameplayState gameplay
-                ? string.Join(",", gameplay.GetClickableEntities(ToClient(dropCoords)).Select(uid => FromClient(uid)))
-                : "not GameplayState";
-            clientEntry = $"client player={FromClient(CPlayer)}/{CPlayer}, local={local}, attached={Client.Session?.AttachedEntity}, " +
-                $"cachedSessionCurrent={ClientSession == Client.Session}, cachedAttached={ClientSession.AttachedEntity}, " +
-                $"coords={FromClient(CEntMan.GetComponent<TransformComponent>(CPlayer).Coordinates)}, " +
-                $"targetCoords={FromClient(CEntMan.GetComponent<TransformComponent>(CTarget!.Value).Coordinates)}, " +
-                $"dropCoords={dropCoords}, clickableHits=[{hits}], " +
-                $"mouseDownRange={ClientSession.AttachedEntity is { } bound && interaction.InRangeUnobstructed(bound, CPlayer)}, " +
-                $"mouseUpRange={local is { } user && interaction.InRangeUnobstructed(user, CTarget.Value) && interaction.InRangeUnobstructed(user, CPlayer)}, " +
-                $"canEnter={Client.System<VehicleSystem>().CanEnter(CTarget.Value, CPlayer)}, " +
-                $"draggableBody={CEntMan.HasComponent<BodyComponent>(CPlayer)}, " +
-                $"combat={Client.System<Content.Client.CombatMode.CombatModeSystem>().IsInCombatMode()}, " +
-                $"useState={InputSystem.CmdStates.GetState(EngineKeyFunctions.Use)}";
-        });
-        TestContext.WriteLine($"[vehicle-entry/{phase}] {serverEntry}; {clientEntry}");
-        await DragDrop(Player, Target.Value);
+        await DragDrop(Player, Target!.Value);
+        await AwaitEntry();
+    }
+
+    private async Task AwaitEntry()
+    {
         await Server.WaitAssertion(() =>
         {
-            Assert.That(ActiveDoAfters.Count(), Is.EqualTo(1),
-                $"Client drag-drop must start a nonzero entry DoAfter ({phase}). {serverEntry}; {clientEntry}; " +
-                $"DoAfter states=[{string.Join(",", DoAfters!.DoAfters.Values.Select(d => $"cancelled={d.Cancelled}/completed={d.Completed}"))}]");
+            Assert.That(ActiveDoAfters.Count(), Is.EqualTo(1), "Client entry must start a nonzero entry DoAfter.");
             Assert.That(Comp<VehicleComponent>().Operator, Is.Null, "Entry must not complete immediately.");
         });
         // Bounded simulated time, not the unbounded AwaitDoAfters loop.
