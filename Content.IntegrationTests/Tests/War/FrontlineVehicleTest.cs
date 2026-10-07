@@ -8,6 +8,7 @@ using Content.Shared.Interaction.Components;
 using Content.Shared.Inventory.VirtualItem;
 using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
+using Content.Shared.Mobs.Systems;
 using Content.Shared.Movement.Components;
 using Content.Shared.Movement.Systems;
 using Content.Shared.Vehicle.Components;
@@ -17,6 +18,7 @@ using Robust.Client.Console;
 using Robust.Client.State;
 using Robust.Server.Player;
 using Robust.Shared.Containers;
+using Robust.Shared.Enums;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Input;
 using Robust.Shared.Network;
@@ -227,6 +229,52 @@ public sealed class FrontlineVehicleTest : InteractionTest
         });
     }
 
+    [Test]
+    public async Task DeathVacatesNativeDriverSeatWithoutDeletingCorpse()
+    {
+        var vehicle = STarget!.Value;
+        var driver = SPlayer;
+        await EnterThroughClient();
+        await Server.WaitAssertion(() =>
+        {
+            AssertDriver(vehicle, driver);
+            Assert.That(SEntMan.GetComponent<MobStateComponent>(driver).CurrentState, Is.EqualTo(MobState.Alive));
+        });
+
+        await Server.WaitPost(() => Server.System<MobStateSystem>().ChangeMobState(driver, MobState.Dead));
+        await RunTicks(5);
+        await Server.WaitAssertion(() => AssertVacant(vehicle, driver, MobState.Dead));
+    }
+
+    [Test]
+    public async Task ConnectedAttachmentTransferKeepsNativeDriverSeatOccupied()
+    {
+        var vehicle = STarget!.Value;
+        var driver = SPlayer;
+        var session = ServerSession!;
+        await EnterThroughClient();
+        var other = ToServer(await Spawn("MobHuman", PlayerCoords));
+        try
+        {
+            await Server.WaitPost(() => Server.PlayerMan.SetAttachedEntity(session, other));
+            await RunTicks(5);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(Server.ResolveDependency<IPlayerManager>().Sessions, Does.Contain(session));
+                Assert.That(session.Status, Is.Not.EqualTo(SessionStatus.Disconnected));
+                Assert.That(session.AttachedEntity, Is.EqualTo(other));
+                Assert.That(SEntMan.EntityExists(driver), Is.True);
+                Assert.That(SEntMan.GetComponent<MobStateComponent>(driver).CurrentState, Is.EqualTo(MobState.Alive));
+                AssertDriver(vehicle, driver);
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() => Server.PlayerMan.SetAttachedEntity(session, driver));
+            await RunTicks(5);
+        }
+    }
+
     private async Task EnterThroughClient()
     {
         await DragDrop(Player, Target!.Value);
@@ -268,14 +316,14 @@ public sealed class FrontlineVehicleTest : InteractionTest
             SEntMan.TryGetComponent<VirtualItemComponent>(item, out var blocker) && blocker.BlockingEntity == vehicle), Is.EqualTo(1));
     }
 
-    private void AssertVacant(EntityUid vehicle, EntityUid formerDriver)
+    private void AssertVacant(EntityUid vehicle, EntityUid formerDriver, MobState expectedState = MobState.Alive)
     {
         using (Assert.EnterMultipleScope())
         {
             Assert.That(SEntMan.EntityExists(formerDriver), Is.True, "Vacating must preserve the original physical body.");
-            Assert.That(SEntMan.GetComponent<MobStateComponent>(formerDriver).CurrentState, Is.EqualTo(MobState.Alive));
+            Assert.That(SEntMan.GetComponent<MobStateComponent>(formerDriver).CurrentState, Is.EqualTo(expectedState));
             Assert.That(SEntMan.GetComponent<VehicleComponent>(vehicle).Operator, Is.Null,
-                "Disconnect/exit must release vehicle ownership, not merely stop input.");
+                "Vacating must release vehicle ownership, not merely stop input.");
             Assert.That(Server.System<VehicleSystem>().TryGetOperatorContainer(vehicle, out var container), Is.True);
             Assert.That(container, Is.TypeOf<ContainerSlot>());
             Assert.That(container!.ContainedEntities, Is.Empty, "The physical driver seat must be reusable.");
