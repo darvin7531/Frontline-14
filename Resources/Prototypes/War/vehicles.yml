@@ -50,6 +50,21 @@
   name: frontline logistics truck
   description: A one-driver transport with ten physical cargo slots for sealed supply crates and material stacks.
   components:
+  - type: Vehicle
+    transferDamage: false
+  - type: Damageable
+  - type: Injurable
+  - type: Destructible
+    # Always eject the driver before deletion, including overwhelming damage.
+    generateOverkillThreshold: false
+    thresholds:
+    - trigger: !type:DamageTrigger
+        damage: 100
+      behaviors:
+      - !type:EmptyContainersBehaviour
+        containers: [driver]
+      - !type:DoActsBehavior
+        acts: [Breakage, Destruction]
   - type: MovementSpeedModifier
     baseWalkSpeed: 3
     baseSprintSpeed: 4.5
