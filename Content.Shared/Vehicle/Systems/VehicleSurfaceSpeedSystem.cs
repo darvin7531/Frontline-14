@@ -30,7 +30,7 @@ public sealed partial class VehicleSurfaceSpeedSystem : EntitySystem
             _movement.RefreshMovementSpeedModifiers(ent.Owner);
     }
 
-    private void OnRefresh(Entity<VehicleSurfaceSpeedComponent> ent, RefreshMovementSpeedModifiersEvent args)
+    private void OnRefresh(Entity<VehicleSurfaceSpeedComponent> ent, ref RefreshMovementSpeedModifiersEvent args)
     {
         // ponytail: classify the center tile; footprint sampling only if large vehicles need it.
         if (!_turf.TryGetTileRef(Transform(ent).Coordinates, out var tile) || tile.Value.Tile.IsEmpty ||
