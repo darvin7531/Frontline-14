@@ -23,6 +23,98 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
     protected override string PlayerPrototype => "MobHuman";
 
     [Test]
+    public async Task ProductionTruckClientLoadsAndUnloadsSealedCargo()
+    {
+        await SetTile(Plating, grid: MapData.Grid);
+        await AddGravity();
+        await AddAtmosphere();
+        await SpawnTarget("FrontlineLogisticsTruck");
+        var truck = STarget!.Value;
+        var slots = Server.System<ItemSlotsSystem>();
+        var vehicles = Server.System<VehicleSystem>();
+        var cargoNet = await PlaceInHands("FrontlineFactoryWeaponCrate");
+        var cargo = ToServer(cargoNet);
+        string product = default!;
+        int amount = default;
+        string slotId = default!;
+
+        await Server.WaitPost(() =>
+        {
+            var component = SEntMan.GetComponent<ItemSlotsComponent>(truck);
+            Assert.That(component.Slots.Count, Is.EqualTo(10));
+            Assert.That(component.Slots.Values.All(slot => !slot.HasItem && !slot.Swap), Is.True);
+            slotId = component.Slots.OrderBy(pair => pair.Value.Priority).First().Key;
+            var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo);
+            product = crate.Product.Id;
+            amount = crate.Amount;
+            Assert.That(HandSys.GetActiveItem((SPlayer, Hands)), Is.EqualTo(cargo));
+            AssertDriverSeatIndependent();
+        });
+        await Pair.RunUntilSynced();
+
+        // Unlike the trusted API test below, both cargo actions originate on the connected client.
+        // Native Use reaches ItemSlots' InteractUsing handler before AfterInteract; the
+        // InteractionTest.InteractUsing helper calls server UserInteraction directly, so do not use it here.
+        await PressKey(EngineKeyFunctions.Use, cursorEntity: Target);
+        await RunTicks(3);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(slots.GetItemOrNull(truck, slotId), Is.EqualTo(cargo));
+            Assert.That(SEntMan.GetComponent<ItemSlotsComponent>(truck).Slots.Values.Count(slot => slot.HasItem), Is.EqualTo(1));
+            Assert.That(SEntMan.GetComponent<TransformComponent>(cargo).ParentUid, Is.EqualTo(truck));
+            Assert.That(HandSys.GetActiveItem((SPlayer, Hands)), Is.Null);
+            AssertCargoMetadata();
+            AssertDriverSeatIndependent();
+        });
+        await Pair.RunUntilSynced();
+
+        await Client.WaitPost(() =>
+        {
+            var slot = CEntMan.GetComponent<ItemSlotsComponent>(CTarget!.Value).Slots[slotId];
+            Assert.That(CEntMan.GetNetEntity(slot.Item), Is.EqualTo(cargoNet));
+            // With no slot text override, ItemSlots uses the contained entity's localized name.
+            var text = slot.EjectVerbText != null ? Loc.GetString(slot.EjectVerbText)
+                : slot.Name != string.Empty ? Loc.GetString(slot.Name)
+                : CEntMan.GetComponent<MetaDataComponent>(ToClient(cargoNet)).EntityName;
+            var verbs = Client.System<Content.Client.Verbs.VerbSystem>();
+            var eject = verbs.GetLocalVerbs(CTarget.Value, CPlayer, typeof(AlternativeVerb))
+                .Single(verb => verb.Text == text && verb.IconEntity == cargoNet && verb.Priority == slot.Priority
+                    && verb.Category?.Text == VerbCategory.Eject.Text);
+            Assert.That(eject.ClientExclusive, Is.False);
+            Assert.That(eject.Disabled, Is.False);
+            verbs.ExecuteVerb(CTarget.Value, eject);
+        });
+        await RunTicks(3);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.GetComponent<ItemSlotsComponent>(truck).Slots.Values.All(slot => !slot.HasItem), Is.True);
+            Assert.That(slots.GetItemOrNull(truck, slotId), Is.Null);
+            Assert.That(SEntMan.EntityExists(cargo), Is.True);
+            // TryEjectToHands uses PickupOrDrop: this unseated player has an empty active hand.
+            Assert.That(HandSys.GetActiveItem((SPlayer, Hands)), Is.EqualTo(cargo));
+            Assert.That(SEntMan.GetComponent<TransformComponent>(cargo).ParentUid, Is.EqualTo(SPlayer));
+            AssertCargoMetadata();
+            AssertDriverSeatIndependent();
+        });
+
+        void AssertCargoMetadata()
+        {
+            var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo);
+            Assert.That(crate.Product.Id, Is.EqualTo(product));
+            Assert.That(crate.Amount, Is.EqualTo(amount));
+            Assert.That(SEntMan.HasComponent<ContainerManagerComponent>(cargo), Is.False);
+        }
+
+        void AssertDriverSeatIndependent()
+        {
+            Assert.That(vehicles.TryGetOperatorContainer(truck, out var seat), Is.True);
+            Assert.That(seat, Is.TypeOf<ContainerSlot>());
+            Assert.That(seat!.ContainedEntities, Is.Empty);
+            Assert.That(SEntMan.GetComponent<VehicleComponent>(truck).Operator, Is.Null);
+        }
+    }
+
+    [Test]
     public async Task ProductionTruckClientDrivingPreservesTrustedApiCargo()
     {
         for (var x = -2; x <= 8; x++)
