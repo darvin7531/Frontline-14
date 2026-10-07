@@ -171,6 +171,7 @@ public sealed class FrontlineVehicleTest : InteractionTest
         finally
         {
             // Restore the actual connection even when the seat-vacancy assertion is RED.
+            await Task.WhenAll(Client.WaitIdleAsync(), Server.WaitIdleAsync());
             Client.SetConnectTarget(Server);
             await Client.WaitPost(() => Client.ResolveDependency<IClientNetManager>().ClientConnect(null, 0, accountName));
             await RunTicks(10);
