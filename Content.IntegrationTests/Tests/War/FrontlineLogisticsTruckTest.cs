@@ -2,9 +2,19 @@
 using System.Linq;
 using System.Numerics;
 using Content.IntegrationTests.Tests.Interaction;
+using Content.Server.Destructible;
 using Content.Shared.CCVar;
 using Content.Shared.Containers.ItemSlots;
+using Content.Shared.Damage;
+using Content.Shared.Damage.Components;
+using Content.Shared.Damage.Prototypes;
+using Content.Shared.Damage.Systems;
+using Content.Shared.Destructible.Thresholds.Triggers;
+using Content.Shared.Interaction.Components;
+using Content.Shared.Inventory.VirtualItem;
 using Content.Shared.Item;
+using Content.Shared.Mobs;
+using Content.Shared.Mobs.Components;
 using Content.Shared.Movement.Components;
 using Content.Shared.Stacks;
 using Content.Shared.Vehicle.Components;
@@ -15,6 +25,7 @@ using Robust.Shared.Containers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Input;
 using Robust.Shared.Localization;
+using Robust.Shared.Prototypes;
 
 namespace Content.IntegrationTests.Tests.War;
 
@@ -276,6 +287,166 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
             Assert.That(material.StackTypeId.Id, Is.EqualTo("BasicMaterials"));
             Assert.That(material.Count, Is.EqualTo(17));
             Assert.That(material.Unlimited, Is.False);
+        }
+    }
+
+    [Test]
+    public async Task ProductionTruckFatalDamagePreservesDriverAndAllCargo()
+    {
+        await SetTile(Plating, grid: MapData.Grid);
+        await AddGravity();
+        await AddAtmosphere();
+        await SpawnTarget("FrontlineLogisticsTruck");
+        var truck = STarget!.Value;
+        var driver = SPlayer;
+        var slots = Server.System<ItemSlotsSystem>();
+        var vehicles = Server.System<VehicleSystem>();
+        var containers = Server.System<SharedContainerSystem>();
+        var damageable = Server.System<DamageableSystem>();
+        ProtoId<DamageTypePrototype> blunt = "Blunt";
+        var cargo = new EntityUid[10];
+        var products = new string[9];
+        var amounts = new int[9];
+        var crateIds = new[]
+        {
+            "FrontlineSupplyCrate", "FrontlineFactoryWeaponCrate",
+            "FrontlineFactoryAmmoCrate", "FrontlineFactoryMedicalCrate"
+        };
+        string[] slotIds = default!;
+
+        await Server.WaitAssertion(() =>
+        {
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(SEntMan.HasComponent<DamageableComponent>(truck), Is.True,
+                    "The production truck must accept native damage; do not add components in the test.");
+                Assert.That(SEntMan.HasComponent<InjurableComponent>(truck), Is.True,
+                    "Native DamageDealtEvent needs Injurable to apply damage and reach thresholds.");
+                Assert.That(SEntMan.HasComponent<DestructibleComponent>(truck), Is.True,
+                    "The production truck must configure native destruction thresholds.");
+            }
+        });
+        // Reuse the trusted cargo setup; driver entry below still originates on the real client.
+        await Server.WaitPost(() =>
+        {
+            var component = SEntMan.GetComponent<ItemSlotsComponent>(truck);
+            slotIds = component.Slots.Keys.OrderBy(id => id).ToArray();
+            Assert.That(slotIds.Length, Is.EqualTo(cargo.Length));
+            Assert.That(component.Slots.Values.All(slot => !slot.HasItem && !slot.Swap && slot.EjectOnBreak), Is.True);
+            for (var i = 0; i < cargo.Length; i++)
+            {
+                cargo[i] = SEntMan.SpawnEntity(i < products.Length ? crateIds[i % crateIds.Length] : "BasicMaterials1",
+                    ToServer(PlayerCoords));
+                if (i < products.Length)
+                {
+                    var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo[i]);
+                    products[i] = crate.Product.Id;
+                    amounts[i] = crate.Amount;
+                }
+                else
+                    Stack.SetCount((cargo[i], null), 17);
+
+                Assert.That(HandSys.TryPickupAnyHand(driver, cargo[i]), Is.True);
+                Assert.That(slots.TryInsertFromHand(truck, component.Slots[slotIds[i]], (driver, Hands)), Is.True);
+                Assert.That(HandSys.IsHolding(driver, cargo[i]), Is.False);
+            }
+        });
+        await Pair.RunUntilSynced();
+        await Client.WaitPost(() =>
+        {
+            var verbs = Client.System<Content.Client.Verbs.VerbSystem>();
+            var enter = verbs.GetLocalVerbs(CTarget!.Value, CPlayer, typeof(AlternativeVerb))
+                .Single(verb => verb.Text == Loc.GetString("container-vehicle-verb-enter"));
+            Assert.That(enter.ClientExclusive, Is.False);
+            Assert.That(enter.Disabled, Is.False);
+            verbs.ExecuteVerb(CTarget.Value, enter);
+        });
+        await RunTicks(3);
+        await Server.WaitAssertion(() => Assert.That(ActiveDoAfters.Count(), Is.EqualTo(1)));
+        await Pair.RunSeconds(1.25f);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(ActiveDoAfters, Is.Empty);
+            Assert.That(SEntMan.GetComponent<VehicleComponent>(truck).Operator, Is.EqualTo(driver));
+            Assert.That(SEntMan.GetComponent<VehicleOperatorComponent>(driver).Vehicle, Is.EqualTo(truck));
+            Assert.That(SEntMan.GetComponent<RelayInputMoverComponent>(driver).RelayEntity, Is.EqualTo(truck));
+            Assert.That(SEntMan.GetComponent<MovementRelayTargetComponent>(truck).Source, Is.EqualTo(driver));
+            Assert.That(vehicles.TryGetOperatorContainer(truck, out var seat), Is.True);
+            Assert.That(seat, Is.TypeOf<ContainerSlot>());
+            Assert.That(seat!.ContainedEntities, Is.EqualTo(new[] { driver }));
+            Assert.That(HandSys.EnumerateHeld((driver, null)).Count(item =>
+                SEntMan.TryGetComponent<VirtualItemComponent>(item, out var blocker) && blocker.BlockingEntity == truck), Is.EqualTo(1));
+            Assert.That(SEntMan.GetComponent<MobStateComponent>(driver).CurrentState, Is.EqualTo(MobState.Alive));
+            AssertCargo(loaded: true);
+        });
+
+        await Server.WaitPost(() =>
+        {
+            // Cross every configured damage threshold, including native automatic overkill.
+            // Damage must perform ejection before queued deletion recursively destroys remaining children.
+            var thresholds = SEntMan.GetComponent<DestructibleComponent>(truck).Thresholds
+                .Select(threshold => threshold.Trigger).OfType<DamageTrigger>().ToArray();
+            Assert.That(thresholds, Is.Not.Empty);
+            var damage = new DamageSpecifier(ProtoMan.Index(blunt), thresholds.Max(trigger => trigger.Damage) + 1);
+            Assert.That(damageable.TryChangeDamage(truck, damage, ignoreResistances: true, ignoreGlobalModifiers: true), Is.True);
+            Assert.That(SEntMan.IsQueuedForDeletion(truck), Is.True, "Native fatal damage must actually destroy the truck.");
+        });
+        await RunTicks(3);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.EntityExists(truck), Is.False);
+            Assert.That(ServerSession!.AttachedEntity, Is.EqualTo(driver));
+            Assert.That(SEntMan.EntityExists(driver), Is.True, "Destruction must eject, not delete or replace, the original body.");
+            Assert.That(SEntMan.GetComponent<MobStateComponent>(driver).CurrentState, Is.EqualTo(MobState.Alive),
+                "Truck destruction is separate from driver death.");
+            Assert.That(SEntMan.GetComponent<TransformComponent>(driver).ParentUid, Is.EqualTo(MapData.Grid.Owner));
+            Assert.That(containers.TryGetContainingContainer(driver, out _), Is.False);
+            Assert.That(SEntMan.HasComponent<VehicleOperatorComponent>(driver), Is.False);
+            Assert.That(SEntMan.HasComponent<RelayInputMoverComponent>(driver), Is.False);
+            Assert.That(SEntMan.HasComponent<InteractionRelayComponent>(driver), Is.False);
+            Assert.That(HandSys.EnumerateHeld((driver, null)).Any(item =>
+                SEntMan.TryGetComponent<VirtualItemComponent>(item, out var blocker) && blocker.BlockingEntity == truck), Is.False);
+            AssertCargo(loaded: false);
+        });
+
+        void AssertCargo(bool loaded)
+        {
+            Assert.That(cargo.Distinct().Count(), Is.EqualTo(cargo.Length));
+            for (var i = 0; i < cargo.Length; i++)
+            {
+                Assert.That(SEntMan.EntityExists(cargo[i]), Is.True, "Every original cargo UID must survive destruction.");
+                Assert.That(SEntMan.IsQueuedForDeletion(cargo[i]), Is.False);
+                Assert.That(SEntMan.GetComponent<MetaDataComponent>(cargo[i]).EntityPrototype?.ID,
+                    Is.EqualTo(i < products.Length ? crateIds[i % crateIds.Length] : "BasicMaterials1"));
+                Assert.That(SEntMan.GetComponent<TransformComponent>(cargo[i]).ParentUid, Is.EqualTo(loaded ? truck : MapData.Grid.Owner));
+                if (loaded)
+                    Assert.That(slots.GetItemOrNull(truck, slotIds[i]), Is.EqualTo(cargo[i]));
+                else
+                    Assert.That(containers.TryGetContainingContainer(cargo[i], out _), Is.False, "Cargo must be ejected onto the floor.");
+                if (i < products.Length)
+                {
+                    var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo[i]);
+                    Assert.That(crate.Product.Id, Is.EqualTo(products[i]));
+                    Assert.That(crate.Amount, Is.EqualTo(amounts[i]));
+                    Assert.That(SEntMan.HasComponent<ContainerManagerComponent>(cargo[i]), Is.False);
+                }
+            }
+            var material = SEntMan.GetComponent<StackComponent>(cargo[^1]);
+            Assert.That(material.StackTypeId.Id, Is.EqualTo("BasicMaterials"));
+            Assert.That(material.Count, Is.EqualTo(17));
+            Assert.That(material.Unlimited, Is.False);
+            // Exact map-scoped entity membership rejects replacement copies and extra cargo spawns.
+            var count = 0;
+            var query = SEntMan.EntityQueryEnumerator<MetaDataComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out var metadata, out var transform))
+            {
+                if (transform.MapID != MapId || metadata.EntityPrototype is not { } prototype ||
+                    !(prototype.ID == "BasicMaterials1" || crateIds.Contains(prototype.ID)))
+                    continue;
+                Assert.That(cargo, Does.Contain(uid));
+                count++;
+            }
+            Assert.That(count, Is.EqualTo(cargo.Length));
         }
     }
 }
