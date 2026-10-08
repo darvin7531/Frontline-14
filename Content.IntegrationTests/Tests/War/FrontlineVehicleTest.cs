@@ -21,6 +21,8 @@ using Robust.Shared.Containers;
 using Robust.Shared.Enums;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Input;
+using Robust.Shared.Map;
+using Robust.Shared.Maths;
 using Robust.Shared.Network;
 
 namespace Content.IntegrationTests.Tests.War;
@@ -135,6 +137,98 @@ public sealed class FrontlineVehicleTest : InteractionTest
         });
         await RunTicks(10);
         await Server.WaitAssertion(() => AssertVacant(vehicle, SPlayer));
+    }
+
+    [Test]
+    public async Task ConnectedNativeMoverDoesNotRetainDeletedRelativeGrid()
+    {
+        EntityUid referenceGrid = default;
+        await Server.WaitPost(() =>
+        {
+            var grid = MapSystem.CreateGridEntity(MapId);
+            referenceGrid = grid.Owner;
+            Transform.SetCoordinates(referenceGrid, new EntityCoordinates(MapData.MapUid, new Vector2(0, 5)));
+            for (var x = -1; x <= 2; x++)
+            for (var y = -1; y <= 1; y++)
+                MapSystem.SetTile(grid, new Vector2i(x, y), new Tile(TileMan[Plating].TileId));
+            Transform.SetCoordinates(SPlayer, new EntityCoordinates(referenceGrid, new Vector2(0.5f, 0.5f)));
+        });
+        await AddGravity(referenceGrid);
+        // Let native movement adopt the new reference, then replicate it before testing its lifetime.
+        await Pair.RunSeconds(InputMoverComponent.LerpTime + 0.25f);
+        await Pair.RunUntilSynced();
+        var clientReferenceGrid = ToClient(FromServer(referenceGrid));
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(Xform(SPlayer).GridUid, Is.EqualTo(referenceGrid));
+            Assert.That(Comp<InputMoverComponent>(Player).RelativeEntity, Is.EqualTo(referenceGrid));
+            Assert.That(SEntMan.EntityExists(referenceGrid), Is.True);
+        });
+        await Client.WaitAssertion(() =>
+        {
+            Assert.That(CEntMan.GetComponent<InputMoverComponent>(CPlayer).RelativeEntity, Is.EqualTo(clientReferenceGrid));
+            Assert.That(CEntMan.EntityExists(clientReferenceGrid), Is.True);
+        });
+
+        Vector2 start = default;
+        TimeSpan transitionDeadline = default;
+        await Server.WaitPost(() => start = Transform.GetWorldPosition(SPlayer));
+        await SetKey(EngineKeyFunctions.MoveRight, BoundKeyState.Down, cursorEntity: Player);
+        try
+        {
+            await RunTicks(3);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(Comp<InputMoverComponent>(Player).HeldMoveButtons & MoveButtons.Right, Is.EqualTo(MoveButtons.Right));
+                Assert.That(Transform.GetWorldPosition(SPlayer).X, Is.GreaterThan(start.X));
+            });
+            await Server.WaitPost(() =>
+            {
+                Transform.SetCoordinates(SPlayer, new EntityCoordinates(MapData.Grid, new Vector2(-2.5f, 0.5f)));
+                transitionDeadline = Comp<InputMoverComponent>(Player).LerpTarget;
+            });
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(Xform(SPlayer).MapUid, Is.EqualTo(MapData.MapUid));
+                Assert.That(Xform(SPlayer).GridUid, Is.EqualTo(MapData.Grid.Owner));
+                Assert.That(Comp<InputMoverComponent>(Player).LerpTarget, Is.GreaterThan(STiming.CurTime),
+                    "Delete the old grid inside the native same-map transition's lerp window.");
+            });
+            await Server.WaitPost(() => SEntMan.DeleteEntity(referenceGrid));
+            // Exercise real movement and ComponentGetState/ComponentHandleState, not a synthetic state request.
+            await RunTicks(3);
+            await Server.WaitAssertion(() =>
+            {
+                Assert.That(transitionDeadline, Is.GreaterThan(STiming.CurTime),
+                    "A full lerp timeout must not hide a stale reference.");
+                Assert.That(SEntMan.EntityExists(referenceGrid), Is.False);
+                Assert.That(SEntMan.EntityExists(SPlayer), Is.True);
+                Assert.That(SEntMan.GetComponent<MobStateComponent>(SPlayer).CurrentState, Is.EqualTo(MobState.Alive));
+                Assert.That(ServerSession!.AttachedEntity, Is.EqualTo(SPlayer));
+                var relative = Comp<InputMoverComponent>(Player).RelativeEntity;
+                Assert.That(relative == null || SEntMan.EntityExists(relative.Value), Is.True,
+                    "A surviving mover may reference a live entity or null, never the deleted grid.");
+            });
+            await Pair.RunUntilSynced();
+            await Client.WaitAssertion(() =>
+            {
+                Assert.That(CEntMan.EntityExists(clientReferenceGrid), Is.False);
+                Assert.That(CEntMan.EntityExists(CPlayer), Is.True);
+                Assert.That(CEntMan.GetComponent<MobStateComponent>(CPlayer).CurrentState, Is.EqualTo(MobState.Alive));
+                Assert.That(ClientSession.AttachedEntity, Is.EqualTo(CPlayer));
+                var relative = CEntMan.GetComponent<InputMoverComponent>(CPlayer).RelativeEntity;
+                Assert.That(relative == null || CEntMan.EntityExists(relative.Value), Is.True,
+                    "Replicated/predicted movement must not retain the deleted grid either.");
+            });
+        }
+        finally
+        {
+            await SetKey(EngineKeyFunctions.MoveRight, BoundKeyState.Up, cursorEntity: Player);
+            await RunTicks(1);
+        }
+        await Pair.RunUntilSynced();
+        Assert.That(Pair.ServerLogHandler.FailingLogs, Is.Empty);
+        Assert.That(Pair.ClientLogHandler.FailingLogs, Is.Empty);
     }
 
     [Test]
