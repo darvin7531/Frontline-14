@@ -36,6 +36,42 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
     protected override string PlayerPrototype => "MobHuman";
 
     [Test]
+    public async Task ProductionTruckClientLoadsTwoStaticDirectionalLayers()
+    {
+        await SpawnTarget("FrontlineLogisticsTruck");
+        await Pair.RunUntilSynced();
+        await Client.WaitAssertion(() =>
+        {
+            var sprite = CEntMan.GetComponent<Robust.Client.GameObjects.SpriteComponent>(CTarget!.Value);
+            Assert.That(sprite.NoRotation, Is.True);
+            Assert.That(sprite.SnapCardinals, Is.False);
+            Assert.That(sprite.EnableDirectionOverride, Is.False);
+            var layers = sprite.AllLayers.ToArray();
+            Assert.That(layers.Select(layer => layer.RsiState.Name), Is.EqualTo(new[] { "truck_base", "wheels_1" }));
+            Assert.That(sprite.BaseRSI!.Path.ToString(), Is.EqualTo("/Textures/_Frontline/Vehicles/logistics_truck.rsi"));
+            Assert.That(sprite.BaseRSI.Size, Is.EqualTo(new Vector2i(96, 96)));
+            foreach (var layer in layers)
+            {
+                var state = sprite.BaseRSI[layer.RsiState];
+                Assert.That(layer.Visible, Is.True);
+                Assert.That(state.RsiDirections, Is.EqualTo(Robust.Shared.Graphics.RSI.RsiDirectionType.Dir4));
+                Assert.That(state.IsAnimated, Is.False);
+                foreach (var direction in new[] { Direction.South, Direction.East, Direction.North, Direction.West })
+                {
+                    // The native renderer chooses a frame from world heading, without rotating the 96px artwork.
+                    var selected = Robust.Client.GameObjects.SpriteComponent.Layer.GetDirection(state.RsiDirections,
+                        direction.ToAngle().Reduced().FlipPositive());
+                    Assert.That(selected.ToString(), Is.EqualTo(direction.ToString()));
+                    Assert.That(state.GetFrames(selected), Has.Length.EqualTo(1));
+                    Assert.That(state.GetFrame(selected, 0).Size, Is.EqualTo(new Vector2i(96, 96)));
+                    ((Robust.Client.GameObjects.SpriteComponent.Layer) layer).GetLayerDrawMatrix(selected, out var matrix);
+                    Assert.That(matrix, Is.EqualTo(Matrix3x2.Identity));
+                }
+            }
+        });
+    }
+
+    [Test]
     public async Task ProductionTruckClientLoadsAndUnloadsSealedCargo()
     {
         await SetTile(Plating, grid: MapData.Grid);

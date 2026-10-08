@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "license": "CC-BY-SA-3.0",
+  "selected_states": [
+    "truck_base",
+    "wheels_1"
+  ],
+  "rmc_revision": "46bc517117f195f0b6a3f0de629fbe110e21ff6f",
+  "rmc_import_revision": "a53a8ec5fc45a6b8d1c2995a10c996f00258c1e8",
+  "independent_cm_source": {
+    "repository": "cmss13-devs/cmss13",
+    "path": "icons/obj/vehicles/van.dmi",
+    "original_add_sha": "acee16a476417ec292fb2d48f13c8947bffef31d",
+    "original_add_date": "2020-12-05T14:58:17Z",
+    "last_update_sha": "30057db45851612e733a0ad759461f81ebb65360",
+    "last_update_date": "2021-05-05T16:19:05Z",
+    "recommended_immutable_source_sha": "30057db45851612e733a0ad759461f81ebb65360",
+    "git_blob_sha": "caef206e03c2ccdd33d52f4f1cc2eb99b5759420",
+    "import_era_snapshot_sha": "12a894facff4ac60d0dcc11c854cf7a283ac8786",
+    "import_era_snapshot_date": "2026-06-14T04:38:05Z",
+    "same_git_blob_at_last_update_and_import_era": true,
+    "provenance_limit": "Independently verified historical pixel-equivalent source, not a claim to know the exact CM revision downloaded by the RMC importer."
+  },
+  "literal_upstream_copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/tree/master/icons/obj/vehicles/van",
+  "literal_source_status": "missing directory; unchanged; never treated as valid",
+  "changes": "Reduced RSI metadata to two static four-direction states; copied both PNGs byte-for-byte. No pixel changes.",
+  "files": [
+    {
+      "path": "Resources/Textures/_Frontline/Vehicles/logistics_truck.rsi/truck_base.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Vehicles/van.rsi/truck_base.png",
+      "sha256": "7b411e56c3a20e588ba0e0fba4b6a1e15e73802b13bcd9e2871cfcee21c9da27",
+      "git_blob_sha": "5cf34ba993c063801f7145baf81bd567a4fad438"
+    },
+    {
+      "path": "Resources/Textures/_Frontline/Vehicles/logistics_truck.rsi/wheels_1.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Vehicles/van.rsi/wheels_1.png",
+      "sha256": "a052caf7b33189416c711c9115d5559281177eb3906117aab347ac5d43bfa8d7",
+      "git_blob_sha": "dbef59b78e4f64d3f4bbc5eaa61231c0808da381"
+    },
+    {
+      "path": "Resources/Textures/_Frontline/Attribution/logistics-truck/upstream-meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Vehicles/van.rsi/meta.json",
+      "sha256": "5c70ae227f38d592fedb402b15335d03955fda74dac776f29dd1bfc679178dc3",
+      "git_blob_sha": "905585b1eda437b816b6010638a9e4f1a829dcb8"
+    },
+    {
+      "path": "Resources/Textures/_Frontline/Attribution/logistics-truck/CM-README.md",
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/30057db45851612e733a0ad759461f81ebb65360/README.md",
+      "sha256": "68a9665f72bb9ad05833b9cd2bf68b53ef88b57d626c85adf879fe82ad73502e",
+      "git_blob_sha": "f4754b8496b07d46ac4df0c2278d7e9f97d774cc"
+    },
+    {
+      "path": "Resources/Textures/_Frontline/Attribution/logistics-truck/LICENSE-CC-BY-SA-3.0.txt",
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/12a894facff4ac60d0dcc11c854cf7a283ac8786/LICENSE-CC-BY-SA-3.0.txt",
+      "sha256": "3f941b3b89cf7b8370ceb83cc76d2120d471b58735d8ca60238a751a48d7f72f",
+      "git_blob_sha": "604209a804632b6e5274005a22293976d07c3099"
+    }
+  ]
+}
