@@ -1955,8 +1955,10 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
-    [Test]
-    public async Task IncompleteFactorySnapshotRefusesCommitAndRepairedClaimsRetryOnSameMap()
+    [TestCase("factory")]
+    [TestCase("vehicle-cargo")]
+    [TestCase("vehicle-id")]
+    public async Task IncompleteFactorySnapshotRefusesCommitAndRepairedClaimsRetryOnSameMap(string invalidCase)
     {
         const int warId = 42;
         const string westId = "frontline-test-factory-west";
@@ -1973,6 +1975,30 @@ public sealed class PersistentWarRuleTest : GameTest
         var source = await Pair.LoadTestMap(new ResPath("/Maps/Frontline/base_test.yaml"));
         EntityUid freshMap = EntityUid.Invalid;
         Exception failure = null;
+        var vehicleCase = invalidCase != "factory";
+
+        EntityUid SpawnTruck(MapId mapId, int amount, int count)
+        {
+            var hall = FindMapEntity<TownHallComponent>(mapId, component => component.TerritoryId == "frontline-one");
+            var coordinates = SComp<TransformComponent>(hall).Coordinates.Offset(new Vector2(1.25f, 0.125f));
+            var truck = SEntMan.SpawnEntity("FrontlineLogisticsTruck", coordinates);
+            var crate = SEntMan.SpawnEntity("FrontlineFactoryMedicalCrate", coordinates);
+            SComp<FrontlineSupplyCrateComponent>(crate).Product = product;
+            SComp<FrontlineSupplyCrateComponent>(crate).Amount = amount;
+            var material = stacks.SpawnAtPosition(count, "BasicMaterials", coordinates);
+            var slots = Server.System<ItemSlotsSystem>();
+            Assert.That(slots.TryInsertEmpty(truck, crate, null), Is.True);
+            Assert.That(slots.TryInsertEmpty(truck, material, null), Is.True);
+            Assert.That(Server.System<DamageableSystem>().TryChangeDamage(truck, new DamageSpecifier
+            {
+                DamageDict = new() { ["Blunt"] = FixedPoint2.New(7.25), ["Slash"] = FixedPoint2.New(3.5) },
+            }, ignoreResistances: true, ignoreGlobalModifiers: true), Is.True);
+            return truck;
+        }
+
+        EntityUid[] Cargo(EntityUid truck) => truck == EntityUid.Invalid ? Array.Empty<EntityUid>() :
+            SComp<ItemSlotsComponent>(truck).Slots.Values.Where(slot => slot.HasItem)
+                .Select(slot => slot.Item!.Value).ToArray();
 
         Dictionary<string, EntityUid> Objectives(MapId mapId) =>
             Server.System<TerritorySystem>().GetTerritories(mapId).ToDictionary(id => id.Id,
@@ -2036,6 +2062,10 @@ public sealed class PersistentWarRuleTest : GameTest
                     crate.Amount = 7;
                     Assert.That(containers.Insert(output, SComp<FrontlineFactoryComponent>(sourceFactory).OutputContainer), Is.True);
 
+                    var sourceTruck = vehicleCase ? SpawnTruck(source.MapId, 13, 17) : EntityUid.Invalid;
+                    var freshTruck = vehicleCase ? SpawnTruck(fresh.MapId, 9, 11) : EntityUid.Invalid;
+                    var freshCargo = Cargo(freshTruck);
+                    var freshVehicles = JsonSerializer.Serialize(snapshots.CaptureVehicles(fresh.MapId));
                     var bases = Objectives(source.MapId).Select(entry =>
                     {
                         var hall = SEntMan.TryGetComponent<TownHallComponent>(entry.Value, out var component);
@@ -2059,6 +2089,17 @@ public sealed class PersistentWarRuleTest : GameTest
                         Vehicles = Server.System<WarStrategicSnapshotSystem>().CaptureVehicles(source.MapId),
                     };
                     Assert.That(full.SnapshotVersion, Is.EqualTo(6));
+                    if (vehicleCase)
+                    {
+                        Assert.That(full.Vehicles, Has.Count.EqualTo(1));
+                        Assert.That(full.Vehicles.Single().VehicleId, Is.EqualTo(SComp<VehiclePersistenceComponent>(sourceTruck).VehicleId));
+                        Assert.That(full.Vehicles.Single().DamageHundredths["Blunt"], Is.EqualTo(725));
+                        Assert.That(full.Vehicles.Single().DamageHundredths["Slash"], Is.EqualTo(350));
+                        Assert.That(full.Vehicles.Single().Cargo.Single(entry => entry.Crate != null).Crate,
+                            Is.EqualTo(new WarFactoryCrateSnapshot("FrontlineFactoryMedicalCrate", product.Id, 13)));
+                        Assert.That(full.Vehicles.Single().Cargo.Single(entry => entry.Stack != null).Stack,
+                            Is.EqualTo(new WarRefineryStackSnapshot("BasicMaterials", "BasicMaterials1", 17)));
+                    }
                     Assert.That(full.Factories.Select(entry => entry.FactoryId), Is.EquivalentTo(new[] { westId, eastId }));
                     var west = full.Factories.Single(entry => entry.FactoryId == westId);
                     Assert.That(west.Prototype, Is.EqualTo("FrontlineFactory"));
@@ -2078,23 +2119,54 @@ public sealed class PersistentWarRuleTest : GameTest
                         .ToDictionary(component => component.FactoryId, component => component.Owner);
                     AssertEmptyMachines(fresh.MapId);
                     data.Delete(WarStrategicSnapshotSystem.BackupPath);
+                    var invalid = invalidCase switch
+                    {
+                        "vehicle-cargo" => full with
+                        {
+                            Vehicles = new()
+                            {
+                                full.Vehicles.Single() with
+                                {
+                                    Cargo = full.Vehicles.Single().Cargo.Concat(full.Vehicles.Single().Cargo.Take(1)).ToList(),
+                                },
+                            },
+                        },
+                        "vehicle-id" => full with { Vehicles = full.Vehicles.Concat(full.Vehicles).ToList() },
+                        _ => full with { Factories = full.Factories.Where(entry => entry.FactoryId != eastId).ToList() },
+                    };
                     using (var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath))
-                        JsonSerializer.Serialize(stream, full with { Factories = full.Factories.Where(entry => entry.FactoryId != eastId).ToList() });
+                        JsonSerializer.Serialize(stream, invalid);
                     string incomplete;
                     using (var reader = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath)))
                         incomplete = reader.ReadToEnd();
                     var refusal = Assert.Throws<InvalidDataException>(() => snapshots.Restore(fresh.MapUid, warId));
-                    Assert.That(refusal!.Message, Is.EqualTo("Factory snapshot must cover every map factory."));
+                    Assert.That(refusal!.Message, Is.EqualTo(invalidCase switch
+                    {
+                        "vehicle-cargo" => "Invalid vehicle cargo slot or claim.",
+                        "vehicle-id" => "Invalid persistent vehicle identity, prototype or state.",
+                        _ => "Factory snapshot must cover every map factory.",
+                    }));
                     Assert.That(SEntMan.EntityExists(fresh.MapUid) && !SEntMan.IsQueuedForDeletion(fresh.MapUid), Is.True);
                     Assert.That(Objectives(fresh.MapId), Is.EquivalentTo(objectives), "Refusal must precede destructive objective commit.");
                     foreach (var uid in objectives.Values.Concat(nodes).Concat(freshFactories.Values))
                         Assert.That(SEntMan.EntityExists(uid) && !SEntMan.IsQueuedForDeletion(uid), Is.True);
                     Assert.That(JsonSerializer.Serialize(fields.CaptureSnapshot(fresh.MapId)), Is.EqualTo(freshResources));
                     AssertEmptyMachines(fresh.MapId);
+                    Assert.That(JsonSerializer.Serialize(snapshots.CaptureVehicles(fresh.MapId)), Is.EqualTo(freshVehicles),
+                        "Refusal must precede vehicle replacement, damage changes or cargo staging.");
+                    foreach (var uid in freshCargo.Concat(vehicleCase ? new[] { freshTruck } : Array.Empty<EntityUid>()))
+                    {
+                        Assert.That(SEntMan.EntityExists(uid) && !SEntMan.IsQueuedForDeletion(uid), Is.True);
+                        Assert.That(SComp<MetaDataComponent>(uid).EntityLifeStage, Is.LessThan(EntityLifeStage.Terminating));
+                    }
+                    Assert.That(Cargo(freshTruck), Is.EquivalentTo(freshCargo));
                     Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
-                        SComp<TransformComponent>(stack.Owner).MapID == fresh.MapId), Is.Empty);
+                        SComp<TransformComponent>(stack.Owner).MapID == fresh.MapId).Select(stack => stack.Owner),
+                        Is.EquivalentTo(freshCargo.Where(uid => SEntMan.HasComponent<StackComponent>(uid))));
                     Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(claim =>
-                        SComp<TransformComponent>(claim.Owner).MapID == fresh.MapId), Is.Empty, "No staged paid goods may survive refusal.");
+                        SComp<TransformComponent>(claim.Owner).MapID == fresh.MapId).Select(claim => claim.Owner),
+                        Is.EquivalentTo(freshCargo.Where(uid => SEntMan.HasComponent<FrontlineSupplyCrateComponent>(uid))),
+                        "No staged paid goods may survive refusal; original fresh-map goods must stay live.");
                     using (var reader = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath)))
                         Assert.That(reader.ReadToEnd(), Is.EqualTo(incomplete));
 
@@ -2103,6 +2175,25 @@ public sealed class PersistentWarRuleTest : GameTest
                         JsonSerializer.Serialize(stream, full);
                     snapshots.Restore(fresh.MapUid, warId);
                     Assert.That(SEntMan.EntityExists(fresh.MapUid), Is.True);
+                    Assert.That(JsonSerializer.Serialize(snapshots.CaptureVehicles(fresh.MapId)),
+                        Is.EqualTo(JsonSerializer.Serialize(full.Vehicles)),
+                        "Same-map repaired retry must restore exactly the saved ID, damage, position and non-default cargo.");
+                    var restoredTruck = vehicleCase
+                        ? FindMapEntity<VehiclePersistenceComponent>(fresh.MapId, component => component.VehicleId == full.Vehicles.Single().VehicleId)
+                        : EntityUid.Invalid;
+                    var restoredCargo = Cargo(restoredTruck);
+                    if (vehicleCase)
+                    {
+                        Assert.That(SEntMan.EntityExists(freshTruck), Is.False);
+                        Assert.That(Cargo(restoredTruck), Has.Length.EqualTo(2));
+                        foreach (var uid in restoredCargo)
+                        {
+                            Assert.That(SEntMan.EntityExists(uid) && !SEntMan.IsQueuedForDeletion(uid), Is.True);
+                            Assert.That(SComp<TransformComponent>(uid).ParentUid, Is.EqualTo(restoredTruck));
+                            Assert.That(containers.TryGetContainingContainer(uid, out var owner), Is.True);
+                            Assert.That(owner!.Owner, Is.EqualTo(restoredTruck));
+                        }
+                    }
                     foreach (var uid in objectives.Values)
                         Assert.That(SEntMan.EntityExists(uid), Is.False, "Repaired JSON must actually restore, not silently accept fresh defaults.");
                     var restoredFactory = FindMapEntity<FrontlineFactoryComponent>(fresh.MapId, component => component.FactoryId == westId);
@@ -2132,10 +2223,12 @@ public sealed class PersistentWarRuleTest : GameTest
                     }
                     Assert.That(SEntMan.EntityQuery<StackComponent>().Where(stack =>
                         SComp<TransformComponent>(stack.Owner).MapID == fresh.MapId).Select(stack => stack.Owner),
-                        Is.EquivalentTo(restored.InputContainer.ContainedEntities), "No extra or loose materials.");
+                        Is.EquivalentTo(restored.InputContainer.ContainedEntities.Concat(
+                            restoredCargo.Where(uid => SEntMan.HasComponent<StackComponent>(uid)))), "No extra or loose materials.");
                     Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(claim =>
                         SComp<TransformComponent>(claim.Owner).MapID == fresh.MapId).Select(claim => claim.Owner),
-                        Is.EquivalentTo(restored.OutputContainer.ContainedEntities), "No extra or loose sealed goods.");
+                        Is.EquivalentTo(restored.OutputContainer.ContainedEntities.Concat(
+                            restoredCargo.Where(uid => SEntMan.HasComponent<FrontlineSupplyCrateComponent>(uid)))), "No extra or loose sealed goods.");
                     Assert.That(SEntMan.EntityQuery<MetaDataComponent>().Where(metadata =>
                         SComp<TransformComponent>(metadata.Owner).MapID == fresh.MapId && metadata.EntityPrototype?.ID == "Brutepack1"),
                         Is.Empty, "Restoring a sealed entitlement must not spawn withdrawal goods.");
