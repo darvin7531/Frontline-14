@@ -666,9 +666,10 @@ public sealed class PersistentWarRuleTest : GameTest
         });
     }
 
-    [Test]
+    [TestCase(false)]
+    [TestCase(true)]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
-    public async Task TechnicalRestartPreservesMovedDamagedTruckAndCargo()
+    public async Task TechnicalRestartPreservesMovedDamagedTruckAndCargo(bool writeFault)
     {
         const string truckPrototype = "FrontlineLogisticsTruck";
         var cargoPrototypes = new[] { "FrontlineSupplyCrate", "FrontlineFactoryWeaponCrate", "BasicMaterials1" };
@@ -682,6 +683,12 @@ public sealed class PersistentWarRuleTest : GameTest
         var vehicles = Server.System<VehicleSystem>();
         var damage = Server.System<DamageableSystem>();
         var stacks = Server.System<StackSystem>();
+        var snapshots = Server.System<WarStrategicSnapshotSystem>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        var stackAmount = 17;
+        string vehicleId = null;
+        string expectedVehicle = null;
+        Exception failure = null;
         var expectedDamage = new DamageSpecifier
         {
             DamageDict = new() { ["Blunt"] = FixedPoint2.New(7.25), ["Slash"] = FixedPoint2.New(3.5) },
@@ -716,6 +723,8 @@ public sealed class PersistentWarRuleTest : GameTest
             for (var i = 0; i < cargoPrototypes.Length; i++)
             {
                 var item = cargo.Single(uid => SComp<MetaDataComponent>(uid).EntityPrototype?.ID == cargoPrototypes[i]);
+                Assert.That(SEntMan.EntityExists(item) && !SEntMan.IsQueuedForDeletion(item), Is.True);
+                Assert.That(SComp<MetaDataComponent>(item).EntityLifeStage, Is.LessThan(EntityLifeStage.Terminating));
                 Assert.That(SComp<TransformComponent>(item).ParentUid, Is.EqualTo(truck));
                 if (i < products.Length)
                 {
@@ -726,7 +735,7 @@ public sealed class PersistentWarRuleTest : GameTest
                 else
                 {
                     Assert.That(SComp<StackComponent>(item).StackTypeId, Is.EqualTo("BasicMaterials"));
-                    Assert.That(SComp<StackComponent>(item).Count, Is.EqualTo(17));
+                    Assert.That(SComp<StackComponent>(item).Count, Is.EqualTo(stackAmount));
                 }
             }
             Assert.That(vehicles.TryGetOperatorContainer(truck, out var seat), Is.True);
@@ -776,35 +785,122 @@ public sealed class PersistentWarRuleTest : GameTest
                     Assert.That(damageBefore.DamageDict[type], Is.EqualTo(amount));
 #pragma warning restore CS0618
                 beforeRestart = war.State!;
-                ticker.RestartRound();
-                ticker.SetGamePreset("PersistentWar");
-                ticker.ToggleReadyAll(true);
-                ticker.StartRound(true);
+                vehicleId = SComp<VehiclePersistenceComponent>(oldTruck).VehicleId;
+                Assert.That(vehicleId, Is.Not.Null.And.Not.Empty);
             });
-            await Pair.RunUntilSynced();
-            await Server.WaitAssertion(() =>
+            for (var restart = 0; restart < 2; restart++)
             {
-                using var stream = Server.ResolveDependency<IResourceManager>().UserData.OpenRead(WarStrategicSnapshotSystem.SavePath);
-                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
-                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
-                Assert.That(war.State, Is.EqualTo(beforeRestart));
-                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
-                Assert.That(SEntMan.EntityExists(oldMap), Is.False);
-                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
-                Assert.That(SEntMan.EntityExists(oldTruck), Is.False);
-                Assert.That(oldCargo.All(uid => !SEntMan.EntityExists(uid)), Is.True);
-                var trucks = MapEntities(truckPrototype);
-                Assert.That(trucks, Has.Count.EqualTo(1), "Technical restart must restore exactly one production truck.");
-                var restored = trucks.Single();
-                Assert.That(SComp<MetaDataComponent>(restored).EntityPrototype?.ID, Is.EqualTo(truckPrototype));
-                Assert.That(transforms.GetWorldPosition(restored), Is.EqualTo(position));
-                Assert.That(SEntMan.IsQueuedForDeletion(restored), Is.False);
+                await Server.WaitPost(() =>
+                {
+                    oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                    oldTruck = MapEntities(truckPrototype).Single();
+                    oldCargo = cargoPrototypes.Select(prototype => MapEntities(prototype).Single()).ToArray();
+                });
+                if (writeFault && restart == 1)
+                {
+                    await Server.WaitPost(() =>
+                    {
+                        // Reuse the native directory fault; catch assertions so the posted callback stays alive.
+                        try
+                        {
+                            using var committedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                            var committed = committedStream.ReadToEnd();
+                            var backupExists = data.Exists(WarStrategicSnapshotSystem.BackupPath);
+                            string backup = null;
+                            if (backupExists)
+                            {
+                                using var reader = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.BackupPath));
+                                backup = reader.ReadToEnd();
+                            }
+                            var liveVehicle = JsonSerializer.Serialize(snapshots.CaptureVehicles(ticker.DefaultMap).Single());
+                            data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                            data.CreateDir(WarStrategicSnapshotSystem.TemporaryPath);
+                            Assert.That(data.IsDir(WarStrategicSnapshotSystem.TemporaryPath), Is.True);
+                            Assert.Throws<ArgumentException>(() => ticker.RestartRound(),
+                                "Write failure must stop native cleanup before truck cargo is flushed.");
+                            Assert.That(Server.UnhandledException, Is.Null);
+                            Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.PreRoundLobby));
+                            Assert.That(ticker.CurrentPreset?.ID, Is.EqualTo("PersistentWar"));
+                            Assert.That(war.State, Is.EqualTo(beforeRestart));
+                            Assert.That(SEntMan.EntityExists(oldMap) && SEntMan.EntityExists(oldTruck), Is.True);
+                            Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(oldMap));
+                            Assert.That(MapEntities(truckPrototype), Is.EqualTo(new[] { oldTruck }));
+                            Assert.That(SEntMan.IsQueuedForDeletion(oldTruck), Is.False);
+                            Assert.That(SComp<MetaDataComponent>(oldTruck).EntityLifeStage, Is.LessThan(EntityLifeStage.Terminating));
+                            for (var i = 0; i < oldCargo.Length; i++)
+                                Assert.That(MapEntities(cargoPrototypes[i]), Is.EqualTo(new[] { oldCargo[i] }));
+                            AssertCargo(oldTruck);
+                            Assert.That(JsonSerializer.Serialize(snapshots.CaptureVehicles(ticker.DefaultMap).Single()),
+                                Is.EqualTo(liveVehicle), "Failed writing must retain exact live identity, position, damage and cargo slots.");
+                            using var unchangedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
+                            Assert.That(unchangedStream.ReadToEnd(), Is.EqualTo(committed));
+                            Assert.That(data.Exists(WarStrategicSnapshotSystem.BackupPath), Is.EqualTo(backupExists));
+                            if (backupExists)
+                            {
+                                using var reader = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.BackupPath));
+                                Assert.That(reader.ReadToEnd(), Is.EqualTo(backup));
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            failure = e;
+                        }
+                        finally
+                        {
+                            data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
+                        }
+                    });
+                    Assert.That(Server.UnhandledException, Is.Null);
+                    if (failure != null)
+                        throw failure;
+                }
+                await Server.WaitPost(() =>
+                {
+                    if (writeFault && restart == 1)
+                    {
+                        // Retry must save surviving goods as they are now, not replay the previous disk claim.
+                        amounts[0] = 11;
+                        SComp<FrontlineSupplyCrateComponent>(oldCargo[0]).Amount = amounts[0];
+                        stackAmount = 12;
+                        stacks.SetCount((oldCargo[2], null), stackAmount);
+                    }
+                    expectedVehicle = JsonSerializer.Serialize(snapshots.CaptureVehicles(ticker.DefaultMap).Single());
+                    ticker.RestartRound();
+                    ticker.SetGamePreset("PersistentWar");
+                    ticker.ToggleReadyAll(true);
+                    ticker.StartRound(true);
+                });
+                await Pair.RunUntilSynced();
+                await Server.WaitAssertion(() =>
+                {
+                    using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                    var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                    Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                    Assert.That(war.State, Is.EqualTo(beforeRestart));
+                    Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                    Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+                    Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                    Assert.That(SEntMan.EntityExists(oldTruck), Is.False);
+                    Assert.That(oldCargo.All(uid => !SEntMan.EntityExists(uid)), Is.True);
+                    var trucks = MapEntities(truckPrototype);
+                    Assert.That(trucks, Has.Count.EqualTo(1), "Technical restart must restore exactly one production truck.");
+                    var restored = trucks.Single();
+                    Assert.That(SComp<VehiclePersistenceComponent>(restored).VehicleId, Is.EqualTo(vehicleId),
+                        "Repeated technical restarts must preserve the original stable vehicle ID, not its ECS UID.");
+                    Assert.That(saved.Vehicles, Has.Count.EqualTo(1));
+                    Assert.That(saved.Vehicles.Single().VehicleId, Is.EqualTo(vehicleId));
+                    Assert.That(JsonSerializer.Serialize(saved.Vehicles.Single()), Is.EqualTo(expectedVehicle),
+                        "The committed truck claim must contain the latest exact cargo, damage, position and slot identities.");
+                    Assert.That(SComp<MetaDataComponent>(restored).EntityPrototype?.ID, Is.EqualTo(truckPrototype));
+                    Assert.That(transforms.GetWorldPosition(restored), Is.EqualTo(position));
+                    Assert.That(SEntMan.IsQueuedForDeletion(restored), Is.False);
 #pragma warning disable CS0618
-                Assert.That(damage.GetAllDamage(restored).DamageDict, Is.EquivalentTo(damageBefore.DamageDict),
-                    "Technical restart must not heal fractional, multi-type truck damage.");
+                    Assert.That(damage.GetAllDamage(restored).DamageDict, Is.EquivalentTo(damageBefore.DamageDict),
+                        "Technical restart must not heal fractional, multi-type truck damage.");
 #pragma warning restore CS0618
-                AssertCargo(restored);
-            });
+                    AssertCargo(restored);
+                });
+            }
         }
         finally
         {
