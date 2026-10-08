@@ -18,6 +18,7 @@ using Content.Server.War;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.Components;
 using Content.Shared.CCVar;
+using Content.Shared.Containers.ItemSlots;
 using Content.Shared.Damage;
 using Content.Shared.Damage.Systems;
 using Content.Shared.FixedPoint;
@@ -33,6 +34,8 @@ using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Interaction;
 using Content.Shared.Stacks;
 using Content.Shared.Tag;
+using Content.Shared.Vehicle.Components;
+using Content.Shared.Vehicle.Systems;
 using Content.Shared.War;
 
 using Robust.Shared.ContentPack;
@@ -661,6 +664,151 @@ public sealed class PersistentWarRuleTest : GameTest
                     $"Base {baseTerritories[i]} must retain exact counts, including zero supplies, without a fresh 20-supply grant.");
             }
         });
+    }
+
+    [Test]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task TechnicalRestartPreservesMovedDamagedTruckAndCargo()
+    {
+        const string truckPrototype = "FrontlineLogisticsTruck";
+        var cargoPrototypes = new[] { "FrontlineSupplyCrate", "FrontlineFactoryWeaponCrate", "BasicMaterials1" };
+        var products = new[] { "SoldierSupplies", "FrontlineWeaponPistolMk58" };
+        var amounts = new[] { 13, 7 };
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var maps = Server.System<SharedMapSystem>();
+        var transforms = Server.System<SharedTransformSystem>();
+        var slots = Server.System<ItemSlotsSystem>();
+        var vehicles = Server.System<VehicleSystem>();
+        var damage = Server.System<DamageableSystem>();
+        var stacks = Server.System<StackSystem>();
+        var expectedDamage = new DamageSpecifier
+        {
+            DamageDict = new() { ["Blunt"] = FixedPoint2.New(7.25), ["Slash"] = FixedPoint2.New(3.5) },
+        };
+        EntityUid oldMap = default;
+        EntityUid oldTruck = default;
+        var oldCargo = new EntityUid[cargoPrototypes.Length];
+        Vector2 position = default;
+        WarState beforeRestart = default!;
+        DamageSpecifier damageBefore = default!;
+
+        List<EntityUid> MapEntities(params string[] prototypes)
+        {
+            var result = new List<EntityUid>();
+            var query = SEntMan.AllEntityQueryEnumerator<MetaDataComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out var metadata, out var transform))
+            {
+                if (transform.MapID == ticker.DefaultMap && prototypes.Contains(metadata.EntityPrototype?.ID))
+                    result.Add(uid);
+            }
+            return result;
+        }
+
+        void AssertCargo(EntityUid truck)
+        {
+            var cargo = SComp<ItemSlotsComponent>(truck).Slots.Values
+                .Where(slot => slot.HasItem).Select(slot => slot.Item!.Value).ToArray();
+            Assert.That(cargo, Has.Length.EqualTo(cargoPrototypes.Length));
+            Assert.That(cargo.Distinct().Count(), Is.EqualTo(cargo.Length));
+            Assert.That(MapEntities(cargoPrototypes), Is.EquivalentTo(cargo),
+                "All cargo must be retained exactly once, with no loose or duplicate goods on the campaign map.");
+            for (var i = 0; i < cargoPrototypes.Length; i++)
+            {
+                var item = cargo.Single(uid => SComp<MetaDataComponent>(uid).EntityPrototype?.ID == cargoPrototypes[i]);
+                Assert.That(SComp<TransformComponent>(item).ParentUid, Is.EqualTo(truck));
+                if (i < products.Length)
+                {
+                    var crate = SComp<FrontlineSupplyCrateComponent>(item);
+                    Assert.That(crate.Product.Id, Is.EqualTo(products[i]));
+                    Assert.That(crate.Amount, Is.EqualTo(amounts[i]), "Do not restore prototype-default crate amounts.");
+                }
+                else
+                {
+                    Assert.That(SComp<StackComponent>(item).StackTypeId, Is.EqualTo("BasicMaterials"));
+                    Assert.That(SComp<StackComponent>(item).Count, Is.EqualTo(17));
+                }
+            }
+            Assert.That(vehicles.TryGetOperatorContainer(truck, out var seat), Is.True);
+            Assert.That(seat!.ContainedEntities, Is.Empty, "Cargo must not occupy the native driver seat.");
+            Assert.That(SComp<VehicleComponent>(truck).Operator, Is.Null);
+        }
+
+        try
+        {
+            await Server.WaitPost(() =>
+            {
+                ticker.RestartRound();
+                war.StartNewWar();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitPost(() =>
+            {
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(MapEntities(truckPrototype), Is.Empty);
+                Assert.That(MapEntities(cargoPrototypes), Is.Empty);
+                oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                var hall = FindMapEntity<TownHallComponent>(ticker.DefaultMap, component => component.TerritoryId == "frontline-one");
+                var start = SComp<TransformComponent>(hall).Coordinates;
+                oldTruck = SEntMan.SpawnEntity(truckPrototype, start);
+                transforms.SetCoordinates(oldTruck, start.Offset(new Vector2(0.25f, 0.125f)));
+                position = transforms.GetWorldPosition(oldTruck);
+                Assert.That(position, Is.Not.EqualTo(transforms.GetWorldPosition(hall)));
+                Assert.That(damage.TryChangeDamage(oldTruck, expectedDamage,
+                    ignoreResistances: true, ignoreGlobalModifiers: true), Is.True);
+                for (var i = 0; i < oldCargo.Length; i++)
+                {
+                    oldCargo[i] = SEntMan.SpawnEntity(cargoPrototypes[i], start);
+                    if (i < products.Length)
+                        SComp<FrontlineSupplyCrateComponent>(oldCargo[i]).Amount = amounts[i];
+                    else
+                        stacks.SetCount((oldCargo[i], null), 17);
+                    Assert.That(slots.TryInsertEmpty(oldTruck, oldCargo[i], null), Is.True);
+                }
+                AssertCargo(oldTruck);
+#pragma warning disable CS0618 // Compare exact damage, not a player-facing health measurement.
+                damageBefore = damage.GetAllDamage(oldTruck);
+                foreach (var (type, amount) in expectedDamage.DamageDict)
+                    Assert.That(damageBefore.DamageDict[type], Is.EqualTo(amount));
+#pragma warning restore CS0618
+                beforeRestart = war.State!;
+                ticker.RestartRound();
+                ticker.SetGamePreset("PersistentWar");
+                ticker.ToggleReadyAll(true);
+                ticker.StartRound(true);
+            });
+            await Pair.RunUntilSynced();
+            await Server.WaitAssertion(() =>
+            {
+                using var stream = Server.ResolveDependency<IResourceManager>().UserData.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
+                Assert.That(war.State, Is.EqualTo(beforeRestart));
+                Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
+                Assert.That(SEntMan.EntityExists(oldMap), Is.False);
+                Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
+                Assert.That(SEntMan.EntityExists(oldTruck), Is.False);
+                Assert.That(oldCargo.All(uid => !SEntMan.EntityExists(uid)), Is.True);
+                var trucks = MapEntities(truckPrototype);
+                Assert.That(trucks, Has.Count.EqualTo(1), "Technical restart must restore exactly one production truck.");
+                var restored = trucks.Single();
+                Assert.That(SComp<MetaDataComponent>(restored).EntityPrototype?.ID, Is.EqualTo(truckPrototype));
+                Assert.That(transforms.GetWorldPosition(restored), Is.EqualTo(position));
+                Assert.That(SEntMan.IsQueuedForDeletion(restored), Is.False);
+#pragma warning disable CS0618
+                Assert.That(damage.GetAllDamage(restored).DamageDict, Is.EquivalentTo(damageBefore.DamageDict),
+                    "Technical restart must not heal fractional, multi-type truck damage.");
+#pragma warning restore CS0618
+                AssertCargo(restored);
+            });
+        }
+        finally
+        {
+            await Server.WaitPost(() => ticker.RestartRound());
+        }
     }
 
     [Test]
