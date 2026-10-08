@@ -139,7 +139,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     {
         base.Initialize();
         SubscribeLocalEvent<RoundRestartCleanupEvent>(OnCleanup);
-        SubscribeLocalEvent<VehiclePersistenceComponent, ComponentInit>(OnVehicleInit);
+        SubscribeLocalEvent<VehiclePersistenceComponent, MapInitEvent>(OnVehicleInit);
         SubscribeLocalEvent<VehiclePersistenceComponent, ItemSlotEjectAttemptEvent>(OnVehicleCargoEject);
         EntityManager.BeforeEntityFlush += OnBeforeEntityFlush;
     }

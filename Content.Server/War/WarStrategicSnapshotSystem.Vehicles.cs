@@ -58,7 +58,7 @@ public sealed partial class WarStrategicSnapshotSystem
             args.Cancelled = true;
     }
 
-    private void OnVehicleInit(Entity<VehiclePersistenceComponent> ent, ref ComponentInit args)
+    private void OnVehicleInit(Entity<VehiclePersistenceComponent> ent, ref MapInitEvent args)
     {
         if (string.IsNullOrWhiteSpace(ent.Comp.VehicleId))
             ent.Comp.VehicleId = Guid.NewGuid().ToString();
