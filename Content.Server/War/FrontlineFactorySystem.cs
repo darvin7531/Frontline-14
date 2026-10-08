@@ -611,7 +611,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         return result;
     }
 
-    private void ValidateCrate(WarFactoryCrateSnapshot entry)
+    internal void ValidateCrate(WarFactoryCrateSnapshot entry)
     {
         if (entry == null || string.IsNullOrWhiteSpace(entry.Prototype) || string.IsNullOrWhiteSpace(entry.Product) ||
             entry.Amount <= 0 || !_prototypes.TryIndex(new EntProtoId(entry.Prototype), out var prototype) ||
@@ -627,7 +627,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
     }
 
     // Factory-owned configuration: restore the actual sealed entitlement, not a recipe/default profile.
-    private void RestoreCrate(EntityUid uid, WarFactoryCrateSnapshot entry)
+    internal void RestoreCrate(EntityUid uid, WarFactoryCrateSnapshot entry)
     {
         if (!IsOutputEntityAlive(uid) || !TryComp<FrontlineSupplyCrateComponent>(uid, out var crate))
             throw new InvalidDataException("Restored factory crate did not initialize correctly.");
@@ -657,7 +657,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         return result;
     }
 
-    private void ValidateStack(WarRefineryStackSnapshot entry)
+    internal void ValidateStack(WarRefineryStackSnapshot entry)
     {
         if (entry == null || string.IsNullOrWhiteSpace(entry.StackId) || string.IsNullOrWhiteSpace(entry.Prototype) ||
             !IsSpawnableStack(new ProtoId<StackPrototype>(entry.StackId)) ||

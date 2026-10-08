@@ -5,12 +5,14 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Content.Server.GameTicking;
+using Content.Shared.Containers.ItemSlots;
 using Content.Shared.Damage;
 using Content.Shared.Damage.Components;
 using Content.Shared.Damage.Prototypes;
 using Content.Shared.Damage.Systems;
 using Content.Shared.FixedPoint;
 using Content.Shared.GameTicking;
+using Content.Shared.Vehicle.Components;
 using Content.Shared.War;
 using Robust.Shared.ContentPack;
 using Robust.Shared.GameObjects;
@@ -35,6 +37,9 @@ public sealed record WarStrategicSnapshot(
 
     [JsonRequired]
     public List<WarFactorySnapshot> Factories { get; init; } = new();
+
+    [JsonRequired]
+    public List<WarVehicleSnapshot> Vehicles { get; init; } = new();
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -106,11 +111,11 @@ public sealed record WarBaseSnapshot(
     public int RuinMaterialDeposited { get; init; }
 }
 
-/// <summary>Technical-restart persistence for objectives, stockpiles, resource fields, refineries and factories.</summary>
+/// <summary>Technical-restart persistence for strategic objectives, resources, machines and opted-in vehicles.</summary>
 public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 {
-    // Earlier versions omitted paid machine claims; never accept omitted state as fresh defaults.
-    public const int SnapshotVersion = 5;
+    // Earlier versions omitted vehicle claims; never accept omitted state as fresh defaults.
+    public const int SnapshotVersion = 6;
     public static readonly ResPath SavePath = new("/persistent-war-strategic.json");
     public static readonly ResPath TemporaryPath = new("/persistent-war-strategic.json.tmp");
     public static readonly ResPath BackupPath = new("/persistent-war-strategic.json.bak");
@@ -134,6 +139,8 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     {
         base.Initialize();
         SubscribeLocalEvent<RoundRestartCleanupEvent>(OnCleanup);
+        SubscribeLocalEvent<VehiclePersistenceComponent, MapInitEvent>(OnVehicleInit);
+        SubscribeLocalEvent<VehiclePersistenceComponent, ItemSlotEjectAttemptEvent>(OnVehicleCargoEject);
         EntityManager.BeforeEntityFlush += OnBeforeEntityFlush;
     }
 
@@ -178,7 +185,8 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     private static void ValidateHeader(WarStrategicSnapshot snapshot)
     {
         if (snapshot.SnapshotVersion != SnapshotVersion || snapshot.WarId <= 0 ||
-            snapshot.Bases == null || snapshot.Resources == null || snapshot.Refineries == null || snapshot.Factories == null)
+            snapshot.Bases == null || snapshot.Resources == null || snapshot.Refineries == null || snapshot.Factories == null ||
+            snapshot.Vehicles == null)
             throw new InvalidDataException("Invalid strategic snapshot header.");
     }
 
@@ -258,6 +266,8 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         var restoringRefineries = new List<EntityUid>();
         var stagedFactoryClaims = new List<EntityUid>();
         var restoringFactories = new List<EntityUid>();
+        var stagedVehicles = new List<EntityUid>();
+        var stagedVehicleCargo = new List<EntityUid>();
         var accepted = false;
         var commitStarted = false;
         try
@@ -297,6 +307,10 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             _resourceFields.ValidateSnapshot(mapId, snapshot.Resources);
             _refineries.ValidateSnapshot(mapId, snapshot.Refineries);
             _factories.ValidateSnapshot(mapId, snapshot.Factories);
+            ValidateVehicles(mapId, snapshot.Vehicles);
+            var freshVehicles = VehicleEntities(mapId);
+            var freshVehicleState = freshVehicles.ToDictionary(uid => uid,
+                uid => ReadVehicle(uid, VehicleGround(mapId), vacant: true));
             _factories.StageSnapshot(mapId, snapshot.Factories, stagedFactoryClaims, restoringFactories);
             _refineries.StageSnapshot(mapId, snapshot.Refineries, stagedStacks, restoringRefineries);
             foreach (var entry in snapshot.Bases)
@@ -324,10 +338,16 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             _resourceFields.StageSnapshot(mapId, snapshot.Resources, stagedNodes);
             _refineries.ValidateStagedSnapshot(mapId, snapshot.Refineries, stagedStacks);
             _factories.ValidateStagedSnapshot(mapId, snapshot.Factories, stagedFactoryClaims);
+            var resourcesCommitted = false;
+            var basesCommitted = false;
+            var machinesCommitted = false;
+            StageVehicles(mapId, snapshot.Vehicles, freshVehicles, stagedVehicles, stagedVehicleCargo, ValidateOtherSlices);
             // Stage all paid claims before deleting fresh YAML entities. Nodes have no field ownership yet.
             if (!Usable(map) || staged.Any(uid => !Usable(uid)))
                 throw new InvalidDataException("Restored objective or map was lost before commit.");
             _resourceFields.CommitSnapshot(mapId, snapshot.Resources, stagedNodes, ref commitStarted);
+            resourcesCommitted = true;
+            ValidateAllSlices();
             // Old resource callbacks can invalidate staged bases, and old base callbacks can invalidate resources.
             if (!Usable(map) || staged.Any(uid => !Usable(uid)))
                 throw new InvalidDataException("Restored objective or map was lost during resource commit.");
@@ -335,32 +355,51 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             foreach (var objective in objectives.Values)
             {
                 _halls.DeleteObjective(objective);
-                _factories.ValidateStagedSnapshot(mapId, snapshot.Factories, stagedFactoryClaims);
+                ValidateAllSlices();
             }
             if (!Usable(map) || staged.Any(uid => !Usable(uid)))
                 throw new InvalidDataException("Restored objective or map was lost during base commit.");
             var restored = GetObjectives(mapId);
+            basesCommitted = true;
             for (var i = 0; i < snapshot.Bases.Count; i++)
             {
-                var entry = snapshot.Bases[i];
-                var uid = staged[i];
-                if (restored[entry.TerritoryId] != uid || MetaData(uid).EntityPrototype?.ID != entry.Prototype ||
-                    !ReadDamage(uid).OrderBy(pair => pair.Key)
-                        .SequenceEqual(entry.DamageHundredths.OrderBy(pair => pair.Key)) ||
-                    (entry.ObjectiveKind == "hall"
-                        ? Comp<TownHallComponent>(uid).FactionId != entry.FactionId ||
-                          !Comp<FrontlineStockpileComponent>(uid).Counts.OrderBy(pair => pair.Key.Id)
-                              .Select(pair => new KeyValuePair<string, int>(pair.Key.Id, pair.Value))
-                              .SequenceEqual(entry.Counts.OrderBy(pair => pair.Key))
-                        : Comp<TownHallRuinComponent>(uid).DepositedBasicMaterials != entry.RuinMaterialDeposited))
-                    throw new InvalidDataException("Restored strategic base changed during commit.");
+                if (restored[snapshot.Bases[i].TerritoryId] != staged[i])
+                    throw new InvalidDataException("Restored strategic objective set changed during commit.");
             }
+            ValidateStagedBases(mapId, snapshot.Bases, staged);
             _resourceFields.ValidateStagedSnapshot(mapId, snapshot.Resources, stagedNodes, committed: true);
             _refineries.CommitSnapshot(mapId, snapshot.Refineries, stagedStacks);
             _factories.CommitSnapshot(mapId, snapshot.Factories, stagedFactoryClaims);
+            machinesCommitted = true;
+            ValidateAllSlices();
+            CommitVehicles(mapId, snapshot.Vehicles, freshVehicles, stagedVehicles, stagedVehicleCargo,
+                ValidateOtherSlices, ref commitStarted);
             // Both ledgers must still be exact after all native callbacks, before releasing either guard.
-            _refineries.ValidateStagedSnapshot(mapId, snapshot.Refineries, stagedStacks, committed: true);
+            ValidateAllSlices();
             accepted = true;
+
+            void ValidateAllSlices()
+            {
+                ValidateOtherSlices();
+                ValidateStagedVehicles(mapId, snapshot.Vehicles, freshVehicles, stagedVehicles, stagedVehicleCargo);
+            }
+
+            void ValidateOtherSlices()
+            {
+                if (!Usable(map))
+                    throw new InvalidDataException("Strategic map was lost during native callbacks.");
+                ValidateStagedBases(mapId, snapshot.Bases, staged);
+                if (basesCommitted && !GetObjectives(mapId).Values.ToHashSet().SetEquals(staged))
+                    throw new InvalidDataException("Restored strategic objective set changed during native callbacks.");
+                _resourceFields.ValidateStagedSnapshot(mapId, snapshot.Resources, stagedNodes, committed: resourcesCommitted);
+                _refineries.ValidateStagedSnapshot(mapId, snapshot.Refineries, stagedStacks, committed: machinesCommitted);
+                _factories.ValidateStagedSnapshot(mapId, snapshot.Factories, stagedFactoryClaims, committed: machinesCommitted);
+                foreach (var uid in freshVehicles)
+                {
+                    if (!SameVehicle(ReadVehicle(uid, VehicleGround(mapId), vacant: true), freshVehicleState[uid]))
+                        throw new InvalidDataException("Fresh vehicle changed before replacement.");
+                }
+            }
         }
         catch
         {
@@ -369,9 +408,13 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             if (commitStarted)
                 _failedMaps.Add(map);
             Exception? cleanupFailure = null;
+            // Quarantine ALL slices before any synchronous deletion or restoration-guard release.
+            Cleanup(() => QueueStrategicClaims(stagedFactoryClaims.Concat(stagedStacks).Concat(stagedVehicleCargo)
+                .Concat(stagedVehicles).Concat(stagedNodes).Concat(staged)));
             // Clean each machine slice independently: a refinery failure cannot release factory goods.
             Cleanup(() => _factories.DeleteStagedClaims(stagedFactoryClaims));
             Cleanup(() => _refineries.DeleteStagedStacks(stagedStacks));
+            Cleanup(() => DeleteVehicleClaims(stagedVehicles, stagedVehicleCargo));
             if (commitStarted)
                 Cleanup(() => { if (!TerminatingOrDeleted(map)) Del(map); });
             else
@@ -397,6 +440,8 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         {
             _refineries.FinishSnapshotRestore(restoringRefineries);
             _factories.FinishSnapshotRestore(restoringFactories);
+            foreach (var uid in stagedVehicles)
+                _restoringVehicles.Remove(uid);
             if (accepted)
             {
                 _loadedMap = map;
@@ -441,11 +486,36 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             Resources = _resourceFields.CaptureSnapshot(mapId),
             Refineries = _refineries.CaptureSnapshot(mapId),
             Factories = _factories.CaptureSnapshot(mapId),
+            Vehicles = CaptureVehicles(mapId),
         };
         Validate(snapshot, objectives);
         // Propagate failure before native entity flush, retaining this map for a later retry.
         Save(snapshot);
         _loadedMap = null;
+    }
+
+    private void ValidateStagedBases(MapId mapId, List<WarBaseSnapshot> entries, List<EntityUid> staged)
+    {
+        if (staged.Count != entries.Count || staged.Distinct().Count() != staged.Count)
+            throw new InvalidDataException("Restored strategic base count changed.");
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var uid = staged[i];
+            if (!Usable(uid) || Transform(uid).MapID != mapId ||
+                !_territories.Contains(new TerritoryId(entry.TerritoryId), Transform(uid).Coordinates, includePaused: true) ||
+                MetaData(uid).EntityPrototype?.ID != entry.Prototype || !HasComp<DamageableComponent>(uid) ||
+                !ReadDamage(uid).OrderBy(pair => pair.Key).SequenceEqual(entry.DamageHundredths.OrderBy(pair => pair.Key)) ||
+                (entry.ObjectiveKind == "hall"
+                    ? !TryComp<TownHallComponent>(uid, out var hall) || hall.TerritoryId != entry.TerritoryId ||
+                      hall.FactionId != entry.FactionId || !TryComp<FrontlineStockpileComponent>(uid, out var stockpile) ||
+                      !stockpile.Counts.OrderBy(pair => pair.Key.Id)
+                          .Select(pair => new KeyValuePair<string, int>(pair.Key.Id, pair.Value))
+                          .SequenceEqual(entry.Counts.OrderBy(pair => pair.Key))
+                    : !TryComp<TownHallRuinComponent>(uid, out var ruin) || ruin.TerritoryId != entry.TerritoryId ||
+                      ruin.DepositedBasicMaterials != entry.RuinMaterialDeposited))
+                throw new InvalidDataException("Restored strategic base changed during native callbacks.");
+        }
     }
 
     // Exact damage is persistence data, not a player-facing health measurement.
