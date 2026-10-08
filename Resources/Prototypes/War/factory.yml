@@ -66,10 +66,10 @@
   - type: Item
     size: Huge
   - type: Sprite
-    sprite: Structures/Storage/Crates/generic.rsi
+    sprite: Frontline/Structures/Storage/Crates/supply.rsi
     state: icon
   - type: Icon
-    sprite: Structures/Storage/Crates/generic.rsi
+    sprite: Frontline/Structures/Storage/Crates/supply.rsi
     state: icon
   - type: FrontlineSupplyCrate
     product: SoldierSupplies
