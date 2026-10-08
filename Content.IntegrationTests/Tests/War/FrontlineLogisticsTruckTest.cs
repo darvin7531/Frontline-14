@@ -292,13 +292,13 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         }
     }
 
-    [Test]
-    public async Task ProductionTruckClientRoadDirtRoadTravelPreservesDriverAndCargo()
+    [TestCase("FloorConcrete", "FloorDirt")]
+    [TestCase("FrontlineFloorAsphalt", "FrontlineFloorDirt")]
+    [TestCase("FrontlineFloorConcrete", "FrontlineFloorGrass")]
+    [TestCase("FrontlineFloorAsphalt", "FrontlineFloorSand")]
+    [TestCase("FrontlineFloorConcrete", "FrontlineFloorDirtRoad")]
+    public async Task ProductionTruckClientRoadDirtRoadTravelPreservesDriverAndCargo(string road, string dirt)
     {
-        // FloorAsphalt is only a migration alias to FloorConcrete. Reuse the real tile,
-        // not a new asset/prototype; neither concrete nor dirt has a native speed penalty.
-        const string road = "FloorConcrete";
-        const string dirt = "FloorDirt";
         await Server.WaitPost(() =>
         {
             for (var x = -2; x <= 26; x++)

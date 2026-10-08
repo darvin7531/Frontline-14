@@ -69,7 +69,7 @@ public sealed class FrontlineEntityCategoryTest : GameTest
 
         var concreteEntities = new HashSet<string>();
 
-        foreach (var path in resources.ContentFindFiles(WarPrototypeDirectory))
+        foreach (var path in new[] { WarPrototypeDirectory, "/Prototypes/Frontline" }.SelectMany(resources.ContentFindFiles))
         {
             var pathText = path.ToString();
             if (!pathText.EndsWith(".yml", StringComparison.OrdinalIgnoreCase) &&
