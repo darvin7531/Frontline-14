@@ -154,7 +154,7 @@ public sealed partial class WarStrategicSnapshotSystem
         }
         foreach (var container in _vehicleContainers.GetAllContainers(uid))
         {
-            if (container != driver && !slots.Slots.Keys.Contains(container.ID))
+            if (container != driver && !_vehicleSlots.TryGetSlot((uid, slots), container.ID, out _))
                 throw new InvalidDataException("Vehicle has an unsupported container.");
         }
         return new WarVehicleSnapshot(identity.VehicleId,
@@ -195,7 +195,7 @@ public sealed partial class WarStrategicSnapshotSystem
                 !containers.Containers.TryGetValue(driver.ContainerId, out var seat) || seat is not ContainerSlot ||
                 slots.Slots.Any(pair => pair.Key == driver.ContainerId || pair.Value.StartingItem != null ||
                     !containers.Containers.TryGetValue(pair.Key, out var container) || container is not ContainerSlot) ||
-                containers.Containers.Keys.Any(id => id != driver.ContainerId && !slots.Slots.Keys.Contains(id)))
+                containers.Containers.Keys.Any(id => id != driver.ContainerId && !slots.Slots.Any(pair => pair.Key == id)))
                 throw new InvalidDataException("Invalid persistent vehicle identity, prototype or state.");
             long total = 0;
             foreach (var (type, amount) in entry.DamageHundredths)
@@ -208,7 +208,7 @@ public sealed partial class WarStrategicSnapshotSystem
             foreach (var cargo in entry.Cargo)
             {
                 if (cargo == null || string.IsNullOrWhiteSpace(cargo.SlotId) || !cargoSlots.Add(cargo.SlotId) ||
-                    cargo.SlotId == driver.ContainerId || !slots.Slots.Keys.Contains(cargo.SlotId) ||
+                    cargo.SlotId == driver.ContainerId || !slots.Slots.Any(pair => pair.Key == cargo.SlotId) ||
                     (cargo.Stack == null) == (cargo.Crate == null))
                     throw new InvalidDataException("Invalid vehicle cargo slot or claim.");
                 if (cargo.Stack is { } stack)
