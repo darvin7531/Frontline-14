@@ -94,6 +94,7 @@ namespace Content.IntegrationTests.Tests
                     });
                 }
             });
+            await server.WaitPost(() => mapSystem.DeleteMap(newMap));
         }
     }
 }
