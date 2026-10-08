@@ -754,7 +754,8 @@ public sealed class PersistentWarRuleTest : GameTest
                 var hall = FindMapEntity<TownHallComponent>(ticker.DefaultMap, component => component.TerritoryId == "frontline-one");
                 var start = SComp<TransformComponent>(hall).Coordinates;
                 oldTruck = SEntMan.SpawnEntity(truckPrototype, start);
-                transforms.SetCoordinates(oldTruck, start.Offset(new Vector2(0.25f, 0.125f)));
+                // Clear the hall's solid fixture so post-restore physics cannot displace the truck.
+                transforms.SetCoordinates(oldTruck, start.Offset(new Vector2(1.25f, 0.125f)));
                 position = transforms.GetWorldPosition(oldTruck);
                 Assert.That(position, Is.Not.EqualTo(transforms.GetWorldPosition(hall)));
                 Assert.That(damage.TryChangeDamage(oldTruck, expectedDamage,
