@@ -199,7 +199,7 @@ public sealed class PersistentWarOrderlyShutdownTest : RobustIntegrationTest
             using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
             var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream);
             Assert.That(saved, Is.Not.Null);
-            Assert.That(saved!.SnapshotVersion, Is.EqualTo(5));
+            Assert.That(saved!.SnapshotVersion, Is.EqualTo(6));
             Assert.That(saved.WarId, Is.EqualTo(campaign.WarId));
             Assert.That(JsonSerializer.Serialize(saved.Factories.OrderBy(claim => claim.FactoryId)),
                 Is.EqualTo(JsonSerializer.Serialize(claimsAtFlush!.OrderBy(claim => claim.FactoryId))),

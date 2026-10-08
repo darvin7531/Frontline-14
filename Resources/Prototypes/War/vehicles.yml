@@ -50,6 +50,7 @@
   name: frontline logistics truck
   description: A one-driver transport with ten physical cargo slots for sealed supply crates and material stacks.
   components:
+  - type: VehiclePersistence
   - type: Vehicle
     transferDamage: false
   - type: Damageable

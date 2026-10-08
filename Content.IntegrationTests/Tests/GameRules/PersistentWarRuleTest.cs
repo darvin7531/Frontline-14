@@ -1959,8 +1959,9 @@ public sealed class PersistentWarRuleTest : GameTest
                         Resources = fields.CaptureSnapshot(source.MapId),
                         Refineries = refineries.CaptureSnapshot(source.MapId),
                         Factories = factories.CaptureSnapshot(source.MapId),
+                        Vehicles = Server.System<WarStrategicSnapshotSystem>().CaptureVehicles(source.MapId),
                     };
-                    Assert.That(full.SnapshotVersion, Is.EqualTo(5));
+                    Assert.That(full.SnapshotVersion, Is.EqualTo(6));
                     Assert.That(full.Factories.Select(entry => entry.FactoryId), Is.EquivalentTo(new[] { westId, eastId }));
                     var west = full.Factories.Single(entry => entry.FactoryId == westId);
                     Assert.That(west.Prototype, Is.EqualTo("FrontlineFactory"));
@@ -2581,6 +2582,7 @@ public sealed class PersistentWarRuleTest : GameTest
                         Resources = resources,
                         Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(source.MapId),
                         Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(source.MapId),
+                        Vehicles = Server.System<WarStrategicSnapshotSystem>().CaptureVehicles(source.MapId),
                     });
                     data.Delete(WarStrategicSnapshotSystem.BackupPath);
                     using var stream = data.OpenWrite(WarStrategicSnapshotSystem.SavePath);
@@ -2882,6 +2884,7 @@ public sealed class PersistentWarRuleTest : GameTest
                             Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(fresh.MapId),
                             Refineries = claims,
                             Factories = factoryClaims,
+                            Vehicles = Server.System<WarStrategicSnapshotSystem>().CaptureVehicles(fresh.MapId),
                         });
                     using (var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
                         saved = new StreamReader(stream).ReadToEnd();
@@ -3042,7 +3045,7 @@ public sealed class PersistentWarRuleTest : GameTest
     [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 0)]
     [TestCase(1, 41)]
     [TestCase(2, 41)]
-    [TestCase(6, 41)]
+    [TestCase(7, 41)]
     [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 42)]
     public async Task MalformedStrategicHeaderCannotBypassValidationAsAnotherWar(int version, int savedWarId)
     {
@@ -3080,6 +3083,7 @@ public sealed class PersistentWarRuleTest : GameTest
                             Resources = resourceEntries,
                             Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(map.MapId),
                             Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(map.MapId),
+                            Vehicles = Server.System<WarStrategicSnapshotSystem>().CaptureVehicles(map.MapId),
                         });
                     Assert.Multiple(() =>
                     {
@@ -3104,6 +3108,7 @@ public sealed class PersistentWarRuleTest : GameTest
                             Resources = Server.System<FrontlineResourceFieldSystem>().CaptureSnapshot(map.MapId),
                             Refineries = Server.System<FrontlineRefinerySystem>().CaptureSnapshot(map.MapId),
                             Factories = Server.System<FrontlineFactorySystem>().CaptureSnapshot(map.MapId),
+                            Vehicles = Server.System<WarStrategicSnapshotSystem>().CaptureVehicles(map.MapId),
                         });
                     snapshot.Restore(map.MapUid, currentWarId);
                     foreach (var entry in bases)
