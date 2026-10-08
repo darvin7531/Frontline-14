@@ -1,0 +1,3 @@
+# Preserve audit evidence byte-for-byte, including upstream whitespace and CRLF.
+metadata/** -text -diff
+notices/** -text -diff

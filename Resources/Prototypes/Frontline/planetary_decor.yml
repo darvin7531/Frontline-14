@@ -1,0 +1,56 @@
+# Non-colliding mapper decorations, not harvestable flora or combat cover.
+- type: entity
+  id: FrontlineDecorBase
+  abstract: true
+  categories: [ Frontline ]
+  placement:
+    mode: SnapgridCenter
+  components:
+  - type: Transform
+    anchored: true
+  - type: Clickable
+  - type: Sprite
+    drawdepth: Objects
+
+- type: entity
+  id: FrontlineDecorWood
+  parent: FrontlineDecorBase
+  name: fallen branches
+  description: Non-colliding planetary scenery.
+  components:
+  - type: Sprite
+    sprite: Frontline/Structures/Flora/Grass/tyrargo_wood_flora.rsi
+    state: stick_01
+
+- type: entity
+  id: FrontlineDecorTree
+  parent: FrontlineDecorBase
+  name: temperate tree
+  description: Non-colliding planetary scenery.
+  components:
+  - type: Sprite
+    sprite: Frontline/Structures/Flora/Trees/flora_trees_tyrargo.rsi
+    state: treetyrargo01
+    # Keep the trunk base on its placement tile, not below the sprite center.
+    offset: 0, 1.5
+    noRot: true
+
+- type: entity
+  id: FrontlineDecorSandbag
+  parent: FrontlineDecorBase
+  name: sandbag decoration
+  description: Non-colliding planetary scenery.
+  components:
+  - type: Sprite
+    sprite: Frontline/Structures/Walls/Barricades/barricade.rsi
+    state: sandbag
+
+- type: entity
+  id: FrontlineDecorBarrel
+  parent: FrontlineDecorBase
+  name: industrial barrel decoration
+  description: Non-colliding planetary scenery.
+  components:
+  - type: Sprite
+    sprite: Frontline/Structures/barrels.rsi
+    state: barrel_blue

@@ -1,0 +1,696 @@
+{
+  "schema_version": 1,
+  "source_repository": "RMC-14/RMC-14",
+  "source_sha": "46bc517117f195f0b6a3f0de629fbe110e21ff6f",
+  "license": "CC-BY-SA-3.0",
+  "changes": "PNG bytes unchanged; RSI metadata reduced to used states. No pixel edits.",
+  "files": [
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/dirt.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/dirt.png",
+      "destination": "Resources/Textures/Frontline/Tiles/dirt.png",
+      "state": "dirt",
+      "sha256": "dda7fcb96d86385956639298814e8d9dfd466fb5be1eeaa440c8f23f9ea7cd51",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/grass1/grass.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/grass1/grass.png",
+      "destination": "Resources/Textures/Frontline/Tiles/grass.png",
+      "state": "grass1",
+      "sha256": "92a5c3cf377fa4cc50bb8a09c2b720ef6988345bb45fb6218d68d178cb3e2561",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/sand.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/sand.png",
+      "destination": "Resources/Textures/Frontline/Tiles/sand.png",
+      "state": "sand",
+      "sha256": "1ea9feaa697a721074679bee505603b88b9dd7d09c16d423aab6fd736303798b",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt.png",
+      "state": "asphalt",
+      "sha256": "a3fe0ae1455824834776d383a8846823f7f37f4933f019b5f3693e4c95361e3a",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/cement1.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/cement1.png",
+      "destination": "Resources/Textures/Frontline/Tiles/concrete.png",
+      "state": "cement1",
+      "sha256": "f45e156932c2b3d16a82cc33cecebba919ae4b6b1d09170d7ed70358566334ad",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/browndirt_road/browndirt_road.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/browndirt_road/browndirt_road.png",
+      "destination": "Resources/Textures/Frontline/Tiles/dirt_road.png",
+      "state": "browndirt_road",
+      "sha256": "4fac89b23eb0cc0181186550fa5cbf985bb29486f7571fc0a66aadf37fda914f",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/browndirt_road/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/Flora/Grass/tyrargo_wood_flora.rsi/stick_01.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Flora/Grass/tyrargo_wood_flora.rsi/stick_01.png",
+      "destination": "Resources/Textures/Frontline/Structures/Flora/Grass/tyrargo_wood_flora.rsi/stick_01.png",
+      "state": "stick_01",
+      "sha256": "5f1760bf38985e7bb8bedce556458cdc1f10fb30380c66847933ba4c3e113ddb",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Structures/Flora/Grass/tyrargo_wood_flora.rsi/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/Flora/Trees/flora_trees_tyrargo.rsi/treetyrargo01.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Flora/Trees/flora_trees_tyrargo.rsi/treetyrargo01.png",
+      "destination": "Resources/Textures/Frontline/Structures/Flora/Trees/flora_trees_tyrargo.rsi/treetyrargo01.png",
+      "state": "treetyrargo01",
+      "sha256": "c07939540b60594d8f9f954f71eb03218cba7ef08ed71e518550c356c3a63154",
+      "size": [
+        64,
+        128
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Structures/Flora/Trees/flora_trees_tyrargo.rsi/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/Walls/Barricades/barricade.rsi/sandbag.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Walls/Barricades/barricade.rsi/sandbag.png",
+      "destination": "Resources/Textures/Frontline/Structures/Walls/Barricades/barricade.rsi/sandbag.png",
+      "state": "sandbag",
+      "sha256": "47d71028d674e42dde9c922016ab2c7e9eb63ca5fdfa987f70987f8ba10a16fd",
+      "size": [
+        64,
+        64
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Structures/Walls/Barricades/barricade.rsi/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/barrels.rsi/barrel_blue.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/barrels.rsi/barrel_blue.png",
+      "destination": "Resources/Textures/Frontline/Structures/barrels.rsi/barrel_blue.png",
+      "state": "barrel_blue",
+      "sha256": "45e88de4a762937dfb0c43576191afd9656bf13ad6c0fb52230bb630c383af15",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Structures/barrels.rsi/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/Storage/Crates/supply.rsi/icon.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Storage/Crates/supply.rsi/icon.png",
+      "destination": "Resources/Textures/Frontline/Structures/Storage/Crates/supply.rsi/icon.png",
+      "state": "icon",
+      "sha256": "393b57e141ea9bd1dd14ade0c205d6a4b6bf8d7588a0d93e1737a7cfaa01f8b1",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Structures/Storage/Crates/supply.rsi/meta.json"
+    }
+  ],
+  "metadata": [
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/00.json",
+      "sha256": "3f78de7529c0b017bfcdec2a8d9d51edca438ed414949de5efa397aede7a2cf9",
+      "git_blob_sha": "2166a3150c3414a8c7f26322eae00c3c4623576f",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/turf/ground_map.dmi, ice from https://github.com/cmss13-devs/cmss13/blob/8d0e113dfafcc590812ff4d55bc002b9b93ece67/icons/turf/ice.dmi, snow from https://github.com/cmss13-devs/cmss13/blob/d0648b581f5f063a3191cf954e9806f09d2c8763/icons/turf/floors/snow2.dmi",
+      "selected_states": [
+        "dirt",
+        "grass1",
+        "sand"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/turf/ground_map.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "718b6531ec71e34f671ab37c269469e1638cc2ec",
+          "path": "icons/turf/ground_map.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": [
+            {
+              "path": "icons/mob/xenos/ATTRIBUTION.txt",
+              "url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/mob/xenos/ATTRIBUTION.txt",
+              "applies": false
+            }
+          ]
+        },
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/8d0e113dfafcc590812ff4d55bc002b9b93ece67/icons/turf/ice.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "8d0e113dfafcc590812ff4d55bc002b9b93ece67",
+          "path": "icons/turf/ice.dmi",
+          "decision": "excluded",
+          "reasons": [
+            "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license."
+          ],
+          "source_author_designation": null,
+          "readme_asset_license_lines": [],
+          "scoped_notices_reviewed": []
+        },
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/d0648b581f5f063a3191cf954e9806f09d2c8763/icons/turf/floors/snow2.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "d0648b581f5f063a3191cf954e9806f09d2c8763",
+          "path": "icons/turf/floors/snow2.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": []
+        }
+      ]
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/01.json",
+      "sha256": "f5f7768b15454aa80e932c268a1b6dc48dd4d2303bfe97cb5fefb6f1f07b6ad1",
+      "git_blob_sha": "d73041934e86698f2fa5ebfae3658ba27554be45",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/turf/floors/asphalt.dmi",
+      "selected_states": [
+        "asphalt",
+        "cement1"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/turf/floors/asphalt.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "09a5191fb11aab8ddffe3f9be94292b53e4d96f6",
+          "path": "icons/turf/floors/asphalt.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": [
+            {
+              "path": "icons/mob/xenos/ATTRIBUTION.txt",
+              "url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/mob/xenos/ATTRIBUTION.txt",
+              "applies": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/browndirt_road/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/browndirt_road/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/02.json",
+      "sha256": "59663c151df88049f9ab1dc348ee4400764c994407873007b5a7016fa803f7c1",
+      "git_blob_sha": "f8ee52b22d2fd2ebd6e40472e8a9339fc9326cfc",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/48e570bd697f2476e28d89cd255d0539a5228228/icons/turf/floors/ground_map_dirt.dmi",
+      "selected_states": [
+        "browndirt_road"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/48e570bd697f2476e28d89cd255d0539a5228228/icons/turf/floors/ground_map_dirt.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "48e570bd697f2476e28d89cd255d0539a5228228",
+          "path": "icons/turf/floors/ground_map_dirt.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "> Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "> Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": [
+            {
+              "path": "icons/mob/xenos/ATTRIBUTION.txt",
+              "url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/48e570bd697f2476e28d89cd255d0539a5228228/icons/mob/xenos/ATTRIBUTION.txt",
+              "applies": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/Flora/Grass/tyrargo_wood_flora.rsi/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Flora/Grass/tyrargo_wood_flora.rsi/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/03.json",
+      "sha256": "626c2dfb52bc0e6bf5f2ac9d8355a15b8d30d3326fec986b07f93005f3971adc",
+      "git_blob_sha": "78da04e31c8d883c35e62c344d8e4c59a00a8f7c",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/2f4c415e5681333e6de474f1f027087101452d31/icons/obj/structures/props/natural/vegetation/tyrargo_wood_flora.dmi",
+      "selected_states": [
+        "stick_01"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/2f4c415e5681333e6de474f1f027087101452d31/icons/obj/structures/props/natural/vegetation/tyrargo_wood_flora.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "2f4c415e5681333e6de474f1f027087101452d31",
+          "path": "icons/obj/structures/props/natural/vegetation/tyrargo_wood_flora.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "> Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "> Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": [
+            {
+              "path": "icons/mob/xenos/ATTRIBUTION.txt",
+              "url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/2f4c415e5681333e6de474f1f027087101452d31/icons/mob/xenos/ATTRIBUTION.txt",
+              "applies": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/Flora/Trees/flora_trees_tyrargo.rsi/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Flora/Trees/flora_trees_tyrargo.rsi/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/04.json",
+      "sha256": "999892a7ade14e244352985b5defd75657b2fbbaeec2d99904f0920f21fde03a",
+      "git_blob_sha": "da6017a5691da7632dca117cd116afa876dff133",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Taken from tgstation at commit https://github.com/tgstation/tgstation/blob/d388dee8b7b6d854f6f0d844988552acf5962b1f/icons/obj/flora/jungletrees.dmi",
+      "selected_states": [
+        "treetyrargo01"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/tgstation/tgstation/blob/d388dee8b7b6d854f6f0d844988552acf5962b1f/icons/obj/flora/jungletrees.dmi",
+          "repository": "tgstation/tgstation",
+          "resolved_sha": "d388dee8b7b6d854f6f0d844988552acf5962b1f",
+          "path": "icons/obj/flora/jungletrees.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": null,
+          "readme_asset_license_lines": [
+            "All assets including icons and sound are under a [Creative Commons 3.0 BY-SA license](http://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated."
+          ],
+          "scoped_notices_reviewed": []
+        }
+      ]
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/Walls/Barricades/barricade.rsi/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Walls/Barricades/barricade.rsi/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/05.json",
+      "sha256": "d12949cd8cfab974f44b86cf1bae8a6460b9042aa51fa0e5ef30565af71673b0",
+      "git_blob_sha": "0aed3e7afac954bfe36edca2fae632378737964e",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/2f4c415e5681333e6de474f1f027087101452d31/icons/obj/structures/barricades.dmi",
+      "selected_states": [
+        "sandbag"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/2f4c415e5681333e6de474f1f027087101452d31/icons/obj/structures/barricades.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "2f4c415e5681333e6de474f1f027087101452d31",
+          "path": "icons/obj/structures/barricades.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "> Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "> Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": [
+            {
+              "path": "icons/mob/xenos/ATTRIBUTION.txt",
+              "url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/2f4c415e5681333e6de474f1f027087101452d31/icons/mob/xenos/ATTRIBUTION.txt",
+              "applies": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/barrels.rsi/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/barrels.rsi/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/06.json",
+      "sha256": "de42332ecb043b030a8f4c2a94367c658ae8c7f0fc127ce71d9fa479f4cdca33",
+      "git_blob_sha": "c3354850513e155150d35ff11cd27638d1d15468",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "https://github.com/cmss13-devs/cmss13/blob/7cb618c69b75873f3ce893022fe08d1233b3152d/icons/obj/structures/crates.dmi, @IceNoobXD on Github modified barrel_black and barrel_purewhite, barrel_yellow modified by drazamuffin",
+      "selected_states": [
+        "barrel_blue"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/7cb618c69b75873f3ce893022fe08d1233b3152d/icons/obj/structures/crates.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "7cb618c69b75873f3ce893022fe08d1233b3152d",
+          "path": "icons/obj/structures/crates.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": [
+            {
+              "path": "icons/mob/xenos/ATTRIBUTION.txt",
+              "url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/7cb618c69b75873f3ce893022fe08d1233b3152d/icons/mob/xenos/ATTRIBUTION.txt",
+              "applies": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Structures/Storage/Crates/supply.rsi/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Storage/Crates/supply.rsi/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/07.json",
+      "sha256": "63aba33c57fe8cf964cfa0e3f9096b2be811051ad46c8df316a89c900785c5bc",
+      "git_blob_sha": "8f83f57cf0e2ab1b8b485ac0c1839c5b17d4e76c",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/7cb618c69b75873f3ce893022fe08d1233b3152d/icons/obj/structures/crates.dmi",
+      "selected_states": [
+        "icon"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/7cb618c69b75873f3ce893022fe08d1233b3152d/icons/obj/structures/crates.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "7cb618c69b75873f3ce893022fe08d1233b3152d",
+          "path": "icons/obj/structures/crates.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": [
+            {
+              "path": "icons/mob/xenos/ATTRIBUTION.txt",
+              "url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/7cb618c69b75873f3ce893022fe08d1233b3152d/icons/mob/xenos/ATTRIBUTION.txt",
+              "applies": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/README.md",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/6dc39c355fb3df32.txt",
+      "sha256": "6dc39c355fb3df322f32dbeeca010c910895d36d822113817badda6859a6e853"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/8d0e113dfafcc590812ff4d55bc002b9b93ece67/README.md",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/a0a5e537bbf18178.txt",
+      "sha256": "a0a5e537bbf181789059a8ce30cdbf4edf3b13caa7b7bd74dc35cf6e3151ab9d"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/d0648b581f5f063a3191cf954e9806f09d2c8763/README.md",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/488dbc0dd65d8447.txt",
+      "sha256": "488dbc0dd65d8447d389a7ec0c7bfac25f464b23200c20dc147ff472e7583436"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/creativecommons/cc-legal-tools-data/a0dac18d1a773b4cdb7d8dd5d9bf4efab7901030/legacy/legalcode/by-sa_3.0.txt",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/3f941b3b89cf7b83.txt",
+      "sha256": "3f941b3b89cf7b8370ceb83cc76d2120d471b58735d8ca60238a751a48d7f72f"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/48e570bd697f2476e28d89cd255d0539a5228228/README.md",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/62c93b6c50881c6d.txt",
+      "sha256": "62c93b6c50881c6dd6d8a5a65197beedc98039ce979eecff4e018bac7a7f7810"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/2f4c415e5681333e6de474f1f027087101452d31/README.md",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/39a9a78e93f75433.txt",
+      "sha256": "39a9a78e93f754333b9e810963e25f63d165e21560dd73bfd3fe4e40b83bf9d7"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/tgstation/tgstation/d388dee8b7b6d854f6f0d844988552acf5962b1f/README.md",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/e79377d25ca6ea60.txt",
+      "sha256": "e79377d25ca6ea606e7f1178a5f8bed088fbad115eeae8212488f5f1d6bddf33"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/7cb618c69b75873f3ce893022fe08d1233b3152d/README.md",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/80cc91f39cb5553d.txt",
+      "sha256": "80cc91f39cb5553da7fc181cfff2767d74a087d9b05d9ab608fc3badaa1333f0"
+    }
+  ],
+  "excluded_candidates": [
+    {
+      "path": "Resources/Textures/_RMC14/Decals/road.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license.",
+        "Mutable upstream reference: audit-time SHA is recorded, but original imported revision is not established; excluded under strict provenance gate."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/Grass/desert_heavygrass.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/Grass/desert_lightgrass.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/Trees/joshua.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/bush.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Mutable upstream reference: audit-time SHA is recorded, but original imported revision is not established; excluded under strict provenance gate."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/cactus.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/large_boulder.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict.",
+        "Literal upstream source path does not exist at the audited upstream SHA; no corrected path substituted.",
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/rocks.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Mutable upstream reference: audit-time SHA is recorded, but original imported revision is not established; excluded under strict provenance gate."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/tallgrass.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/tallgrass_desert.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Flora/wide_boulder.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict.",
+        "Literal upstream source path does not exist at the audited upstream SHA; no corrected path substituted.",
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Vehicles/box_van.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Mutable upstream reference: audit-time SHA is recorded, but original imported revision is not established; excluded under strict provenance gate."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Vehicles/humvee_transport.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Upstream pull request is unmerged; no immutable source revision established."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Vehicles/sppvan_logistics.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Mutable upstream reference: audit-time SHA is recorded, but original imported revision is not established; excluded under strict provenance gate.",
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Vehicles/van.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Literal upstream source path does not exist at the audited upstream SHA; no corrected path substituted.",
+        "Mutable upstream reference: audit-time SHA is recorded, but original imported revision is not established; excluded under strict provenance gate."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Walls/Barricades/stacked_barricade.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/Walls/wood.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/containers.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Literal upstream source path does not exist at the audited upstream SHA; no corrected path substituted."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/fences.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Mutable upstream reference: audit-time SHA is recorded, but original imported revision is not established; excluded under strict provenance gate."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/fences_overgrown.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Mutable upstream reference: audit-time SHA is recorded, but original imported revision is not established; excluded under strict provenance gate."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/roadsigns.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Mutable upstream reference: audit-time SHA is recorded, but original imported revision is not established; excluded under strict provenance gate."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Structures/vehicle_pileup.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Tiles/planet/asteroid",
+      "decision": "excluded",
+      "rationale": [
+        "Conflicting upstream grant: README says BY-SA but its asset-license link targets the present LICENSE-CC-BY-NC-SA-3.0.txt; RMC per-asset BY-SA declaration does not resolve this conflict."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Tiles/planet/bigred",
+      "decision": "excluded",
+      "rationale": [
+        "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Tiles/planet/desert_water.rsi",
+      "decision": "excluded",
+      "rationale": [
+        "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license.",
+        "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Tiles/planet/desert_water_shore",
+      "decision": "excluded",
+      "rationale": [
+        "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Tiles/planet/desert_water_toxic",
+      "decision": "excluded",
+      "rationale": [
+        "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Tiles/planet/red_desert",
+      "decision": "excluded",
+      "rationale": [
+        "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license."
+      ]
+    }
+  ]
+}

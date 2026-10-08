@@ -70,7 +70,7 @@
     baseWalkSpeed: 3
     baseSprintSpeed: 4.5
   - type: VehicleSurfaceSpeed
-    roadTiles: [FloorConcrete]
+    roadTiles: [FloorConcrete, FrontlineFloorAsphalt, FrontlineFloorConcrete]
     offRoadModifier: 0.55
   - type: ContainerContainer
     containers:

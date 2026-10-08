@@ -1,0 +1,48 @@
+# Planetary graphics only; no station floor salvage or native movement penalty.
+- type: tile
+  id: FrontlineFloorDirt
+  parent: BaseFloorPlanet
+  name: frontline-tiles-dirt
+  sprite: /Textures/Frontline/Tiles/dirt.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorGrass
+  parent: BaseFloorPlanet
+  name: frontline-tiles-grass
+  sprite: /Textures/Frontline/Tiles/grass.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorSand
+  parent: BaseFloorPlanet
+  name: frontline-tiles-sand
+  sprite: /Textures/Frontline/Tiles/sand.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt
+  sprite: /Textures/Frontline/Tiles/asphalt.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorConcrete
+  parent: BaseFloorPlanet
+  name: frontline-tiles-concrete
+  sprite: /Textures/Frontline/Tiles/concrete.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorDirtRoad
+  parent: BaseFloorPlanet
+  name: frontline-tiles-dirt-road
+  sprite: /Textures/Frontline/Tiles/dirt_road.png
+  variants: 1
+  itemDrop: null
