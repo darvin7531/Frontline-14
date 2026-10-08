@@ -58,6 +58,7 @@ namespace Content.Shared.Movement.Systems
             SubscribeLocalEvent<InputMoverComponent, ComponentHandleState>(OnMoverHandleState);
             SubscribeLocalEvent<InputMoverComponent, EntParentChangedMessage>(OnInputParentChange);
             SubscribeLocalEvent<InputMoverComponent, AnchorStateChangedEvent>(OnAnchorState);
+            SubscribeLocalEvent<TransformComponent, EntityTerminatingEvent>(OnRelativeEntityTerminating);
 
             SubscribeLocalEvent<FollowedComponent, EntParentChangedMessage>(OnFollowedParentChange);
 
@@ -176,6 +177,23 @@ namespace Content.Shared.Movement.Systems
             mover.LerpTarget = TimeSpan.Zero;
             mover.TargetRelativeRotation = Angle.Zero;
             Dirty(uid, mover);
+        }
+
+        private void OnRelativeEntityTerminating(Entity<TransformComponent> entity, ref EntityTerminatingEvent args)
+        {
+            if (!MapGridQuery.HasComp(entity.Owner) && !MapQuery.HasComp(entity.Owner))
+                return;
+
+            // Refresh before the old transform disappears, even during the transition's lerp window.
+            // ponytail: O(movers) per grid/map deletion; index references only if teardown profiling warrants it.
+            var query = AllEntityQuery<InputMoverComponent, TransformComponent>();
+            while (query.MoveNext(out var uid, out var mover, out var xform))
+            {
+                if (mover.RelativeEntity != entity.Owner || TerminatingOrDeleted(uid))
+                    continue;
+
+                TryUpdateRelative(uid, mover, xform);
+            }
         }
 
         private bool TryUpdateRelative(EntityUid uid, InputMoverComponent mover, TransformComponent xform)
