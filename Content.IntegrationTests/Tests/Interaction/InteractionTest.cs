@@ -184,6 +184,11 @@ public abstract partial class InteractionTest : GameTest
         //
     }
 
+    /// <summary>
+    /// Configure the test map before spawning and ticking the player.
+    /// </summary>
+    protected virtual Task ConfigureTestMap() => Task.CompletedTask;
+
     public override async Task DoSetup()
     {
         await base.DoSetup();
@@ -197,6 +202,7 @@ public abstract partial class InteractionTest : GameTest
         PlayerCoords = SEntMan.GetNetCoordinates(Transform.WithEntityId(MapData.GridCoords.Offset(new Vector2(0.5f, 0.5f)), MapData.MapUid));
         TargetCoords = SEntMan.GetNetCoordinates(Transform.WithEntityId(MapData.GridCoords.Offset(new Vector2(1.5f, 0.5f)), MapData.MapUid));
         await SetTile(Plating, grid: MapData.Grid);
+        await ConfigureTestMap();
 
         // Get player data
         var sPlayerMan = Server.ResolveDependency<Robust.Server.Player.IPlayerManager>();
