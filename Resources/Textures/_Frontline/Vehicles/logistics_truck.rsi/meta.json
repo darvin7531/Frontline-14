@@ -1,7 +1,7 @@
 {
   "version": 1,
   "license": "CC-BY-SA-3.0",
-  "copyright": "CM-SS13 active development team; from RMC-14/RMC-14 van.rsi at 46bc517117f195f0b6a3f0de629fbe110e21ff6f. Selected states repackaged for Frontline-14; PNG bytes unchanged. See THIRD_PARTY_ASSETS.md.",
+  "copyright": "CM-SS13 active development team; from RMC-14/RMC-14 van.rsi at 46bc517117f195f0b6a3f0de629fbe110e21ff6f. Selected states repackaged for Frontline-14; truck_base PNG unchanged, wheels_intact extracts the first frame in each direction from wheels_0. See THIRD_PARTY_ASSETS.md.",
   "size": {
     "x": 96,
     "y": 96
@@ -12,7 +12,7 @@
       "directions": 4
     },
     {
-      "name": "wheels_1",
+      "name": "wheels_intact",
       "directions": 4
     }
   ]

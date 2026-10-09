@@ -27,10 +27,18 @@ public sealed partial class DamageOnHighSpeedImpactSystem : EntitySystem
 
     private void HandleCollide(EntityUid uid, DamageOnHighSpeedImpactComponent component, ref StartCollideEvent args)
     {
-        if (!args.OurFixture.Hard || !args.OtherFixture.Hard)
+        // Kinematic-controller mobs do not generate hard contacts with each other.
+        // Opt-in vehicle impacts use a sensor; ordinary self-impact damage stays hard-only.
+        if ((!args.OurFixture.Hard && !component.DamageOther) || !args.OtherFixture.Hard)
             return;
 
-        if (!HasComp<DamageableComponent>(uid))
+        var target = component.DamageOther ? args.OtherEntity : uid;
+        if (component.DamageOther &&
+            (!HasComp<Content.Shared.Mobs.Components.MobStateComponent>(target) ||
+                TryComp<Content.Shared.Vehicle.Components.VehicleComponent>(uid, out var vehicle) && vehicle.Operator == target))
+            return;
+
+        if (!HasComp<DamageableComponent>(target))
             return;
 
         //TODO: This should solve after physics solves
@@ -46,11 +54,11 @@ public sealed partial class DamageOnHighSpeedImpactSystem : EntitySystem
         component.LastHit = _gameTiming.CurTime;
 
         if (_robustRandom.Prob(component.StunChance))
-            _stun.TryUpdateStunDuration(uid, TimeSpan.FromSeconds(component.StunSeconds));
+            _stun.TryUpdateStunDuration(target, TimeSpan.FromSeconds(component.StunSeconds));
 
         var damageScale = component.SpeedDamageFactor * speed / component.MinimumSpeed;
 
-        _damageable.TryChangeDamage(uid, component.Damage * damageScale);
+        _damageable.TryChangeDamage(target, component.Damage * damageScale);
 
         if (_gameTiming.IsFirstTimePredicted)
         {
@@ -58,7 +66,7 @@ public sealed partial class DamageOnHighSpeedImpactSystem : EntitySystem
             audioParams = audioParams.WithVariation(0.125f).AddVolume(-0.125f);
             _audio.PlayPvs(component.SoundHit, uid, audioParams);
         }
-        _color.RaiseEffect(Color.Red, new List<EntityUid>() { uid }, Filter.Pvs(uid, entityManager: EntityManager));
+        _color.RaiseEffect(Color.Red, new List<EntityUid>() { target }, Filter.Pvs(target, entityManager: EntityManager));
     }
 
     public void ChangeCollide(EntityUid uid, float minimumSpeed, float stunSeconds, float damageCooldown, float speedDamage, DamageOnHighSpeedImpactComponent? collide = null)

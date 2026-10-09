@@ -20,6 +20,7 @@ using Content.Shared.Popups;
 using Content.Shared.Random.Helpers;
 using Content.Shared.Rejuvenate;
 using Content.Shared.StatusEffectNew;
+using Content.Shared.War;
 using Robust.Shared.Audio.Systems;
 using Robust.Shared.Containers;
 using Robust.Shared.Prototypes;
@@ -490,6 +491,10 @@ public sealed partial class BloodstreamSystem : EntitySystem
 
         var leakedBlood = _solutionContainer.SplitSolution(ent.Comp.BloodSolution.Value, amount);
 
+        // Retain blood loss and its health effects, but do not create mode-owned floor litter.
+        if (HasComp<FrontlinePlayerComponent>(ent))
+            return true;
+
         if (!_solutionContainer.ResolveSolution(ent.Owner, ent.Comp.BloodTemporarySolutionName, ref ent.Comp.TemporarySolution, out var tempSolution))
             return true;
 
@@ -556,7 +561,8 @@ public sealed partial class BloodstreamSystem : EntitySystem
             _solutionContainer.RemoveAllSolution(ent.Comp.TemporarySolution.Value);
         }
 
-        _puddle.TrySpillAt(ent, tempSol, out _);
+        if (!HasComp<FrontlinePlayerComponent>(ent))
+            _puddle.TrySpillAt(ent, tempSol, out _);
     }
 
     /// <summary>

@@ -3,7 +3,7 @@
   "license": "CC-BY-SA-3.0",
   "selected_states": [
     "truck_base",
-    "wheels_1"
+    "wheels_intact"
   ],
   "rmc_revision": "46bc517117f195f0b6a3f0de629fbe110e21ff6f",
   "rmc_import_revision": "a53a8ec5fc45a6b8d1c2995a10c996f00258c1e8",
@@ -23,19 +23,13 @@
   },
   "literal_upstream_copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/tree/master/icons/obj/vehicles/van",
   "literal_source_status": "missing directory; unchanged; never treated as valid",
-  "changes": "Reduced RSI metadata to two static four-direction states; copied both PNGs byte-for-byte. No pixel changes.",
+  "changes": "truck_base unchanged; wheels_intact extracts source wheels_0 first static frame in each direction (RSI source frame indices 0,8,16,24), without changing pixels. Raw animated source preserved; old wheels_1 removed.",
   "files": [
     {
       "path": "Resources/Textures/_Frontline/Vehicles/logistics_truck.rsi/truck_base.png",
       "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Vehicles/van.rsi/truck_base.png",
       "sha256": "7b411e56c3a20e588ba0e0fba4b6a1e15e73802b13bcd9e2871cfcee21c9da27",
       "git_blob_sha": "5cf34ba993c063801f7145baf81bd567a4fad438"
-    },
-    {
-      "path": "Resources/Textures/_Frontline/Vehicles/logistics_truck.rsi/wheels_1.png",
-      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Vehicles/van.rsi/wheels_1.png",
-      "sha256": "a052caf7b33189416c711c9115d5559281177eb3906117aab347ac5d43bfa8d7",
-      "git_blob_sha": "dbef59b78e4f64d3f4bbc5eaa61231c0808da381"
     },
     {
       "path": "Resources/Textures/_Frontline/Attribution/logistics-truck/upstream-meta.json",
@@ -54,6 +48,20 @@
       "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/12a894facff4ac60d0dcc11c854cf7a283ac8786/LICENSE-CC-BY-SA-3.0.txt",
       "sha256": "3f941b3b89cf7b8370ceb83cc76d2120d471b58735d8ca60238a751a48d7f72f",
       "git_blob_sha": "604209a804632b6e5274005a22293976d07c3099"
+    },
+    {
+      "path": "Resources/Textures/_Frontline/Vehicles/logistics_truck.rsi/wheels_intact.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Vehicles/van.rsi/wheels_0.png",
+      "sha256": "e40999a150a5cd9aaf22beaa9dae1e8d3e5b0753b88e7e9b6e683fbc4659e1c9",
+      "git_blob_sha": "94873540e6ae8e5d3f3207d414a449b1f5ad2e27",
+      "adaptation": "first static frame per direction"
+    },
+    {
+      "path": "Resources/Textures/_Frontline/Attribution/logistics-truck/upstream-wheels_0.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Vehicles/van.rsi/wheels_0.png",
+      "sha256": "9e20be63c183249dedf350189a4b895296e24ba6248e630a1ef9e305bc8bbeb2",
+      "git_blob_sha": "1aa20c7ea65595e3769cce007102b9115f486366",
+      "adaptation": "none"
     }
   ]
 }

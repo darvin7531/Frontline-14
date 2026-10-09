@@ -1,4 +1,5 @@
 using Content.Shared.Destructible;
+using Content.Shared.War;
 using Robust.Shared.Audio.Systems;
 using Robust.Shared.Audio;
 using Robust.Shared.Network;
@@ -47,7 +48,8 @@ public sealed partial class GibbingSystem : EntitySystem
         var beingGibbed = new BeingGibbedEvent(gibbed);
         RaiseLocalEvent(ent, ref beingGibbed);
 
-        if (dropGiblets)
+        // Mode bodies discard organs, never the actual equipment collected by InventorySystem.
+        if (dropGiblets || HasComp<FrontlinePlayerComponent>(ent))
         {
             foreach (var giblet in gibbed)
             {

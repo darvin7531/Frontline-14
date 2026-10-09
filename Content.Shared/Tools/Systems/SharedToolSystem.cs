@@ -176,6 +176,7 @@ public abstract partial class SharedToolSystem : EntitySystem
             NeedHand = tool != user,
             AttemptFrequency = fuel > 0 ? AttemptFrequency.EveryTick : AttemptFrequency.Never,
             ExamineText = examineText,
+            ConstructionWork = doAfterEv is Content.Shared.Construction.ConstructionInteractDoAfterEvent or Content.Shared.Repairable.RepairDoAfterEvent,
         };
 
         _doAfterSystem.TryStartDoAfter(doAfterArgs, out id);

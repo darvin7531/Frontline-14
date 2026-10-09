@@ -341,6 +341,15 @@ public abstract partial class SharedDoAfterSystem : EntitySystem
             if (existing.Cancelled || existing.Completed)
                 continue;
 
+            // Reuse the actor's native DoAfter lifetime, including cancellation and target deletion.
+            // Do not cancel the first job or block unrelated offhand interactions/combat.
+            if (HasComp<Content.Shared.War.FrontlinePlayerComponent>(args.User) &&
+                IsWork(args) && IsWork(existing.Args))
+            {
+                blocked = true;
+                continue;
+            }
+
             if (!IsDuplicate(existing.Args, args))
                 continue;
 
@@ -351,6 +360,16 @@ public abstract partial class SharedDoAfterSystem : EntitySystem
         }
 
         return !blocked;
+    }
+
+    private static bool IsWork(DoAfterArgs args)
+    {
+        var ev = args.Event;
+        return args.ConstructionWork || ev is
+            Content.Shared.War.FrontlineResourceExtractionDoAfterEvent or
+            Content.Shared.War.TownHallRepairDoAfterEvent or
+            Content.Shared.Construction.ConstructionInteractDoAfterEvent or
+            Content.Shared.Repairable.RepairDoAfterEvent;
     }
 
     private bool IsDuplicate(DoAfterArgs args, DoAfterArgs otherArgs)

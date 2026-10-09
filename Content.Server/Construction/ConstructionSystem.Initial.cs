@@ -257,6 +257,7 @@ namespace Content.Server.Construction
                 BreakOnDamage = true,
                 BreakOnMove = true,
                 NeedHand = false,
+                ConstructionWork = true,
                 // allow simultaneously starting several construction jobs using the same stack of materials.
                 CancelDuplicate = false,
                 BlockDuplicate = false,

@@ -35,6 +35,43 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
 {
     protected override string PlayerPrototype => "MobHuman";
 
+    // A reused pair can tick barotrauma during attachment, before the test body runs.
+    protected override Task ConfigureTestMap() => AddAtmosphere();
+
+    [Test]
+    [Repeat(3)] // Exercise fresh and recycled pairs with different retained system tick phases.
+    public async Task MovingTruckHitsPedestrianButNotStationaryContactOrOperator()
+    {
+        await Server.WaitAssertion(() => Assert.That(Server.System<DamageableSystem>().GetTotalDamage(SPlayer),
+            Is.EqualTo(Content.Shared.FixedPoint.FixedPoint2.Zero), "The driver must be healthy before any truck contact."));
+        for (var x = -1; x < 6; x++)
+        {
+            NetCoordinates coords = default;
+            await Server.WaitPost(() => coords = SEntMan.GetNetCoordinates(ToServer(TargetCoords).Offset(new Vector2(x, 0))));
+            await SetTile(Plating, coords, MapData.Grid);
+        }
+        await AddGravity();
+        await SpawnTarget("FrontlineLogisticsTruck");
+        var truck = STarget!.Value;
+        EntityUid victim = default;
+        await Server.WaitPost(() => victim = SEntMan.SpawnEntity("MobHuman", ToServer(TargetCoords)));
+        await Pair.RunSeconds(0.3f);
+        await Server.WaitAssertion(() => Assert.That(Server.System<DamageableSystem>().GetTotalDamage(victim), Is.EqualTo(Content.Shared.FixedPoint.FixedPoint2.Zero)));
+        await Server.WaitPost(() =>
+        {
+            Transform.SetCoordinates(victim, ToServer(TargetCoords).Offset(new Vector2(1.5f, 0)));
+            Assert.That(Server.System<VehicleSystem>().TryEnter(truck, SPlayer), Is.True);
+        });
+        await Pair.RunUntilSynced();
+        await PressKey(EngineKeyFunctions.MoveRight, 90, cursorEntity: Target);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(Server.System<DamageableSystem>().GetTotalDamage(victim), Is.GreaterThan(Content.Shared.FixedPoint.FixedPoint2.Zero),
+                $"truck={SEntMan.GetComponent<TransformComponent>(truck).Coordinates}; victim={SEntMan.GetComponent<TransformComponent>(victim).Coordinates}; velocity={SEntMan.GetComponent<Robust.Shared.Physics.Components.PhysicsComponent>(truck).LinearVelocity}; lastHit={SEntMan.GetComponent<DamageOnHighSpeedImpactComponent>(truck).LastHit}");
+            Assert.That(Server.System<DamageableSystem>().GetTotalDamage(SPlayer), Is.EqualTo(Content.Shared.FixedPoint.FixedPoint2.Zero));
+        });
+    }
+
     [Test]
     public async Task ProductionTruckClientLoadsTwoStaticDirectionalLayers()
     {
@@ -47,7 +84,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
             Assert.That(sprite.SnapCardinals, Is.False);
             Assert.That(sprite.EnableDirectionOverride, Is.False);
             var layers = sprite.AllLayers.ToArray();
-            Assert.That(layers.Select(layer => layer.RsiState.Name), Is.EqualTo(new[] { "truck_base", "wheels_1" }));
+            Assert.That(layers.Select(layer => layer.RsiState.Name), Is.EqualTo(new[] { "truck_base", "wheels_intact" }));
             Assert.That(sprite.BaseRSI!.Path.ToString(), Is.EqualTo("/Textures/_Frontline/Vehicles/logistics_truck.rsi"));
             Assert.That(sprite.BaseRSI.Size, Is.EqualTo(new Vector2i(96, 96)));
             foreach (var layer in layers)
@@ -76,7 +113,6 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
     {
         await SetTile(Plating, grid: MapData.Grid);
         await AddGravity();
-        await AddAtmosphere();
         await SpawnTarget("FrontlineLogisticsTruck");
         var truck = STarget!.Value;
         var slots = Server.System<ItemSlotsSystem>();
@@ -170,7 +206,6 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         for (var y = -2; y <= 5; y++)
             await SetTile(Plating, FromServer(ToServer(PlayerCoords).Offset(new Vector2(x, y))), MapData.Grid);
         await AddGravity();
-        await AddAtmosphere();
         await SpawnTarget("FrontlineLogisticsTruck");
         var truck = STarget!.Value;
         var slots = Server.System<ItemSlotsSystem>();
@@ -343,7 +378,6 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
                     new Tile(TileMan[x >= 8 && x < 16 ? dirt : road].TileId));
         });
         await AddGravity();
-        await AddAtmosphere();
         await SpawnTarget("FrontlineLogisticsTruck");
         var truck = STarget!.Value;
         var slots = Server.System<ItemSlotsSystem>();
@@ -486,7 +520,6 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
     {
         await SetTile(Plating, grid: MapData.Grid);
         await AddGravity();
-        await AddAtmosphere();
         await SpawnTarget("FrontlineLogisticsTruck");
         var truck = STarget!.Value;
         var driver = SPlayer;

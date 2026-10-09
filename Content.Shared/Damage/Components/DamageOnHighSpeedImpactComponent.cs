@@ -11,6 +11,10 @@ namespace Content.Shared.Damage.Components;
 [RegisterComponent, NetworkedComponent, Access(typeof(DamageOnHighSpeedImpactSystem))]
 public sealed partial class DamageOnHighSpeedImpactComponent : Component
 {
+    /// <summary>Opt-in vehicle impact: damage the colliding mob instead of the moving entity.</summary>
+    [DataField]
+    public bool DamageOther;
+
     [DataField("minimumSpeed"), ViewVariables(VVAccess.ReadWrite)]
     public float MinimumSpeed = 20f;
 
