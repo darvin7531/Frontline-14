@@ -1,24 +1,29 @@
 - type: frontlineSupplyProduct
   id: BasicMaterials
+  category: frontline-ui-category-materials
   name: frontline-supply-product-basic-materials
   entity: BasicMaterials1
 
 - type: frontlineSupplyProduct
   id: SoldierSupplies
+  category: frontline-ui-category-supplies
   name: frontline-supply-product-soldier-supplies
 
 - type: frontlineSupplyProduct
   id: FrontlineWeaponPistolMk58
+  category: frontline-ui-category-weapons
   name: frontline-supply-product-mk58
   entity: FrontlineWeaponPistolMk58
 
 - type: frontlineSupplyProduct
   id: MagazinePistol
+  category: frontline-ui-category-ammunition
   name: frontline-supply-product-magazine-pistol
   entity: MagazinePistol
 
 - type: frontlineSupplyProduct
   id: Brutepack1
+  category: frontline-ui-category-medical
   name: frontline-supply-product-brutepack
   entity: Brutepack1
 

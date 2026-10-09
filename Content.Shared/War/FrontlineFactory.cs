@@ -12,6 +12,9 @@ public sealed partial class FrontlineFactoryRecipePrototype : IPrototype
     [DataField]
     public LocId Name = "frontline-factory-recipe-unknown";
 
+    [DataField]
+    public LocId Category = "frontline-ui-category-other";
+
     [DataField(required: true)]
     public Dictionary<ProtoId<Content.Shared.Stacks.StackPrototype>, int> Input = new();
 
