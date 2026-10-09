@@ -37,7 +37,7 @@ public sealed partial class FrontlineStockpileWindow : DefaultWindow
     public event Action? Submit;
     public event Action<ProtoId<FrontlineSupplyProductPrototype>>? Withdraw;
     private readonly FrontlineItemGrid _products;
-    private readonly RichTextLabel _virtual = new();
+    private readonly RichTextLabel _virtual = new() { Margin = new Robust.Shared.Maths.Thickness(6) };
     private readonly Button _withdraw = new() { Name = "Withdraw", Disabled = true };
     private FrontlineStockpileUiState _state = new([]);
     private Func<ProtoId<FrontlineSupplyProductPrototype>, string> _name = id => id.Id;
@@ -48,11 +48,13 @@ public sealed partial class FrontlineStockpileWindow : DefaultWindow
         Title = Loc.GetString("frontline-stockpile-title");
         MinSize = new Vector2(360, 320);
         SetSize = new Vector2(480, 480);
-        var contents = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Vertical, HorizontalExpand = true, VerticalExpand = true };
+        var contents = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Vertical, HorizontalExpand = true, VerticalExpand = true, SeparationOverride = 6 };
         var submit = new Button { Name = "Deposit", Text = Loc.GetString("frontline-stockpile-submit") };
         submit.OnPressed += _ => Submit?.Invoke();
         contents.AddChild(submit);
-        contents.AddChild(_virtual);
+        contents.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, Children = { _virtual } });
+        contents.AddChild(new Label { Text = Loc.GetString("frontline-ui-stockpile-heading"), StyleClasses = { "LabelHeading" } });
+        contents.AddChild(new PanelContainer { StyleClasses = { "LowDivider" } });
         _products = new FrontlineItemGrid(Loc.GetString("frontline-ui-stockpile-empty"), true) { Name = "Products" };
         _products.SelectionChanged += UpdateSelection;
         contents.AddChild(_products);
@@ -74,7 +76,7 @@ public sealed partial class FrontlineStockpileWindow : DefaultWindow
             .Select(product => new FrontlineItemView(product.Product.Id,
                 _products.EntityIcon(_prototypes.Index(product.Product).Entity), product.Amount,
                 Loc.GetString("frontline-stockpile-count", ("name", name(product.Product)), ("amount", product.Amount)),
-                _prototypes.Index(product.Product).Category)));
+                _prototypes.Index(product.Product).Category, Name: name(product.Product))));
         _virtual.SetMessage(string.Join("\n", state.Products.Where(product => _prototypes.Index(product.Product).Entity == null)
             .Select(product => Loc.GetString("frontline-ui-virtual-supply", ("name", name(product.Product)), ("amount", product.Amount)))));
         UpdateSelection();

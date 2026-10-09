@@ -451,6 +451,7 @@ public sealed class FrontlineFactoryTest : GameTest
         EntityUid actor = default;
         EntityUid crate = default;
         var remaining = alreadyFunded ? 1f : duration;
+        var productEntity = server.ProtoMan.Index(new Robust.Shared.Prototypes.ProtoId<FrontlineSupplyProductPrototype>(product)).Entity?.Id;
 
         await server.WaitPost(() =>
         {
@@ -503,7 +504,7 @@ public sealed class FrontlineFactoryTest : GameTest
             Assert.That(SEntMan.HasComponent<EntityStorageComponent>(retained), Is.False);
             Assert.That(SEntMan.HasComponent<Content.Shared.Storage.StorageComponent>(retained), Is.False);
             Assert.That(SEntMan.EntityQuery<MetaDataComponent, TransformComponent>()
-                .Count(entity => entity.Item2.MapID == map.MapId && entity.Item1.EntityPrototype?.ID == product), Is.Zero,
+                .Count(entity => entity.Item2.MapID == map.MapId && entity.Item1.EntityPrototype?.ID == productEntity), Is.Zero,
                 "Completion must not create loose product entities, including floor output.");
             Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent, TransformComponent>()
                 .Count(entity => entity.Item2.MapID == map.MapId), Is.EqualTo(1),
@@ -525,7 +526,7 @@ public sealed class FrontlineFactoryTest : GameTest
             Assert.That(counts[new Robust.Shared.Prototypes.ProtoId<FrontlineSupplyProductPrototype>(product)],
                 Is.EqualTo(amount), "Stockpile credit must be exactly 1/1/2, not the generic five-unit crate default.");
             Assert.That(SEntMan.EntityQuery<MetaDataComponent, TransformComponent>()
-                .Count(entity => entity.Item2.MapID == map.MapId && entity.Item1.EntityPrototype?.ID == product), Is.Zero,
+                .Count(entity => entity.Item2.MapID == map.MapId && entity.Item1.EntityPrototype?.ID == productEntity), Is.Zero,
                 "Depositing a sealed batch must not materialize its goods.");
         });
     }
@@ -792,12 +793,13 @@ public sealed class FrontlineFactoryTest : GameTest
             Assert.That(factorySystem.GetJobs(factory), Is.Empty);
             Assert.That(SComp<FrontlineFactoryComponent>(factory).OutputContainer.ContainedEntities, Has.Count.EqualTo(2));
             Assert.That(FindPrototype("FrontlineWeaponPistolMk58", map.MapId), Is.EqualTo(EntityUid.Invalid));
-            Assert.That(FindPrototype("MagazinePistol", map.MapId), Is.EqualTo(EntityUid.Invalid));
+            Assert.That(FindPrototype("FrontlineMagazinePistol", map.MapId), Is.EqualTo(EntityUid.Invalid));
         });
         await server.WaitPost(() =>
         {
             foreach (var product in new[] { "FrontlineWeaponPistolMk58", "MagazinePistol" })
             {
+                var entity = product == "MagazinePistol" ? "FrontlineMagazinePistol" : product;
                 var crate = SComp<FrontlineFactoryComponent>(factory).OutputContainer.ContainedEntities[0];
                 Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Product.Id, Is.EqualTo(product));
                 Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Amount, Is.EqualTo(1));
@@ -806,12 +808,12 @@ public sealed class FrontlineFactoryTest : GameTest
                 Assert.That(stockpiles.TrySubmitHeld(core, actor), Is.True);
                 Assert.That(SEntMan.EntityExists(crate), Is.False);
                 Assert.That(SComp<FrontlineStockpileComponent>(core).Counts[product], Is.EqualTo(1));
-                Assert.That(FindPrototype(product, map.MapId), Is.EqualTo(EntityUid.Invalid));
+                Assert.That(FindPrototype(entity, map.MapId), Is.EqualTo(EntityUid.Invalid));
                 Assert.That(stockpiles.TryWithdrawPlayerProduct(core, actor, product), Is.True);
                 Assert.That(SComp<FrontlineStockpileComponent>(core).Counts[product], Is.Zero);
             }
             gun = FindPrototype("FrontlineWeaponPistolMk58", map.MapId);
-            magazine = FindPrototype("MagazinePistol", map.MapId);
+            magazine = FindPrototype("FrontlineMagazinePistol", map.MapId);
         });
         await server.WaitAssertion(() =>
         {

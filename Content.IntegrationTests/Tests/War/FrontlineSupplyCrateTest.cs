@@ -25,7 +25,7 @@ public sealed class FrontlineSupplyCrateTest : GameTest
     }
 
     [TestCase("FrontlineWeaponCrate", "FrontlineWeaponPistolMk58", "FrontlineWeaponPistolMk58")]
-    [TestCase("FrontlineAmmoCrate", "MagazinePistol", "MagazinePistol")]
+    [TestCase("FrontlineAmmoCrate", "MagazinePistol", "FrontlineMagazinePistol")]
     [TestCase("FrontlineMedicalCrate", "Brutepack1", "Brutepack1")]
     [TestCase("FrontlineSupplyCrate", "SoldierSupplies", null)]
     public async Task CrateCarriesOnlyAProductCount(string crateId, string productId, string? entityId)

@@ -156,6 +156,13 @@ public sealed partial class GunSystem : SharedGunSystem
             }
         }
 
+        if (shotProjectiles.Count > 0 && GetMagazineEntity(gun) is { } magazine &&
+            TryComp<BallisticAmmoProviderComponent>(magazine, out var provider) && provider.DeleteOnEmpty &&
+            GetAmmoCount(magazine) == 0 && GetChamberEntity(gun) == null)
+        {
+            QueueDel(magazine);
+        }
+
         RaiseLocalEvent(gun, new AmmoShotEvent()
         {
             FiredProjectiles = shotProjectiles,

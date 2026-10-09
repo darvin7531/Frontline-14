@@ -9,12 +9,13 @@ using Robust.Client.UserInterface.Controls;
 using Robust.Shared.Maths;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Timing;
+using Robust.Shared.Utility;
 
 namespace Content.Client.War;
 
 public readonly record struct FrontlineItemView(
     string Id, Texture? Icon, int Amount, string Tooltip,
-    string Category = "frontline-ui-category-other", bool Available = true, Texture? InputIcon = null, int InputAmount = 0, string Caption = "");
+    string Category = "frontline-ui-category-other", bool Available = true, Texture? InputIcon = null, int InputAmount = 0, string Caption = "", string Name = "");
 
 /// <summary>Prototype icons only: never spawn a client entity to render an item.</summary>
 public sealed partial class FrontlineItemGrid : BoxContainer
@@ -25,20 +26,20 @@ public sealed partial class FrontlineItemGrid : BoxContainer
     public readonly ScrollContainer Scroll;
     public readonly GridContainer Cells;
     private readonly RichTextLabel _empty = new();
-    private readonly Dictionary<string, (ContainerButton Button, TextureRect Icon, Label Count, Label Fallback, Label Caption)> _cells = new();
+    private readonly Dictionary<string, (ContainerButton Button, TextureRect Icon, Label Count, Label Fallback, RichTextLabel Caption, RichTextLabel Name)> _cells = new();
     private readonly Dictionary<string, FrontlineItemView> _items = new();
     private string[] _categories = [];
     public string? SelectedId { get; private set; }
     public string SelectedCategory { get; private set; } = "";
     public event Action? SelectionChanged;
 
-    public FrontlineItemGrid(string empty, bool categories = false, bool conversion = false)
+    public FrontlineItemGrid(string empty, bool categories = false)
     {
         IoCManager.InjectDependencies(this);
         Orientation = LayoutOrientation.Vertical;
-        Cells = new ResponsiveGrid(conversion ? 132 : 68);
+        Cells = new ResponsiveGrid(164) { HSeparationOverride = 8, VSeparationOverride = 8 };
         HorizontalExpand = VerticalExpand = true;
-        MinWidth = 140;
+        MinWidth = 156;
         Categories.Visible = categories;
         Categories.OnItemSelected += args =>
         {
@@ -82,32 +83,38 @@ public sealed partial class FrontlineItemGrid : BoxContainer
             {
                 var button = new ContainerButton
                 {
-                    Name = id, SetSize = new Vector2(item.InputIcon == null ? 64 : 128, 64), ToggleMode = true,
+                    Name = id, MinWidth = 156, MinHeight = 96, HorizontalExpand = true, ToggleMode = true,
+                    StyleClasses = { ContainerButton.StyleClassButton },
                     CanKeyboardFocus = true, KeyboardFocusOnClick = true,
                 };
+                var body = new BoxContainer { Orientation = LayoutOrientation.Vertical, SeparationOverride = 4 };
+                var header = new BoxContainer { SeparationOverride = 4 };
                 var icon = new TextureRect
                 {
-                    CanShrink = true, Stretch = TextureRect.StretchMode.KeepAspectCentered,
-                    Margin = new Thickness(item.InputIcon == null ? 4 : 72, 16, 4, 18),
+                    SetSize = new Vector2(32), CanShrink = true, Stretch = TextureRect.StretchMode.KeepAspectCentered,
                 };
-                var count = new Label { HorizontalAlignment = HAlignment.Right, VerticalAlignment = VAlignment.Bottom };
-                var fallback = new Label { Text = "?", HorizontalAlignment = HAlignment.Center, VerticalAlignment = VAlignment.Center };
+                var count = new Label();
+                var fallback = new Label { Text = "?" };
                 if (item.InputIcon != null)
                 {
-                    button.AddChild(new TextureRect
+                    header.AddChild(new TextureRect
                     {
-                        Texture = item.InputIcon, CanShrink = true,
+                        Texture = item.InputIcon, SetSize = new Vector2(32), CanShrink = true,
                         Stretch = TextureRect.StretchMode.KeepAspectCentered,
-                        Margin = new Thickness(4, 16, 76, 18),
                     });
-                    button.AddChild(new Label { Text = "→", HorizontalAlignment = HAlignment.Center, VerticalAlignment = VAlignment.Center });
-                    button.AddChild(new Label { Text = item.InputAmount.ToString(), VerticalAlignment = VAlignment.Bottom, Margin = new Thickness(4, 0, 0, 0) });
+                    header.AddChild(new Label { Text = item.InputAmount.ToString() });
+                    header.AddChild(new Label { Text = "→" });
                 }
-                var caption = new Label { HorizontalAlignment = HAlignment.Center, VerticalAlignment = VAlignment.Top };
-                button.AddChild(caption);
-                button.AddChild(icon);
-                button.AddChild(fallback);
-                button.AddChild(count);
+                var caption = new RichTextLabel { MaxWidth = 140 };
+                var name = new RichTextLabel { Name = "ItemName", MaxWidth = 140 };
+                header.AddChild(icon);
+                header.AddChild(fallback);
+                header.AddChild(new Label { Text = "×" });
+                header.AddChild(count);
+                body.AddChild(header);
+                body.AddChild(name);
+                body.AddChild(caption);
+                button.AddChild(body);
                 button.OnPressed += _ =>
                 {
                     SelectedId = id;
@@ -115,13 +122,16 @@ public sealed partial class FrontlineItemGrid : BoxContainer
                     SelectionChanged?.Invoke();
                 };
                 Cells.AddChild(button);
-                cell = (button, icon, count, fallback, caption);
+                cell = (button, icon, count, fallback, caption, name);
                 _cells.Add(id, cell);
             }
             cell.Icon.Texture = item.Icon;
             cell.Fallback.Visible = item.Icon == null;
             cell.Count.Text = item.Amount.ToString();
-            cell.Caption.Text = item.Caption;
+            cell.Name.SetMessage(FormattedMessage.FromUnformatted(item.Name));
+            cell.Caption.Visible = !string.IsNullOrEmpty(item.Caption);
+            cell.Caption.SetMessage(FormattedMessage.FromUnformatted(string.IsNullOrEmpty(item.Caption) ? "" :
+                $"{item.Caption}\n{Loc.GetString(item.Available ? "frontline-ui-ready" : "frontline-ui-insufficient")}"));
             cell.Button.ToolTip = item.Tooltip;
             cell.Icon.Modulate = item.Available ? Color.White : Color.Gray;
         }
@@ -164,8 +174,9 @@ public sealed partial class FrontlineItemGrid : BoxContainer
 
     public static BoxContainer Column(string heading)
     {
-        var column = new BoxContainer { Orientation = LayoutOrientation.Vertical, HorizontalExpand = true, VerticalExpand = true, MinWidth = 140 };
-        column.AddChild(new Label { Text = heading });
+        var column = new BoxContainer { Orientation = LayoutOrientation.Vertical, HorizontalExpand = true, VerticalExpand = true, MinWidth = 156, Margin = new Thickness(6), SeparationOverride = 6 };
+        column.AddChild(new Label { Text = heading, StyleClasses = { "LabelHeading" } });
+        column.AddChild(new PanelContainer { StyleClasses = { "LowDivider" } });
         return column;
     }
 
