@@ -31,16 +31,14 @@ Frontline 14 turns the familiar SS14 world into a **persistent conflict between 
 
 ### Core gameplay loop
 
-```mermaid
-flowchart LR
-    A["Gather resources"] --> B["Refine"]
-    B --> C["Manufacture"]
-    C --> D["Supply crates"]
-    D --> E["Truck delivery"]
-    E --> F["Base stockpile"]
-    F --> G["Supply and combat"]
-    G --> H["Control territory"]
-```
+1. **Resource extraction** — collect resources from deposits.
+2. **Refining** — turn raw resources into materials.
+3. **Factory** — manufacture equipment and supplies.
+4. **Supply crates** — physical batches of finished goods.
+5. **Truck delivery** — transport crates and materials.
+6. **Base stockpile** — deposit and store supplies.
+7. **Supply and combat** — retrieve equipment and respawn using Soldier Supplies.
+8. **Territory control** — destroy and rebuild strategic bases.
 
 Delivered `Soldier Supplies` pay for respawns at eligible supplied bases. Destroying a `Town Hall` creates a ruin; restoring it costs `BasicMaterials` and can change control of the territory.
 
