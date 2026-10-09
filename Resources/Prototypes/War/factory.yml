@@ -1,5 +1,6 @@
 - type: frontlineFactoryRecipe
   id: FrontlineFactoryMk58
+  category: frontline-ui-category-weapons
   name: frontline-factory-recipe-mk58
   input:
     BasicMaterials: 20
@@ -9,6 +10,7 @@
 
 - type: frontlineFactoryRecipe
   id: FrontlineFactoryMagazinePistol
+  category: frontline-ui-category-ammunition
   name: frontline-factory-recipe-magazine-pistol
   input:
     BasicMaterials: 5
@@ -18,6 +20,7 @@
 
 - type: frontlineFactoryRecipe
   id: FrontlineFactoryBrutepack
+  category: frontline-ui-category-medical
   name: frontline-factory-recipe-brutepack
   input:
     BasicMaterials: 5
@@ -27,6 +30,7 @@
 
 - type: frontlineFactoryRecipe
   id: FrontlineFactorySupplyCrate
+  category: frontline-ui-category-supplies
   name: frontline-factory-recipe-supply-crate
   input:
     BasicMaterials: 10

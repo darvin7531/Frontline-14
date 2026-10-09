@@ -11,6 +11,9 @@ public sealed partial class FrontlineSupplyProductPrototype : IPrototype
     [IdDataField]
     public string ID { get; private set; } = null!;
 
+    [DataField]
+    public LocId Category = "frontline-ui-category-other";
+
     [DataField(required: true)]
     public LocId Name = "frontline-supply-product-soldier-supplies";
 

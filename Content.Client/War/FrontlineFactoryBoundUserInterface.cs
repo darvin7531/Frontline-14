@@ -60,118 +60,109 @@ public sealed partial class FrontlineFactoryBoundUserInterface : BoundUserInterf
     }
 }
 
-public sealed class FrontlineFactoryWindow : DefaultWindow
+public sealed partial class FrontlineFactoryWindow : DefaultWindow
 {
+    [Dependency] private IPrototypeManager _prototypes = default!;
     public event Action<ProtoId<FrontlineFactoryRecipePrototype>>? Submit;
     public event Action? Eject;
     public event Action? TakeOutput;
+    private readonly FrontlineItemGrid _inputs;
+    private readonly FrontlineItemGrid _recipes;
+    private readonly FrontlineItemGrid _outputs;
+    private readonly FrontlineJobList _jobs = new() { Name = "Queue" };
+    private readonly RichTextLabel _details = new() { HorizontalExpand = true };
+    private readonly Button _produce = new() { Name = "Produce", Disabled = true };
+    private readonly Button _eject = new() { Name = "Eject" };
+    private readonly Button _take = new() { Name = "TakeOutput" };
+    private FrontlineFactoryUiState _state = new([], [], []);
+    private Func<ProtoId<StackPrototype>, string> _stackName = id => id.Id;
+    private Func<ProtoId<FrontlineFactoryRecipePrototype>, string> _recipeName = id => id.Id;
+    private Func<EntProtoId, string> _entityName = id => id.Id;
 
     public FrontlineFactoryWindow()
     {
+        IoCManager.InjectDependencies(this);
         Title = Loc.GetString("frontline-factory-title");
-        MinSize = new Vector2(420, 480);
+        MinSize = new Vector2(600, 400);
+        SetSize = new Vector2(850, 540);
+        var columns = new BoxContainer { HorizontalExpand = true, VerticalExpand = true, SeparationOverride = 12 };
+        var left = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-input-heading"));
+        var hint = new RichTextLabel();
+        hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));
+        left.AddChild(hint);
+        _inputs = new FrontlineItemGrid(Loc.GetString("frontline-factory-input-empty")) { Name = "Inputs" };
+        left.AddChild(_inputs);
+        _eject.Text = Loc.GetString("frontline-factory-eject-all");
+        _eject.OnPressed += _ => Eject?.Invoke();
+        left.AddChild(_eject);
+        columns.AddChild(left);
+        var center = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-recipes-heading"));
+        _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty"), true) { Name = "Recipes" };
+        _recipes.SelectionChanged += UpdateSelection;
+        center.AddChild(_recipes);
+        var detailsScroll = FrontlineItemGrid.CreateScroll(_details);
+        detailsScroll.MinHeight = 90;
+        detailsScroll.VerticalExpand = false;
+        center.AddChild(detailsScroll);
+        _produce.Text = Loc.GetString("frontline-ui-produce");
+        _produce.OnPressed += _ =>
+        {
+            if (_recipes.SelectedId is { } id)
+                Submit?.Invoke(new ProtoId<FrontlineFactoryRecipePrototype>(id));
+        };
+        center.AddChild(_produce);
+        columns.AddChild(center);
+        var right = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-output-heading"));
+        _outputs = new FrontlineItemGrid(Loc.GetString("frontline-factory-output-empty")) { Name = "Outputs" };
+        right.AddChild(_outputs);
+        _take.Text = Loc.GetString("frontline-factory-take-output");
+        _take.OnPressed += _ => TakeOutput?.Invoke();
+        right.AddChild(_take);
+        right.AddChild(new Label { Text = Loc.GetString("frontline-factory-queue-heading") });
+        right.AddChild(FrontlineItemGrid.CreateScroll(_jobs));
+        columns.AddChild(right);
+        ContentsContainer.AddChild(columns);
+        UpdateSelection();
     }
 
-    public void SetState(
-        FrontlineFactoryUiState state,
+    public void SetState(FrontlineFactoryUiState state,
         Func<ProtoId<StackPrototype>, string> stackName,
         Func<EntProtoId, string> entityName,
         Func<ProtoId<FrontlineFactoryRecipePrototype>, string> recipeName)
     {
-        ContentsContainer.RemoveAllChildren();
-        var contents = new BoxContainer
+        _state = state;
+        _stackName = stackName;
+        _recipeName = recipeName;
+        _entityName = entityName;
+        _inputs.SetItems(state.Inputs.Select(input => new FrontlineItemView(input.Stack.Id,
+            _inputs.StackIcon(input.Stack), input.Amount, $"{stackName(input.Stack)} ×{input.Amount}")));
+        _outputs.SetItems(state.Outputs.Select(output => new FrontlineItemView(output.Prototype.Id,
+            _outputs.EntityIcon(output.Prototype), output.Count, $"{entityName(output.Prototype)} ×{output.Count}")));
+        _recipes.SetItems(state.Recipes.Select(recipe => new FrontlineItemView(recipe.Id.Id,
+            _recipes.EntityIcon(recipe.Output), recipe.OutputAmount, Details(recipe),
+            _prototypes.Index(recipe.Id).Category, recipe.CanSubmit, Caption: Loc.GetString("frontline-ui-duration", ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds))))));
+        _jobs.SetJobs(state.Jobs.Select(job =>
         {
-            Orientation = LayoutOrientation.Vertical,
-            HorizontalExpand = true,
-        };
+            var recipe = state.Recipes.FirstOrDefault(recipe => recipe.Id == job.Recipe);
+            return new FrontlineJobView(job.Recipe.Id, recipeName(job.Recipe), _recipes.EntityIcon(recipe?.Output),
+                recipe?.Duration ?? TimeSpan.Zero, job.Remaining, job.Processing);
+        }));
+        _eject.Disabled = state.Inputs.Length == 0;
+        _take.Disabled = state.Outputs.Length == 0;
+        UpdateSelection();
+    }
 
-        contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-input-heading") });
-        if (state.Inputs.Length == 0)
-            contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-input-empty") });
-        foreach (var input in state.Inputs)
-        {
-            contents.AddChild(new Label
-            {
-                Text = Loc.GetString("frontline-factory-stack-line",
-                    ("name", stackName(input.Stack)),
-                    ("amount", input.Amount)),
-            });
-        }
+    private string Details(FrontlineFactoryRecipeState recipe) =>
+        Loc.GetString("frontline-ui-recipe-details", ("name", _recipeName(recipe.Id)),
+            ("input", string.Join("\n", recipe.Inputs.Select(input => $"{_stackName(input.Stack)} ×{input.Amount}"))),
+            ("output", _entityName(recipe.Output)), ("amount", recipe.OutputAmount),
+            ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds)),
+            ("availability", Loc.GetString(recipe.CanSubmit ? "frontline-ui-ready" : "frontline-ui-insufficient")));
 
-        var eject = new Button { Text = Loc.GetString("frontline-factory-eject-all") };
-        eject.OnPressed += _ => Eject?.Invoke();
-        contents.AddChild(eject);
-
-        contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-output-heading") });
-        if (state.Outputs.Length == 0)
-            contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-output-empty") });
-        foreach (var output in state.Outputs)
-        {
-            contents.AddChild(new Label
-            {
-                Text = Loc.GetString("frontline-factory-stack-line",
-                    ("name", entityName(output.Prototype)),
-                    ("amount", output.Count)),
-            });
-        }
-        var takeOutput = new Button
-        {
-            Name = "TakeOutput",
-            Text = Loc.GetString("frontline-factory-take-output"),
-            Disabled = state.Outputs.Length == 0,
-        };
-        takeOutput.OnPressed += _ => TakeOutput?.Invoke();
-        contents.AddChild(takeOutput);
-
-        contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-recipes-heading") });
-        foreach (var recipe in state.Recipes)
-        {
-            var inputs = string.Join(", ", recipe.Inputs.Select(input =>
-                Loc.GetString("frontline-factory-stack-amount",
-                    ("name", stackName(input.Stack)),
-                    ("amount", input.Amount))));
-            var details = Loc.GetString("frontline-factory-recipe-line",
-                ("recipe", recipeName(recipe.Id)),
-                ("input", inputs),
-                ("output", entityName(recipe.Output)),
-                ("amount", recipe.OutputAmount),
-                ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds)));
-            var button = new Button
-            {
-                Disabled = !recipe.CanSubmit,
-                Text = Loc.GetString("frontline-factory-produce", ("recipe", details)).Replace(" → ", "\n→ "),
-                HorizontalExpand = true,
-            };
-            var recipeId = recipe.Id;
-            button.OnPressed += _ => Submit?.Invoke(recipeId);
-            contents.AddChild(button);
-        }
-
-        contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-queue-heading") });
-        if (state.Jobs.Length == 0)
-            contents.AddChild(new Label { Text = Loc.GetString("frontline-factory-queue-empty") });
-        for (var i = 0; i < state.Jobs.Length; i++)
-        {
-            var job = state.Jobs[i];
-            contents.AddChild(new Label
-            {
-                Text = Loc.GetString("frontline-factory-job-line",
-                    ("position", i + 1),
-                    ("recipe", recipeName(job.Recipe)),
-                    ("status", Loc.GetString(job.Processing
-                        ? "frontline-factory-status-processing"
-                        : "frontline-factory-status-waiting")),
-                    ("seconds", Math.Max(0, Math.Ceiling(job.Remaining.TotalSeconds)))),
-            });
-        }
-
-        var scroll = new ScrollContainer
-        {
-            HScrollEnabled = false,
-            HorizontalExpand = true,
-            VerticalExpand = true,
-        };
-        scroll.AddChild(contents);
-        ContentsContainer.AddChild(scroll);
+    private void UpdateSelection()
+    {
+        var selected = _state.Recipes.FirstOrDefault(recipe => recipe.Id.Id == _recipes.SelectedId);
+        _produce.Disabled = selected == null || !selected.CanSubmit;
+        _details.SetMessage(selected == null ? Loc.GetString("frontline-ui-select-recipe") : Details(selected));
     }
 }
