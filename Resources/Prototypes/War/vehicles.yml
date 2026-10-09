@@ -56,7 +56,34 @@
     noRot: true
     layers:
     - state: truck_base
-    - state: wheels_1
+    - state: wheels_intact
+  - type: Fixtures
+    fixtures:
+      body:
+        shape: !type:PhysShapeCircle
+          radius: 0.35
+        density: 100
+        mask:
+        - MobMask
+        layer:
+        - MobLayer
+      pedestrianImpact:
+        shape: !type:PhysShapeCircle
+          radius: 0.35
+        hard: false
+        mask:
+        - MobLayer
+  - type: DamageOnHighSpeedImpact
+    damageOther: true
+    minimumSpeed: 1.5
+    speedDamageFactor: 1
+    stunChance: 0
+    damageCooldown: 0.5
+    soundHit:
+      path: /Audio/Effects/metal_thud1.ogg
+    damage:
+      types:
+        Blunt: 25
   - type: VehiclePersistence
   - type: Vehicle
     transferDamage: false

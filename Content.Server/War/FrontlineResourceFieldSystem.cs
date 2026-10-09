@@ -3,6 +3,10 @@ using System.Linq;
 using Content.Server.Stack;
 using Content.Shared.DoAfter;
 using Content.Shared.Examine;
+using Content.Shared.Hands.EntitySystems;
+using Content.Shared.Inventory;
+using Content.Shared.Storage;
+using Content.Shared.Storage.EntitySystems;
 using Content.Shared.Interaction;
 using Content.Shared.Stacks;
 using Content.Shared.Tag;
@@ -18,8 +22,12 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 {
     private static readonly ProtoId<TagPrototype> PickaxeTag = "Pickaxe";
     private readonly HashSet<EntityUid> _extractingNodes = [];
+    private readonly HashSet<EntityUid> _deliveringActors = [];
 
     [Dependency] private SharedDoAfterSystem _doAfter = default!;
+    [Dependency] private SharedHandsSystem _hands = default!;
+    [Dependency] private InventorySystem _inventory = default!;
+    [Dependency] private SharedStorageSystem _storage = default!;
     [Dependency] private SharedInteractionSystem _interaction = default!;
     [Dependency] private StackSystem _stack = default!;
     [Dependency] private TagSystem _tags = default!;
@@ -76,8 +84,9 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
 
     public bool TryStartExtraction(EntityUid node, EntityUid user, EntityUid tool)
     {
-        if (!TryComp<FrontlineResourceNodeComponent>(node, out var nodeComp) || nodeComp.RemainingYield <= 0 ||
-            !_tags.HasTag(tool, PickaxeTag) || !_extractingNodes.Add(node))
+        if (_deliveringActors.Contains(user) || !TryComp<FrontlineResourceNodeComponent>(node, out var nodeComp) || nodeComp.RemainingYield <= 0 ||
+            !_tags.HasTag(tool, PickaxeTag) || !_interaction.InRangeUnobstructed(user, node) ||
+            !_extractingNodes.Add(node))
             return false;
 
         var started = _doAfter.TryStartDoAfter(new DoAfterArgs(EntityManager, user, nodeComp.ExtractionTime,
@@ -94,28 +103,132 @@ public sealed partial class FrontlineResourceFieldSystem : EntitySystem
     private void OnExtractionComplete(Entity<FrontlineResourceNodeComponent> node,
         ref FrontlineResourceExtractionDoAfterEvent args)
     {
-        _extractingNodes.Remove(node);
-        if (args.Cancelled || args.Used is not { } tool || node.Comp.RemainingYield <= 0 ||
-            !_tags.HasTag(tool, PickaxeTag) || !_interaction.InRangeUnobstructed(args.User, node.Owner))
-            return;
-
-        var amount = Math.Min(node.Comp.HarvestAmount, node.Comp.RemainingYield);
-        node.Comp.RemainingYield -= amount;
-        var output = _stack.SpawnAtPosition(amount, node.Comp.Output, Transform(node).Coordinates);
-        _stack.TryMergeToContacts(output);
-        foreach (var bonus in node.Comp.BonusDrops)
+        if (!_deliveringActors.Add(args.User))
         {
-            if (!_random.Prob(bonus.Chance))
-                continue;
-
-            var bonusOutput = _stack.SpawnAtPosition(_random.Next(bonus.MinAmount, bonus.MaxAmount + 1),
-                bonus.Output,
-                Transform(node).Coordinates);
-            _stack.TryMergeToContacts(bonusOutput);
+            _extractingNodes.Remove(node);
+            return;
         }
+        try
+        {
+            if (args.Cancelled || args.Used is not { } tool || node.Comp.RemainingYield <= 0 ||
+                !_tags.HasTag(tool, PickaxeTag) || !_interaction.InRangeUnobstructed(args.User, node.Owner))
+                return;
 
-        if (node.Comp.RemainingYield == 0)
-            Del(node);
+            var amount = Math.Min(node.Comp.HarvestAmount, node.Comp.RemainingYield);
+            var outputs = new Dictionary<ProtoId<StackPrototype>, int> { [node.Comp.Output] = amount };
+            foreach (var bonus in node.Comp.BonusDrops)
+            {
+                if (_random.Prob(bonus.Chance))
+                    outputs[bonus.Output] = checked(outputs.GetValueOrDefault(bonus.Output) +
+                        _random.Next(bonus.MinAmount, bonus.MaxAmount + 1));
+            }
+
+            if (HasComp<FrontlinePlayerComponent>(args.User))
+            {
+                if (!TryDeliverOre(node, args.User, outputs))
+                    return;
+            }
+            else
+            {
+                foreach (var (type, count) in outputs)
+                foreach (var output in _stack.SpawnMultipleAtPosition(type, count, Transform(node).Coordinates))
+                    _stack.TryMergeToContacts(output);
+            }
+
+            node.Comp.RemainingYield -= amount;
+            if (node.Comp.RemainingYield == 0)
+                Del(node);
+        }
+        finally
+        {
+            _extractingNodes.Remove(node);
+            _deliveringActors.Remove(args.User);
+        }
+    }
+
+    // Stage the complete primary + bonus claim before charging yield. Native insertion can be eventful.
+    private bool TryDeliverOre(Entity<FrontlineResourceNodeComponent> node, EntityUid user,
+        Dictionary<ProtoId<StackPrototype>, int> outputs)
+    {
+        var staged = new List<EntityUid>();
+        var merged = new Dictionary<EntityUid, (int Before, int After)>();
+        var delivered = new Dictionary<EntityUid, int>();
+        var yield = node.Comp.RemainingYield;
+        var committed = false;
+        _inventory.TryGetSlotEntity(user, "back", out var backpack);
+        TryComp<StorageComponent>(backpack, out var storage);
+        bool Owned(EntityUid uid) => _hands.IsHolding(user, uid) || storage?.Container.Contains(uid) == true;
+        bool ContextValid() => Usable(node) && Usable(user) && node.Comp.RemainingYield == yield &&
+            _interaction.InRangeUnobstructed(user, node.Owner) &&
+            (storage == null || backpack is { } bag && Usable(bag) &&
+                _inventory.TryGetSlotEntity(user, "back", out var current) && current == bag);
+        try
+        {
+            foreach (var (type, count) in outputs)
+            {
+                var created = _stack.SpawnMultipleAtPosition(type, count, Transform(user).Coordinates);
+                staged.AddRange(created);
+                if (created.Any(uid => !Usable(uid)) || created.Sum(uid => Comp<StackComponent>(uid).Count) != count)
+                    return false;
+            }
+            foreach (var output in staged)
+            {
+                if (!ContextValid() || !Usable(output))
+                    return false;
+                var stack = Comp<StackComponent>(output);
+                var count = stack.Count;
+                var candidates = _hands.EnumerateHeld(user).ToList();
+                if (storage != null && backpack is { } bag && Usable(bag))
+                    candidates.AddRange(storage.Container.ContainedEntities);
+                var recipient = candidates.FirstOrDefault(uid => !staged.Contains(uid) && Usable(uid) &&
+                    TryComp<StackComponent>(uid, out var existing) && !existing.Unlimited &&
+                    existing.StackTypeId == stack.StackTypeId && _stack.GetMaxCount(existing) - existing.Count >= count);
+                if (recipient != EntityUid.Invalid)
+                {
+                    var existing = Comp<StackComponent>(recipient);
+                    var before = existing.Count;
+                    var original = merged.TryGetValue(recipient, out var previous) ? previous.Before : before;
+                    merged[recipient] = (original, before + count);
+                    if (!_stack.TryMergeStacks((output, stack), (recipient, existing), out var transferred) ||
+                        transferred != count || stack.Count != 0 || !Usable(recipient) || existing.Count != before + count)
+                        return false;
+                    continue;
+                }
+                if (!_hands.TryPickupAnyHand(user, output) &&
+                    !(backpack is { } target && Usable(target) && storage != null &&
+                        _storage.CanInsert(target, output, out _, storage, ignoreStacks: true) &&
+                        _storage.Insert(target, output, out _, user, storage, playSound: false, stackAutomatically: false)))
+                    return false;
+                if (!Usable(output) || stack.Count != count || !Owned(output))
+                    return false;
+                delivered.Add(output, count);
+            }
+            if (!ContextValid() || delivered.Any(pair => !Usable(pair.Key) || !Owned(pair.Key) ||
+                    Comp<StackComponent>(pair.Key).Count != pair.Value) ||
+                staged.Any(uid => !delivered.ContainsKey(uid) &&
+                    (!TryComp<StackComponent>(uid, out var donor) || donor.Count != 0)) ||
+                merged.Any(pair => !Usable(pair.Key) || !Owned(pair.Key) ||
+                    Comp<StackComponent>(pair.Key).Count != pair.Value.After))
+                return false;
+            committed = true;
+            return true;
+        }
+        finally
+        {
+            if (!committed)
+            {
+                foreach (var (uid, counts) in merged)
+                {
+                    if (!TerminatingOrDeleted(uid))
+                        _stack.SetCount((uid, null), counts.Before);
+                }
+                foreach (var uid in staged)
+                {
+                    if (!TerminatingOrDeleted(uid))
+                        Del(uid);
+                }
+            }
+        }
     }
 
     public override void Update(float frameTime)

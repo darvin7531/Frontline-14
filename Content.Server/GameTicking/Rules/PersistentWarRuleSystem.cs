@@ -128,6 +128,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
             return false;
 
         var mob = _stationSpawning.SpawnPlayerMob(RobustRandom.Pick(spawns), null, profile, null);
+        EnsureComp<FrontlinePlayerComponent>(mob);
         _mind.TransferTo(mind, mob, ghostCheckOverride: true);
         return true;
     }
@@ -189,6 +190,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
                     return false;
                 // Capture the body before the native profile/gear callbacks so a throw can clean it up.
                 replacement = Spawn(species.Prototype, coordinates);
+                EnsureComp<FrontlinePlayerComponent>(replacement.Value);
                 if (!StillInOldBody() || !ReplacementValid(replacement.Value))
                     return false;
                 _stationSpawning.SpawnPlayerMob(coordinates, null, profile, null, entity: replacement);

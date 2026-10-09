@@ -174,6 +174,10 @@ public sealed partial class DoAfterArgs
     [DataField]
     public bool CancelDuplicate = true;
 
+    /// <summary>Initial construction uses the legacy awaited event instead of a typed work event.</summary>
+    [DataField]
+    public bool ConstructionWork;
+
     /// <summary>
     ///     These flags determine what DoAfter properties are used to determine whether one DoAfter is a duplicate of
     ///     another.
@@ -277,6 +281,7 @@ public sealed partial class DoAfterArgs
         AttemptFrequency = other.AttemptFrequency;
         BlockDuplicate = other.BlockDuplicate;
         CancelDuplicate = other.CancelDuplicate;
+        ConstructionWork = other.ConstructionWork;
         DuplicateCondition = other.DuplicateCondition;
 
         // Networked
