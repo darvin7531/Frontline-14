@@ -1,141 +1,129 @@
-[Русский](./README.md) | [English](./README.en.md)
+<div align="center">
 
-# Frontline 14
+# FRONTLINE 14
 
-**Frontline 14** is an independent game project built on Space Station 14 / RobustToolbox, focused on a long-running war between two factions in one shared physical world.
+**One war. Two factions. One shared world.**
 
-The project keeps the technical foundation of SS14 while moving away from classic station gameplay and short rounds toward territorial warfare, logistics, industry, research, and frontline combat.
+Long-running territorial warfare built around resource extraction, industry, physical logistics, and combat — powered by **Space Station 14 / RobustToolbox**.
 
-> **Status:** early development. The repository already contains a dedicated PersistentWar foundation, but it is still far from a complete playable release. A significant amount of upstream SS14 code remains in the codebase and will gradually be reused, disabled, replaced, or removed where appropriate.
+[Русский](./README.md) · [**English**](./README.en.md)
 
-## What kind of game is this?
+![Development](https://img.shields.io/badge/status-in%20development-D89B45?style=flat-square)
+![C#](https://img.shields.io/badge/C%23-gameplay-7952B3?style=flat-square)
+![RobustToolbox](https://img.shields.io/badge/engine-RobustToolbox-397E8D?style=flat-square)
 
-Frontline 14 is built around a single long-running war between two opposing factions.
-
-Core principles:
-
-- one shared server world with no mandatory roleplay;
-- two factions, with players choosing a side for each war;
-- territory capture through physical objects in the world;
-- resource extraction, refining, and production;
-- physical logistics: resources, crates, storage, and vehicles exist in the world instead of an abstract global inventory;
-- faction-wide technological progression;
-- technical server restarts should not mean the end of the war;
-- a new campaign begins only after the previous war has ended.
-
-Roleplay is allowed, but it is not required and should not provide a mechanical advantage. Frontline 14 is not built around station jobs, mandatory command hierarchy, or the traditional SS14 roleplay loop.
-
-## Current state
-
-The current `master` branch already contains the core war framework:
-
-- a dedicated `PersistentWar` game mode;
-- persistent `WarId` and campaign state across technical restarts;
-- two data-driven factions and per-war faction selection;
-- a custom deploy / death / respawn flow;
-- five territories with server-authoritative ownership;
-- Town Halls as physical territory-control objectives;
-- Town Hall destruction, ruins, rebuilding, and capture by the opposing faction;
-- victory at 4 out of 5 controlled territories;
-- a dedicated stationless ground test map;
-- breathable ground atmosphere and a day/night cycle;
-- day/night phase continuity based on the war start time;
-- validation of required PersistentWar map invariants;
-- admin/debug commands for war state, territories, factions, and time-of-day testing;
-- a working `newwar` flow that creates a new `WarId` and reloads a clean initial map state.
-
-**Resource Extraction v1** is currently under development: mapper-defined resource fields, finite reserves, physical Raw Iron, and rare Raw Technology Material.
-
-The next major development stages are:
-
-1. Refinery;
-2. Factory and physical production crates;
-3. faction research and the Engineering Center;
-4. stockpiles and logistics;
-5. full physical-world persistence.
-
-### Important current limitation
-
-There is no full **world persistence** yet.
-
-Campaign metadata such as `WarId`, war state, and player faction membership can survive a technical restart, but the physical map is not yet a fully persisted world. Until the dedicated world-persistence layer is implemented, the map is recreated from its YAML source when reloaded.
-
-## Source code base
-
-Frontline 14 started as an independent continuation of a specific snapshot of the Russian-language **Space Syndicate / Corvax** codebase.
-
-Base upstream revision:
-
-- **Space Syndicate / Corvax:** [`91cf10ac16807d3d168f96808c3baba5896d6a36`](https://github.com/space-syndicate/space-station-14/commit/91cf10ac16807d3d168f96808c3baba5896d6a36)
-- upstream commit date: **September 14, 2026**
-- upstream commit message: **`Corvax maps tweaks (#3729)`**
-- **RobustToolbox** revision in that snapshot: [`edf061e7450a4074f173e3000bf1552b6f54082f`](https://github.com/space-wizards/RobustToolbox/commit/edf061e7450a4074f173e3000bf1552b6f54082f)
-
-Upstream Git history has been preserved, so code ancestry can still be traced back through Corvax / Space Syndicate and Space Station 14.
-
-Primary upstream projects:
-
-- [Space Syndicate / Corvax](https://github.com/space-syndicate/space-station-14)
-- [Space Station 14](https://github.com/space-wizards/space-station-14)
-- [RobustToolbox](https://github.com/space-wizards/RobustToolbox)
-
-Compatible implementations may also be adapted from other open-source projects such as [RMC-14](https://github.com/RMC-14/RMC-14), while preserving the applicable licenses, copyright notices, and attribution requirements.
-
-The primary project language is **C#**.
-
-## What we keep from SS14
-
-Frontline 14 does not try to rewrite the entire engine from scratch. Existing SS14 / RobustToolbox systems are reused where they fit the project:
-
-- ECS and networking / PVS;
-- maps, grids, and physics;
-- entities, containers, inventory, and hands;
-- damage and medical foundations;
-- DoAfter and interaction systems;
-- UI and localization;
-- prototype/data-driven infrastructure;
-- administration and integration-test infrastructure.
-
-At the same time, the standard station round loop, emergency shuttle as a game-ending mechanism, station jobs, antagonists, standard objectives, random station events, and other systems that do not fit Frontline 14 are gradually being removed from the main gameplay flow.
-
-## Building
-
-The project currently keeps the upstream SS14 build infrastructure.
-
-Basic setup:
-
-1. clone the repository;
-2. run `RUN_THIS.py` to initialize the required components and submodules;
-3. build the project using the usual .NET tooling or an IDE.
-
-For general RobustToolbox and SS14 infrastructure topics, the [official Space Station 14 documentation](https://docs.spacestation14.io/) is still relevant.
-
-## Licensing
-
-Frontline 14 uses split licensing.
-
-Code and assets originating from Space Station 14, Space Syndicate / Corvax, RobustToolbox, RMC-14, or other third-party sources remain governed by their original licenses. The original MIT license text for the base code is retained in [`LICENSE.TXT`](./LICENSE.TXT).
-
-Known third-party sources and attribution rules are documented in:
-
-**[`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md)**
-
-Original Frontline 14 code, systems, maps, documentation, design, UI, and assets are governed by the separate project license:
-
-**[`LICENSE-FRONTLINE14.md`](./LICENSE-FRONTLINE14.md)**
-
-That license does not override or restrict rights already granted by the licenses of upstream code or third-party assets.
-
-## Contributing
-
-Contribution rules are documented in:
-
-**[`CONTRIBUTING.md`](./CONTRIBUTING.md)**
-
-Original contributions use:
-
-**[`CLA.md`](./CLA.md)**
+</div>
 
 ---
 
-**Frontline 14** is a working project title.
+> [!IMPORTANT]
+> **Frontline 14 is in active development.** The `master` branch already contains the technical foundations for warfare, industry, vehicles, and strategic persistence. This is **not a public-release-ready game**: the playable frontline map, interfaces, and multiplayer validation still need work.
+
+## About the game
+
+Frontline 14 turns the familiar SS14 world into a **persistent conflict between two factions**. Winning takes more than firefights: players extract ore, refine materials, manufacture equipment, deliver supplies by truck, and hold bases.
+
+- **One shared physical world:** characters, cargo, vehicles, and strategic structures exist directly on the map.
+- **Territorial warfare:** physical `Town Hall` objectives determine ownership; territorial victory points determine the winner.
+- **Meaningful logistics:** weapons, ammunition, medical supplies, and respawn supplies must move through production and storage.
+- **War survives technical restarts:** selected strategic campaign state, including supported vehicles and their cargo, is restored.
+- **Roleplay is optional:** no mandatory station jobs, roleplay hierarchy, or standard SS14 short-round gameplay loop.
+
+### Core gameplay loop
+
+```mermaid
+flowchart LR
+    A["Gather resources"] --> B["Refine"]
+    B --> C["Manufacture"]
+    C --> D["Supply crates"]
+    D --> E["Truck delivery"]
+    E --> F["Base stockpile"]
+    F --> G["Supply and combat"]
+    G --> H["Control territory"]
+```
+
+Delivered `Soldier Supplies` pay for respawns at eligible supplied bases. Destroying a `Town Hall` creates a ruin; restoring it costs `BasicMaterials` and can change control of the territory.
+
+## Implemented in `master`
+
+| Area | Current implementation |
+| --- | --- |
+| **Campaign and factions** | Dedicated `PersistentWar` mode, `WarId`, two factions, side selection, campaign state, and war ending. |
+| **Territory control** | Five configured territories, physical `Town Hall` objectives, destruction and rebuilding, territorial victory points. |
+| **Resources and industry** | Resource fields, physical raw materials, `Refinery`, `BasicMaterials`, `Factory`, recipes, and production jobs. |
+| **Supplies** | Sealed crates of weapons, ammo, medicine, and `Soldier Supplies`; public base stockpiles with aggregated inventory counts. |
+| **Respawning** | Eligible base selection and `Soldier Supplies` consumption on respawn. |
+| **Vehicles** | Driveable `FrontlineLogisticsTruck` with one driver, 10 physical cargo slots, road-dependent speed, and directional vehicle artwork. |
+| **Strategic persistence** | Supported state for bases, stockpiles, resource fields, factories, refineries, trucks, and their supported cargo survives technical restarts. |
+| **Planetary art** | An initial, attributed set of dirt, grass, sand, asphalt, concrete, dirt roads, and scenery assets. |
+| **Developer tooling** | A test map, `PersistentWar` map validation, integration tests, admin/debug commands, and a `Frontline` entity spawn-menu filter. |
+
+**Example supply chain:** `FrontlineRawIron` → `BasicMaterials` → manufacture a physical supply crate → transport → deposit into a base stockpile.
+
+> [!NOTE]
+> **Strategic persistence is not full-world persistence.** Snapshots cover defined systems and entities, not every arbitrary change to the map or every entity. Orderly technical restarts are supported; continuous crash-proof world recovery is not currently claimed.
+
+## Current limitations and next steps
+
+The near-term milestone is a **closed technical playtest for 20 players (10 vs. 10) on one frontline**, not an immediate launch of a large persistent campaign.
+
+| Priority | Work remaining |
+| --- | --- |
+| **High** | Build a playable single-front map with bases, roads, resource sites, production, and supply routes. The existing `Resources/Maps/Frontline/base_test.yaml` is primarily a technical test map. |
+| **High** | Strengthen server-side faction authorization for base stockpile operations. |
+| **High** | Validate the complete gameplay loop and actual 20-player concurrency; integration tests are not a substitute for a load test. |
+| **In progress / planned** | Redesign stockpile, refinery, and factory UIs with item grids, clearer recipes, and readable production status. |
+| **Planned** | Add shared/public and per-player personal production queues. The current machine job lists do not yet model this ownership split. |
+| **Planned** | Improve practical infantry supply and add a minimal view of territorial status. |
+
+**Beyond the initial MVP:** automatic low-population frontline freezing, heavy vehicles, fuel logistics, extensive fortifications, and full faction technology progression. These are ideas for later stages, not advertised as implemented features.
+
+## Technology and project structure
+
+The project is primarily written in **C#** and builds on **RobustToolbox / Space Station 14** systems: ECS, networking, physics, containers, hands, inventory, interactions, prototypes, localization, and UI. Rather than rebuilding the engine, Frontline 14 develops its own gameplay on top.
+
+| Path | Purpose |
+| --- | --- |
+| `Content.Server/War/` | Server-side war, logistics, and persistence systems. |
+| `Content.Shared/War/` | Shared components, prototypes, and network messages. |
+| `Content.Client/War/` | Frontline client interfaces. |
+| `Resources/Prototypes/War/` | Game entities, resources, recipes, vehicles, and territories. |
+| `Resources/Prototypes/Frontline/` | Planetary tiles and decorations. |
+| `Resources/Maps/Frontline/` | Project maps and test environment. |
+| `Resources/Textures/Frontline/` and `Resources/Textures/_Frontline/` | Imported graphics and their attribution records. |
+
+### Getting started
+
+Development requires an appropriate .NET SDK (see `global.json`), Git, and the dependencies used by SS14.
+
+```bash
+git clone https://github.com/darvin7531/Frontline-14.git
+cd Frontline-14
+python RUN_THIS.py
+dotnet build SpaceStation14.sln
+```
+
+Local launcher scripts are provided: `runserver.sh` / `runclient.sh` (Linux) and `runserver.bat` / `runclient.bat` (Windows). See the [SS14 documentation](https://docs.spacestation14.com/) for engine setup and development prerequisites.
+
+## Origins and licensing
+
+Frontline 14 began from a specific **Space Syndicate / Corvax** snapshot:
+
+- **Upstream revision:** [`91cf10ac16807d3d168f96808c3baba5896d6a36`](https://github.com/space-syndicate/space-station-14/commit/91cf10ac16807d3d168f96808c3baba5896d6a36), dated September 14, 2026.
+- **RobustToolbox revision at the fork point:** [`edf061e7450a4074f173e3000bf1552b6f54082f`](https://github.com/space-wizards/RobustToolbox/commit/edf061e7450a4074f173e3000bf1552b6f54082f).
+- Primary upstream projects: [Space Station 14](https://github.com/space-wizards/space-station-14), [Space Syndicate / Corvax](https://github.com/space-syndicate/space-station-14), and [RobustToolbox](https://github.com/space-wizards/RobustToolbox).
+- Selected graphical assets were adapted from [RMC-14](https://github.com/RMC-14/RMC-14) with their source and license notices preserved.
+
+**Licensing is split by origin.** Third-party code and assets retain their applicable licenses; original Frontline 14 material follows the project's own license. Do not assume the entire repository is either exclusively MIT-licensed or exclusively proprietary.
+
+- [`LICENSE.TXT`](./LICENSE.TXT) — base code license.
+- [`LICENSE-FRONTLINE14.md`](./LICENSE-FRONTLINE14.md) — original Frontline 14 material.
+- [`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md) — third-party licensing and attribution index.
+- [`THIRD_PARTY_ASSETS.md`](./THIRD_PARTY_ASSETS.md) — the specific RMC-14 planetary asset import.
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`CLA.md`](./CLA.md) — contributor guidelines.
+
+---
+
+<div align="center">
+  <sub>Frontline 14 is a working title. The project remains under active development.</sub>
+</div>
