@@ -31,6 +31,10 @@ public sealed partial class FrontlineRefineryJob
 
     [DataField]
     public TimeSpan Remaining;
+
+    // Unstarted identical paid batches stay compact; only processing slots are expanded.
+    [DataField]
+    public long Batches = 1;
 }
 
 [RegisterComponent]

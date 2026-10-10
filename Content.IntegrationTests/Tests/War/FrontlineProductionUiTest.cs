@@ -148,7 +148,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         try
         {
             foreach (var scale in new[] { 1f, 1.5f })
-            foreach (var size in new[] { new Vector2(640, 480), new Vector2(1000, 700) })
+            foreach (var size in new[] { window.MinSize, new Vector2(640, 480), new Vector2(1000, 700) })
                 await Client.WaitAssertion(() =>
                 {
                     Client.CfgMan.SetCVar(CVars.ResAutoScaleEnabled, false);
@@ -157,6 +157,13 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                     window.Measure(size);
                     window.Arrange(UIBox2.FromDimensions(Vector2.Zero, size));
                     Assert.That(window.UIScale, Is.EqualTo(scale));
+                    Assert.That(window.MinWidth, Is.GreaterThanOrEqualTo(prototype == "TownHallCoreFactionOne" ? 360 : 600));
+                    Assert.That(window.MinHeight, Is.GreaterThanOrEqualTo(prototype == "TownHallCoreFactionOne" ? 320 : 400));
+                    foreach (var button in Descendants(window).OfType<Button>().Where(b => b.Name is "Produce" or "TakeOutput" or "Withdraw"))
+                    {
+                        Assert.That(button.Size.Y, Is.GreaterThan(0));
+                        Assert.That(button.GlobalPosition.Y + button.Size.Y, Is.LessThanOrEqualTo(window.GlobalPosition.Y + window.Size.Y));
+                    }
                     foreach (var itemGrid in Descendants(window).OfType<FrontlineItemGrid>())
                     {
                         Assert.That(itemGrid.Size.X, Is.GreaterThan(0));
@@ -294,6 +301,139 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         });
         await Client.WaitAssertion(() => Assert.That(produce.Disabled, Is.True));
         await CloseBui(prototype == "FrontlineFactory" ? FrontlineFactoryUiKey.Key : (System.Enum) FrontlineRefineryUiKey.Key);
+    }
+
+    [TestCase("Faction", 300, 180)]
+    [TestCase("Respawn", 300, 180)]
+    [TestCase("Victory", 320, 200)]
+    public async Task ChoiceMenusHaveBoundedMinimums(string menu, int width, int height)
+    {
+        await Client.WaitAssertion(() =>
+        {
+            DefaultWindow window = menu switch
+            {
+                "Faction" => new FactionSelectionWindow(),
+                "Respawn" => new RespawnChoiceWindow(),
+                _ => new WarVictoryWindow(),
+            };
+            Assert.That(window.MinWidth, Is.EqualTo(width));
+            Assert.That(window.MinHeight, Is.EqualTo(height));
+            Assert.That(window.MinWidth, Is.LessThanOrEqualTo(640));
+            Assert.That(window.MinHeight, Is.LessThanOrEqualTo(480));
+            window.Orphan();
+        });
+    }
+
+    [TestCase(0)]
+    [TestCase(-1)]
+    [TestCase(int.MinValue)]
+    [TestCase(int.MaxValue)]
+    public async Task NativeRefineryRejectsInvalidBatchRequestsWithoutDebit(int batches)
+    {
+        await SpawnTarget("FrontlineRefinery");
+        await Server.WaitPost(() => Assert.That(Server.System<FrontlineRefinerySystem>().TryInsertInput(STarget!.Value,
+            Stack.SpawnAtPosition(17, "FrontlineRawIron", SEntMan.GetCoordinates(PlayerCoords))), Is.True));
+        await Interact();
+        await Pair.RunUntilSynced();
+        await SendBui(FrontlineRefineryUiKey.Key, new FrontlineRefinerySubmitMessage("FrontlineSteel", batches));
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            var state = Server.System<FrontlineRefinerySystem>().BuildUiState(STarget!.Value);
+            Assert.That(state.Inputs.Single().Amount, Is.EqualTo(17));
+            Assert.That(state.Jobs, Is.Empty);
+        });
+        await CloseBui(FrontlineRefineryUiKey.Key);
+    }
+
+    [TestCase(false, 7, 10)]
+    [TestCase(true, 2, 15)]
+    public async Task NativeRefineryBatchQuantityAndShiftAll(bool shift, int remainder, int output)
+    {
+        await SpawnTarget("FrontlineRefinery");
+        await Server.WaitPost(() =>
+        {
+            var system = Server.System<FrontlineRefinerySystem>();
+            Assert.That(system.TryInsertInput(STarget!.Value,
+                Stack.SpawnAtPosition(17, "FrontlineRawIron", SEntMan.GetCoordinates(PlayerCoords))), Is.True);
+            Assert.That(system.TryInsertInput(STarget.Value,
+                Stack.SpawnAtPosition(11, "RawTechnologyMaterial", SEntMan.GetCoordinates(PlayerCoords))), Is.True);
+        });
+        await Interact();
+        await Pair.RunUntilSynced();
+        FrontlineRefineryWindow window = default!;
+        ContainerButton recipe = default!;
+        Button produce = default!;
+        await Client.WaitAssertion(() =>
+        {
+            window = GetWindow<FrontlineRefineryWindow>();
+            recipe = GetControlFromChildren<ContainerButton>(c => c.Name == "FrontlineSteel", window);
+            produce = GetControlFromChildren<Button>(c => c.Name == "Produce", window);
+            var quantity = GetControlFromChildren<SpinBox>(c => c.Name == "Batches", window);
+            Assert.That(quantity.IsValid!(0), Is.False);
+        });
+        await ClickControl(recipe);
+        await Client.WaitPost(() => GetControlFromChildren<SpinBox>(c => c.Name == "Batches", window).Value = 2);
+        var input = Client.ResolveDependency<Robust.Client.Input.IInputManager>();
+        var key = new Robust.Client.Input.KeyEventArgs(Robust.Client.Input.Keyboard.Key.Shift,
+            false, false, false, true, false, 0);
+        try
+        {
+            if (shift)
+                await Client.WaitPost(() => input.KeyDown(key));
+            await ClickControl(produce);
+        }
+        finally
+        {
+            if (shift)
+                await Client.WaitPost(() => input.KeyUp(key));
+        }
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            var state = Server.System<FrontlineRefinerySystem>().BuildUiState(STarget!.Value);
+            Assert.That(state.Inputs.Single(i => i.Stack == "FrontlineRawIron").Amount, Is.EqualTo(remainder));
+            Assert.That(state.Inputs.Single(i => i.Stack == "RawTechnologyMaterial").Amount, Is.EqualTo(11));
+            Assert.That(state.Jobs.Select(j => j.Recipe.Id), Is.All.EqualTo("FrontlineSteel"));
+        });
+        await Pair.RunSeconds(16);
+        await Server.WaitAssertion(() =>
+        {
+            var state = Server.System<FrontlineRefinerySystem>().BuildUiState(STarget!.Value);
+            Assert.That(state.Jobs, Is.Empty);
+            Assert.That(state.Outputs.Single(i => i.Stack == "BasicMaterials").Amount, Is.EqualTo(output));
+        });
+        await CloseBui(FrontlineRefineryUiKey.Key);
+    }
+
+    [Test]
+    public async Task QueueRowsMeasureWrappedNamesBeforeStatusAndProgress()
+    {
+        await SpawnTarget("FrontlineRefinery");
+        await Interact();
+        await Pair.RunUntilSynced();
+        await Client.WaitAssertion(() =>
+        {
+            var queue = GetControlFromChildren<FrontlineJobList>(GetWindow<FrontlineRefineryWindow>(), true);
+            queue.SetJobs(Enumerable.Range(0, 3).Select(i => new FrontlineJobView("long",
+                "Синтез технологического сплава из необработанного технологического материала",
+                null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(5), true)));
+            queue.Measure(new Vector2(160, float.PositiveInfinity));
+            queue.Arrange(UIBox2.FromDimensions(Vector2.Zero, queue.DesiredSize));
+            var rows = queue.Children.Where(c => c.Visible).ToArray();
+            foreach (var row in rows)
+            {
+                var texts = Descendants(row).OfType<RichTextLabel>().ToArray();
+                Assert.That(texts, Has.Length.EqualTo(2), "Name and status need separate natural-height controls.");
+                var progress = Descendants(row).OfType<ProgressBar>().Single();
+                Assert.That(texts[1].GlobalPosition.Y, Is.GreaterThanOrEqualTo(texts[0].GlobalPosition.Y + texts[0].Size.Y));
+                Assert.That(progress.GlobalPosition.Y, Is.GreaterThanOrEqualTo(texts[1].GlobalPosition.Y + texts[1].Size.Y));
+                Assert.That(progress.GlobalPosition.Y + progress.Size.Y, Is.LessThanOrEqualTo(row.GlobalPosition.Y + row.Size.Y + 1));
+            }
+            for (var i = 1; i < rows.Length; i++)
+                Assert.That(rows[i].Position.Y, Is.GreaterThanOrEqualTo(rows[i - 1].Position.Y + rows[i - 1].Size.Y));
+        });
+        await CloseBui(FrontlineRefineryUiKey.Key);
     }
 
     private static System.Collections.Generic.IEnumerable<Control> Descendants(Control control)

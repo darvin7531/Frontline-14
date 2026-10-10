@@ -52,18 +52,21 @@ public sealed class FrontlineRefineryRecipeState(
 public sealed class FrontlineRefineryJobState(
     ProtoId<FrontlineRefineryRecipePrototype> recipe,
     TimeSpan remaining,
-    bool processing)
+    bool processing, long batches = 1)
 {
     public readonly ProtoId<FrontlineRefineryRecipePrototype> Recipe = recipe;
     public readonly TimeSpan Remaining = remaining;
     public readonly bool Processing = processing;
+    public readonly long Batches = batches;
 }
 
 [Serializable, NetSerializable]
-public sealed class FrontlineRefinerySubmitMessage(ProtoId<FrontlineRefineryRecipePrototype> recipe)
+public sealed class FrontlineRefinerySubmitMessage(ProtoId<FrontlineRefineryRecipePrototype> recipe, int batches = 1, bool allAvailable = false)
     : BoundUserInterfaceMessage
 {
     public readonly ProtoId<FrontlineRefineryRecipePrototype> Recipe = recipe;
+    public readonly int Batches = batches;
+    public readonly bool AllAvailable = allAvailable;
 }
 
 [Serializable, NetSerializable]

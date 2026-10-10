@@ -15,6 +15,8 @@ frontline-ui-recipes-empty = Нет доступных рецептов.
 frontline-ui-select-recipe = Выберите рецепт для просмотра затрат и результата.
 frontline-ui-load-hint = Используйте материалы из руки на машине для загрузки.
 frontline-ui-produce = Произвести
+frontline-refinery-batches = Количество партий
+frontline-refinery-batch-hint = Одна партия = полный рецепт, не единица сырья. Shift + Произвести: все доступные партии выбранного рецепта.
 frontline-ui-ready = Готово
 frontline-ui-insufficient = Нет сырья
 frontline-ui-recipe-details = { $name }
@@ -23,7 +25,7 @@ frontline-ui-recipe-details = { $name }
     { $seconds } с: { $availability }
 frontline-ui-queue-empty = Очередь пуста.
 frontline-ui-job = №{ $position } { $name }
-    { $status }: { $seconds } с
+frontline-ui-job-status = { $status }: { $seconds } с
 frontline-ui-duration = { $seconds } с
 frontline-ui-processing = Производится
 frontline-ui-waiting = Ожидает

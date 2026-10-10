@@ -233,13 +233,13 @@ public sealed partial class FrontlineItemGrid : BoxContainer
 }
 
 public readonly record struct FrontlineJobView(
-    string Id, string Name, Texture? Icon, TimeSpan Duration, TimeSpan Remaining, bool Processing);
+    string Id, string Name, Texture? Icon, TimeSpan Duration, TimeSpan Remaining, bool Processing, long Batches = 1);
 
 /// <summary>Jobs have no server ID; keep positional rows while updating their real recipe and snapshot.</summary>
 public sealed partial class FrontlineJobList : BoxContainer
 {
     [Dependency] private IGameTiming _timing = default!;
-    private readonly List<(BoxContainer Row, TextureRect Icon, RichTextLabel Text, ProgressBar Progress)> _rows = new();
+    private readonly List<(BoxContainer Row, TextureRect Icon, RichTextLabel Text, RichTextLabel Status, ProgressBar Progress)> _rows = new();
     private readonly RichTextLabel _empty = new();
     private FrontlineJobView[] _jobs = [];
     private TimeSpan _received;
@@ -265,16 +265,16 @@ public sealed partial class FrontlineJobList : BoxContainer
         while (_rows.Count < _jobs.Length)
         {
             var row = new BoxContainer { Orientation = LayoutOrientation.Vertical, HorizontalExpand = true };
-            var header = new BoxContainer { HorizontalExpand = true };
             var icon = new TextureRect { SetSize = new Vector2(32), CanShrink = true, Stretch = TextureRect.StretchMode.KeepAspectCentered };
             var text = new RichTextLabel { HorizontalExpand = true };
+            var header = new JobHeader(icon, text) { HorizontalExpand = true };
+            var status = new RichTextLabel { HorizontalExpand = true };
             var progress = new ProgressBar { MinHeight = 12, MaxValue = 1 };
-            header.AddChild(icon);
-            header.AddChild(text);
             row.AddChild(header);
+            row.AddChild(status);
             row.AddChild(progress);
             AddChild(row);
-            _rows.Add((row, icon, text, progress));
+            _rows.Add((row, icon, text, status, progress));
         }
         _empty.Visible = _jobs.Length == 0;
         Refresh();
@@ -286,6 +286,29 @@ public sealed partial class FrontlineJobList : BoxContainer
         Refresh();
     }
 
+    private sealed class JobHeader : BoxContainer
+    {
+        private readonly TextureRect _icon;
+        private readonly RichTextLabel _name;
+
+        public JobHeader(TextureRect icon, RichTextLabel name)
+        {
+            _icon = icon;
+            _name = name;
+            SeparationOverride = 4;
+            AddChild(icon);
+            AddChild(name);
+        }
+
+        protected override Vector2 MeasureOverride(Vector2 availableSize)
+        {
+            _icon.Measure(availableSize);
+            _name.Measure(new Vector2(Math.Max(0, availableSize.X - _icon.DesiredSize.X - 4), availableSize.Y));
+            return new Vector2(_icon.DesiredSize.X + 4 + _name.DesiredSize.X,
+                Math.Max(_icon.DesiredSize.Y, _name.DesiredSize.Y));
+        }
+    }
+
     private void Refresh()
     {
         for (var i = 0; i < _jobs.Length; i++)
@@ -294,7 +317,8 @@ public sealed partial class FrontlineJobList : BoxContainer
             var remaining = Math.Max(0, (job.Remaining - (job.Processing ? _timing.CurTime - _received : TimeSpan.Zero)).TotalSeconds);
             var row = _rows[i];
             row.Icon.Texture = job.Icon;
-            row.Text.SetMessage(Loc.GetString("frontline-ui-job", ("position", i + 1), ("name", job.Name),
+            row.Text.SetMessage(Loc.GetString("frontline-ui-job", ("position", i + 1), ("name", job.Batches == 1 ? job.Name : $"{job.Name} ×{job.Batches}")));
+            row.Status.SetMessage(Loc.GetString("frontline-ui-job-status",
                 ("status", Loc.GetString(job.Processing ? "frontline-ui-processing" : "frontline-ui-waiting")),
                 ("seconds", Math.Ceiling(remaining))));
             row.Progress.Value = job.Duration > TimeSpan.Zero ? (float) Math.Clamp(1 - remaining / job.Duration.TotalSeconds, 0, 1) : 0;

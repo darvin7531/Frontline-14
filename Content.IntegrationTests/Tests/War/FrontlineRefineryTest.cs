@@ -33,6 +33,7 @@ public sealed class FrontlineRefineryTest : GameTest
         public EntityUid Target;
         public bool Enabled;
         public bool RestoreCurrent;
+        public int SkipEvents;
 
         public override void Initialize()
         {
@@ -44,6 +45,11 @@ public sealed class FrontlineRefineryTest : GameTest
             if (!Enabled)
                 return;
 
+            if (SkipEvents > 0)
+            {
+                SkipEvents--;
+                return;
+            }
             Enabled = false;
             if (RestoreCurrent)
             {
@@ -100,6 +106,15 @@ public sealed class FrontlineRefineryTest : GameTest
           duration: 1
 
         - type: frontlineRefineryRecipe
+          id: TestBatchMultiInputRecipe
+          input:
+            FrontlineRawIron: 3
+            RawTechnologyMaterial: 2
+          output:
+            BasicMaterials: 5
+          duration: 5
+
+        - type: frontlineRefineryRecipe
           id: TestMultiOutputRecipe
           input:
             FrontlineRawIron: 1
@@ -109,6 +124,85 @@ public sealed class FrontlineRefineryTest : GameTest
           duration: 1
 
         """;
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task BatchAllUsesMinimumFullMultiInputRecipeAndPreservesRemainders(bool missing)
+    {
+        var map = await Pair.CreateTestMap();
+        var system = Pair.Server.System<FrontlineRefinerySystem>();
+        var stack = Pair.Server.System<StackSystem>();
+        EntityUid machine = default;
+        await Pair.Server.WaitPost(() =>
+        {
+            machine = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            Assert.That(system.TryInsertInput(machine, stack.SpawnAtPosition(11, "FrontlineRawIron", map.GridCoords)), Is.True);
+            if (!missing)
+                Assert.That(system.TryInsertInput(machine, stack.SpawnAtPosition(5, "RawTechnologyMaterial", map.GridCoords)), Is.True);
+            Assert.That(system.TrySubmitContainedJob(machine, "TestBatchMultiInputRecipe", 1, true), Is.EqualTo(!missing));
+            Assert.That(system.TrySubmitContainedJob(machine, "TestBatchMultiInputRecipe", 1, true), Is.False);
+        });
+        await Pair.Server.WaitAssertion(() =>
+        {
+            var state = system.BuildUiState(machine);
+            Assert.That(state.Inputs.Single(i => i.Stack == "FrontlineRawIron").Amount, Is.EqualTo(missing ? 11 : 5));
+            Assert.That(state.Jobs.Sum(j => j.Batches), Is.EqualTo(missing ? 0 : 2));
+            if (!missing)
+                Assert.That(state.Inputs.Single(i => i.Stack == "RawTechnologyMaterial").Amount, Is.EqualTo(1));
+        });
+        await Pair.RunSeconds(10.2f);
+        await Pair.Server.WaitAssertion(() => Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(missing ? 0 : 10)));
+    }
+
+    [Test]
+    public async Task BatchSubmissionKeepsTwoSlotTimingAndFifo()
+    {
+        var map = await Pair.CreateTestMap();
+        var system = Pair.Server.System<FrontlineRefinerySystem>();
+        EntityUid machine = default;
+        await Pair.Server.WaitPost(() =>
+        {
+            machine = SEntMan.SpawnEntity("TestTwoSlotFrontlineRefinery", map.GridCoords);
+            var input = Pair.Server.System<StackSystem>().SpawnAtPosition(17, "FrontlineRawIron", map.GridCoords);
+            Assert.That(system.TryInsertInput(machine, input), Is.True);
+            Assert.That(system.TrySubmitContainedJob(machine, "FrontlineSteel", 3), Is.True);
+            Assert.That(system.GetJobs(machine), Has.Count.EqualTo(1), "Pending batches are compact, not a client-sized allocation.");
+        });
+        await Pair.RunSeconds(2.5f);
+        await Pair.Server.WaitAssertion(() =>
+        {
+            var jobs = system.GetJobs(machine);
+            Assert.That(jobs, Has.Count.EqualTo(3));
+            Assert.That(jobs[0].Remaining.TotalSeconds, Is.EqualTo(2.5).Within(0.2));
+            Assert.That(jobs[1].Remaining.TotalSeconds, Is.EqualTo(2.5).Within(0.2));
+            Assert.That(jobs[2].Remaining, Is.EqualTo(TimeSpan.FromSeconds(5)));
+        });
+        await Pair.RunSeconds(2.6f);
+        await Pair.Server.WaitAssertion(() => Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(10)));
+        await Pair.RunSeconds(5f);
+        await Pair.Server.WaitAssertion(() =>
+        {
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(15));
+            Assert.That(CountStacks("FrontlineRawIron"), Is.EqualTo(2));
+            Assert.That(system.GetJobs(machine), Is.Empty);
+        });
+    }
+
+    [Test]
+    public void VersionSixReaderPreservesOldSingleBatchClaimsAndRejectsMissingNewClaims()
+    {
+        var old = """
+            {"SnapshotVersion":6,"WarId":42,"Bases":[],"Resources":[],"Factories":[],"Vehicles":[],
+             "Refineries":[{"RefineryId":"machine","Prototype":"FrontlineRefinery",
+              "Jobs":[{"Recipe":"FrontlineSteel","RemainingTicks":123}],"Inputs":[],"Outputs":[]}]}
+            """;
+        using var document = System.Text.Json.JsonDocument.Parse(old);
+        var upgraded = WarStrategicSnapshotSystem.ReadSnapshot(document.RootElement);
+        Assert.That(upgraded.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
+        Assert.That(upgraded.Refineries.Single().Jobs.Single(), Is.EqualTo(new WarRefineryJobSnapshot("FrontlineSteel", 123, 1)));
+        using var current = System.Text.Json.JsonDocument.Parse(old.Replace("\"SnapshotVersion\":6", "\"SnapshotVersion\":7"));
+        Assert.Throws<System.Text.Json.JsonException>(() => WarStrategicSnapshotSystem.ReadSnapshot(current.RootElement));
+    }
 
     [Test]
     public async Task ValidInputCanBeInsertedAndRemainsPhysical()
@@ -737,8 +831,9 @@ public sealed class FrontlineRefineryTest : GameTest
         });
     }
 
-    [Test]
-    public async Task ReentrantCurrentStackRestoreRejectsWithoutDuplication()
+    [TestCase(1)]
+    [TestCase(2)]
+    public async Task ReentrantCurrentStackRestoreRejectsWithoutDuplication(int batches)
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -751,18 +846,85 @@ public sealed class FrontlineRefineryTest : GameTest
         await server.WaitPost(() =>
         {
             refinery = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
-            var input = stackSystem.SpawnAtPosition(5, "FrontlineRawIron", map.GridCoords);
+            var input = stackSystem.SpawnAtPosition(5 * batches, "FrontlineRawIron", map.GridCoords);
             mutationSystem.RestoreCurrent = true;
             mutationSystem.Enabled = true;
-            accepted = refinerySystem.TrySubmitJob(refinery, "FrontlineSteel", new[] { input });
+            accepted = refinerySystem.TrySubmitJob(refinery, "FrontlineSteel", new[] { input }, batches);
         });
 
         await Pair.RunTicksSync(1);
         await server.WaitAssertion(() =>
         {
             Assert.That(accepted, Is.False);
-            Assert.That(CountStacks("FrontlineRawIron"), Is.EqualTo(5));
+            Assert.That(CountStacks("FrontlineRawIron"), Is.EqualTo(5 * batches));
             Assert.That(SComp<FrontlineRefineryComponent>(refinery).Jobs, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task BatchBehindQuarantinedJobDoesNotLosePaidBatches()
+    {
+        var map = await Pair.CreateTestMap();
+        EntityUid machine = default;
+        await Pair.Server.WaitPost(() =>
+        {
+            machine = SEntMan.SpawnEntity("TestInvalidPersistedFrontlineRefinery", map.GridCoords);
+            SComp<FrontlineRefineryComponent>(machine).Jobs.Add(new FrontlineRefineryJob
+            {
+                Recipe = "FrontlineSteel", Remaining = TimeSpan.FromSeconds(5), Batches = 2,
+            });
+        });
+        await Pair.RunSeconds(5.1f);
+        await Pair.Server.WaitAssertion(() =>
+        {
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
+            Assert.That(SComp<FrontlineRefineryComponent>(machine).Jobs.Where(j => j.Recipe == "FrontlineSteel").Sum(j => j.Batches), Is.EqualTo(1));
+        });
+        await Pair.RunSeconds(5.1f);
+        await Pair.Server.WaitAssertion(() =>
+        {
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(10));
+            Assert.That(SComp<FrontlineRefineryComponent>(machine).Jobs.Single().Recipe.Id, Is.EqualTo("TestInvalidFrontlineRecipe"));
+        });
+    }
+
+    [Test]
+    public async Task LaterBatchInputCallbackRollsBackEveryDebitAndAllowsFundedRetry()
+    {
+        var map = await Pair.CreateTestMap();
+        var system = Pair.Server.System<FrontlineRefinerySystem>();
+        var stacks = Pair.Server.System<StackSystem>();
+        var mutation = Pair.Server.System<ReentrantStackMutationSystem>();
+        EntityUid machine = default;
+        EntityUid iron = default;
+        EntityUid technology = default;
+        await Pair.Server.WaitPost(() =>
+        {
+            machine = SEntMan.SpawnEntity("FrontlineRefinery", map.GridCoords);
+            iron = stacks.SpawnAtPosition(11, "FrontlineRawIron", map.GridCoords);
+            technology = stacks.SpawnAtPosition(5, "RawTechnologyMaterial", map.GridCoords);
+            Assert.That(system.TryInsertInput(machine, iron), Is.True);
+            Assert.That(system.TryInsertInput(machine, technology), Is.True);
+            mutation.SkipEvents = 1;
+            mutation.RestoreCurrent = true;
+            mutation.Enabled = true;
+            Assert.That(system.TrySubmitContainedJob(machine, "TestBatchMultiInputRecipe", 2), Is.False);
+        });
+        await Pair.Server.WaitAssertion(() =>
+        {
+            Assert.That(SComp<StackComponent>(iron).Count, Is.EqualTo(11));
+            Assert.That(SComp<StackComponent>(technology).Count, Is.EqualTo(5));
+            Assert.That(SComp<FrontlineRefineryComponent>(machine).InputContainer.ContainedEntities, Is.EquivalentTo(new[] { iron, technology }));
+            Assert.That(system.GetJobs(machine), Is.Empty);
+        });
+        await Pair.Server.WaitPost(() => Assert.That(system.TrySubmitContainedJob(machine, "TestBatchMultiInputRecipe", 2), Is.True));
+        await Pair.RunSeconds(10.2f);
+        await Pair.Server.WaitAssertion(() =>
+        {
+            Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(10));
+            Assert.That(CountStacks("FrontlineRawIron"), Is.EqualTo(5));
+            Assert.That(CountStacks("RawTechnologyMaterial"), Is.EqualTo(1));
+            Assert.That(system.GetJobs(machine), Is.Empty);
         });
     }
 

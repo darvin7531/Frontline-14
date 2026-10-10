@@ -15,6 +15,8 @@ frontline-ui-recipes-empty = No recipes available.
 frontline-ui-select-recipe = Select a recipe to see its cost and output.
 frontline-ui-load-hint = Use a held material stack on this machine to load it.
 frontline-ui-produce = Produce
+frontline-refinery-batches = Recipe batches
+frontline-refinery-batch-hint = Quantity counts complete recipes, not raw material units. Shift + Produce uses all loaded material for the selected recipe.
 frontline-ui-ready = Ready
 frontline-ui-insufficient = Missing input
 frontline-ui-recipe-details = { $name }
@@ -23,7 +25,7 @@ frontline-ui-recipe-details = { $name }
     { $seconds } s: { $availability }
 frontline-ui-queue-empty = No queued jobs.
 frontline-ui-job = #{ $position } { $name }
-    { $status }: { $seconds } s
+frontline-ui-job-status = { $status }: { $seconds } s
 frontline-ui-duration = { $seconds } s
 frontline-ui-processing = Processing
 frontline-ui-waiting = Waiting
