@@ -1073,7 +1073,7 @@
     },
     {
       "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/718b6531ec71e34f671ab37c269469e1638cc2ec/README.md",
-      "destination": "Resources/Textures/Frontline/Attribution/notices/6dc39c355fb3df32.md",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/6dc39c355fb3df32.txt",
       "sha256": "6dc39c355fb3df322f32dbeeca010c910895d36d822113817badda6859a6e853",
       "git_blob_sha": "94ccaf07031f04b814d4fd0b5d771d2e32d890fd"
     }
