@@ -53,6 +53,12 @@ public sealed partial class BallisticAmmoProviderComponent : Component
     public bool MayTransfer;
 
     /// <summary>
+    /// Delete this disposable magazine after its gun fires the final round, not when chambering or unloading it.
+    /// </summary>
+    [DataField]
+    public bool DeleteOnEmpty;
+
+    /// <summary>
     /// DoAfter delay for filling a bullet into another ballistic ammo provider.
     /// </summary>
     [DataField]

@@ -67,6 +67,11 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             cell = grid.Cells.Children.OfType<ContainerButton>().First();
             Assert.That(GetControlFromChildren<TextureRect>(cell, true).Texture, Is.Not.Null);
             Assert.That(cell.ToolTip, Is.Not.Empty);
+            Assert.That(cell.HasStyleClass(ContainerButton.StyleClassButton), Is.True,
+                "Native button styling must expose hover and selected states.");
+            Assert.That(GetControlFromChildren<RichTextLabel>(label => label.Name == "ItemName", cell).GetMessage(),
+                Is.Not.Empty, "Every cell needs a visible localized name, not only a tooltip.");
+            Assert.That(cell.MinHeight, Is.GreaterThanOrEqualTo(80));
             Assert.That(grid.Cells.ChildCount, Is.GreaterThan(0));
             if (prototype == "TownHallCoreFactionOne")
             {
@@ -82,6 +87,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         await ClickControl(cell);
         await Client.WaitPost(() => action.GrabKeyboardFocus());
         Assert.That(grid.SelectedId, Is.EqualTo(cell.Name), "Native click selects the actual recipe/product.");
+        Assert.That(cell.Pressed, Is.True, "Selected cards use the native pressed highlight.");
         if (grid.Categories.Visible)
         {
             await ClickControl(grid.Categories);
@@ -149,7 +155,14 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                         Assert.That(itemGrid.Size.X, Is.GreaterThan(0));
                         Assert.That(itemGrid.Scroll.HScrollEnabled, Is.False);
                         foreach (var item in itemGrid.Cells.Children.Where(c => c.Visible))
+                        {
                             Assert.That(item.Position.X + item.Size.X, Is.LessThanOrEqualTo(itemGrid.Scroll.Size.X + 1), "Cells fit their independent scroll viewport.");
+                            var name = GetControlFromChildren<RichTextLabel>(label => label.Name == "ItemName", item);
+                            Assert.That(name.Size.Y, Is.GreaterThan(0), "Names remain visible at each scale.");
+                            Assert.That(name.Size.X, Is.LessThanOrEqualTo(item.Size.X));
+                            foreach (var icon in Descendants(item).OfType<TextureRect>())
+                                Assert.That(icon.Size.X, Is.GreaterThanOrEqualTo(32), "Item art is not shrunk into micro icons.");
+                        }
                     }
                 });
         }

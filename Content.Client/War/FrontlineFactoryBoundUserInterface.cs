@@ -84,8 +84,8 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         IoCManager.InjectDependencies(this);
         Title = Loc.GetString("frontline-factory-title");
         MinSize = new Vector2(600, 400);
-        SetSize = new Vector2(850, 540);
-        var columns = new BoxContainer { HorizontalExpand = true, VerticalExpand = true, SeparationOverride = 12 };
+        SetSize = new Vector2(740, 480);
+        var columns = new BoxContainer { HorizontalExpand = true, VerticalExpand = true, SeparationOverride = 8 };
         var left = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-input-heading"));
         var hint = new RichTextLabel();
         hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));
@@ -95,13 +95,14 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         _eject.Text = Loc.GetString("frontline-factory-eject-all");
         _eject.OnPressed += _ => Eject?.Invoke();
         left.AddChild(_eject);
-        columns.AddChild(left);
+        columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { left } });
         var center = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-recipes-heading"));
         _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty"), true) { Name = "Recipes" };
         _recipes.SelectionChanged += UpdateSelection;
         center.AddChild(_recipes);
         var detailsScroll = FrontlineItemGrid.CreateScroll(_details);
-        detailsScroll.MinHeight = 90;
+        detailsScroll.MinHeight = 120;
+        detailsScroll.MaxHeight = 160;
         detailsScroll.VerticalExpand = false;
         center.AddChild(detailsScroll);
         _produce.Text = Loc.GetString("frontline-ui-produce");
@@ -111,16 +112,17 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
                 Submit?.Invoke(new ProtoId<FrontlineFactoryRecipePrototype>(id));
         };
         center.AddChild(_produce);
-        columns.AddChild(center);
+        columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, SizeFlagsStretchRatio = 1.4f, Children = { center } });
         var right = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-output-heading"));
         _outputs = new FrontlineItemGrid(Loc.GetString("frontline-factory-output-empty")) { Name = "Outputs" };
         right.AddChild(_outputs);
         _take.Text = Loc.GetString("frontline-factory-take-output");
         _take.OnPressed += _ => TakeOutput?.Invoke();
         right.AddChild(_take);
-        right.AddChild(new Label { Text = Loc.GetString("frontline-factory-queue-heading") });
+        right.AddChild(new PanelContainer { StyleClasses = { "LowDivider" } });
+        right.AddChild(new Label { Text = Loc.GetString("frontline-factory-queue-heading"), StyleClasses = { "LabelHeading" } });
         right.AddChild(FrontlineItemGrid.CreateScroll(_jobs));
-        columns.AddChild(right);
+        columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { right } });
         ContentsContainer.AddChild(columns);
         UpdateSelection();
     }
@@ -135,12 +137,12 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         _recipeName = recipeName;
         _entityName = entityName;
         _inputs.SetItems(state.Inputs.Select(input => new FrontlineItemView(input.Stack.Id,
-            _inputs.StackIcon(input.Stack), input.Amount, $"{stackName(input.Stack)} ×{input.Amount}")));
+            _inputs.StackIcon(input.Stack), input.Amount, $"{stackName(input.Stack)} ×{input.Amount}", Name: stackName(input.Stack))));
         _outputs.SetItems(state.Outputs.Select(output => new FrontlineItemView(output.Prototype.Id,
-            _outputs.EntityIcon(output.Prototype), output.Count, $"{entityName(output.Prototype)} ×{output.Count}")));
+            _outputs.EntityIcon(output.Prototype), output.Count, $"{entityName(output.Prototype)} ×{output.Count}", Name: entityName(output.Prototype))));
         _recipes.SetItems(state.Recipes.Select(recipe => new FrontlineItemView(recipe.Id.Id,
             _recipes.EntityIcon(recipe.Output), recipe.OutputAmount, Details(recipe),
-            _prototypes.Index(recipe.Id).Category, recipe.CanSubmit, Caption: Loc.GetString("frontline-ui-duration", ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds))))));
+            _prototypes.Index(recipe.Id).Category, recipe.CanSubmit, Caption: Loc.GetString("frontline-ui-duration", ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds))), Name: recipeName(recipe.Id))));
         _jobs.SetJobs(state.Jobs.Select(job =>
         {
             var recipe = state.Recipes.FirstOrDefault(recipe => recipe.Id == job.Recipe);

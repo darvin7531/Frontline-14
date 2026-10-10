@@ -19,7 +19,7 @@
   id: MagazinePistol
   category: frontline-ui-category-ammunition
   name: frontline-supply-product-magazine-pistol
-  entity: MagazinePistol
+  entity: FrontlineMagazinePistol
 
 - type: frontlineSupplyProduct
   id: Brutepack1

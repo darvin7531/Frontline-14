@@ -5,8 +5,10 @@ frontline-ui-category-weapons = Weapons
 frontline-ui-category-ammunition = Ammunition
 frontline-ui-category-medical = Medical
 frontline-ui-category-supplies = Supplies
+frontline-ui-stockpile-heading = Available goods
 frontline-ui-stockpile-empty = No physical goods in stock.
-frontline-ui-virtual-supply = { $name }: { $amount } — respawn reserve (not withdrawable)
+frontline-ui-virtual-supply = { $name }: { $amount }
+    Respawn reserve (not withdrawable)
 frontline-ui-select-product = Select an item
 frontline-ui-withdraw = Withdraw
 frontline-ui-recipes-empty = No recipes available.
@@ -18,10 +20,10 @@ frontline-ui-insufficient = Not enough input materials
 frontline-ui-recipe-details = { $name }
     { $input }
     → { $output } ×{ $amount }
-    { $seconds } s — { $availability }
+    { $seconds } s: { $availability }
 frontline-ui-queue-empty = No queued jobs.
 frontline-ui-job = #{ $position } { $name }
-    { $status } — { $seconds } s
+    { $status }: { $seconds } s
 frontline-ui-duration = { $seconds } s
 frontline-ui-processing = Processing
 frontline-ui-waiting = Waiting

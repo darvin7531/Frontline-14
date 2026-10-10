@@ -117,3 +117,24 @@
     slots:
       gun_magazine:
         startingItem: null
+
+- type: entity
+  id: FrontlineMagazinePistol
+  parent: MagazinePistol
+  name: frontline pistol magazine (.35 auto)
+  description: A ten-round disposable magazine for frontline pistols.
+  categories: [ Frontline ]
+  components:
+  - type: BallisticAmmoProvider
+    proto: FrontlineCartridgePistol
+    deleteOnEmpty: true
+
+- type: entity
+  id: FrontlineCartridgePistol
+  parent: CartridgePistol
+  name: frontline cartridge (.35 auto)
+  description: A conventional pistol round that leaves no spent casing.
+  categories: [ Frontline ]
+  components:
+  - type: CartridgeAmmo
+    deleteOnSpawn: true
