@@ -37,8 +37,16 @@ public sealed partial class FrontlineFactoryRecipePrototype : IPrototype
 [DataDefinition]
 public sealed partial class FrontlineFactoryJob
 {
-    [DataField]
     public Guid Id = Guid.NewGuid();
+
+    // Native YAML supports strings, not Guid; keep the runtime/JSON identity unchanged.
+    [DataField("id")]
+    private string SerializedId
+    {
+        get => Id.ToString("D");
+        set => Id = Guid.ParseExact(value, "D");
+    }
+
     [DataField(required: true)]
     public ProtoId<FrontlineFactoryRecipePrototype> Recipe;
 

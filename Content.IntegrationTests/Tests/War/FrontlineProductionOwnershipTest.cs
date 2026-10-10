@@ -7,11 +7,83 @@ using Content.Shared.Stacks;
 using Content.Shared.War;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Serialization.Manager;
+using Robust.Shared.Serialization.Markdown.Mapping;
 
 namespace Content.IntegrationTests.Tests.War;
 
 public sealed class FrontlineProductionOwnershipTest : InteractionTest
 {
+    [Test]
+    public async Task NativeProductionSerializationPreservesOwnershipReceiptsAndClaims()
+    {
+        await Server.WaitAssertion(() =>
+        {
+            var serialization = Server.ResolveDependency<ISerializationManager>();
+            var id = Guid.Parse("c2a3ca8a-7c94-4454-a634-470cc98beeb1");
+            var owner = ServerSession!.UserId.ToString();
+            var factory = new FrontlineFactoryComponent
+            {
+                FactoryId = "roundtrip-factory",
+                Jobs = [new FrontlineFactoryJob
+                {
+                    Id = id, Recipe = "FrontlineFactoryBrutepack", Remaining = TimeSpan.FromSeconds(3),
+                    Access = FrontlineProductionAccess.Personal, Owner = owner,
+                    PaidInputs = new() { ["BasicMaterials"] = 5 },
+                }],
+            };
+            var restoredFactory = serialization.Read<FrontlineFactoryComponent>(serialization.WriteValue(factory, alwaysWrite: true, notNullableOverride: true), notNullableOverride: true);
+            var factoryJob = restoredFactory.Jobs.Single();
+            Assert.That(restoredFactory.FactoryId, Is.EqualTo(factory.FactoryId));
+            Assert.That(factoryJob.Id, Is.EqualTo(id));
+            Assert.That(factoryJob.Recipe, Is.EqualTo(factory.Jobs[0].Recipe));
+            Assert.That(factoryJob.Remaining, Is.EqualTo(factory.Jobs[0].Remaining));
+            Assert.That(factoryJob.Access, Is.EqualTo(FrontlineProductionAccess.Personal));
+            Assert.That(factoryJob.Owner, Is.EqualTo(owner));
+            Assert.That(factoryJob.Legacy, Is.False);
+            Assert.That(factoryJob.PaidInputs, Is.EqualTo(factory.Jobs[0].PaidInputs));
+
+            var refinery = new FrontlineRefineryComponent
+            {
+                RefineryId = "roundtrip-refinery",
+                Jobs = [new FrontlineRefineryJob
+                {
+                    Id = id, Recipe = "FrontlineSteel", Remaining = TimeSpan.FromSeconds(7), Batches = 68,
+                    Access = FrontlineProductionAccess.Personal, Owner = owner,
+                    PaidInputs = new() { ["FrontlineRawIron"] = 5 },
+                }],
+            };
+            var restoredRefinery = serialization.Read<FrontlineRefineryComponent>(serialization.WriteValue(refinery, alwaysWrite: true, notNullableOverride: true), notNullableOverride: true);
+            var refineryJob = restoredRefinery.Jobs.Single();
+            Assert.That(restoredRefinery.RefineryId, Is.EqualTo(refinery.RefineryId));
+            Assert.That(refineryJob.Id, Is.EqualTo(id));
+            Assert.That(refineryJob.Recipe, Is.EqualTo(refinery.Jobs[0].Recipe));
+            Assert.That(refineryJob.Remaining, Is.EqualTo(refinery.Jobs[0].Remaining));
+            Assert.That(refineryJob.Batches, Is.EqualTo(68));
+            Assert.That(refineryJob.Access, Is.EqualTo(FrontlineProductionAccess.Personal));
+            Assert.That(refineryJob.Owner, Is.EqualTo(owner));
+            Assert.That(refineryJob.Legacy, Is.False);
+            Assert.That(refineryJob.PaidInputs, Is.EqualTo(refinery.Jobs[0].PaidInputs));
+
+            foreach (var invalidId in new[] { "not-a-guid", id.ToString("N") })
+            {
+                Assert.Throws<FormatException>(() => serialization.Read<FrontlineFactoryJob>(
+                    new MappingDataNode().Add("id", invalidId).Add("recipe", "FrontlineFactoryBrutepack"), notNullableOverride: true));
+                Assert.Throws<FormatException>(() => serialization.Read<FrontlineRefineryJob>(
+                    new MappingDataNode().Add("id", invalidId).Add("recipe", "FrontlineSteel"), notNullableOverride: true));
+            }
+
+            var completed = new DateTimeOffset(2026, 10, 10, 12, 34, 56, TimeSpan.Zero).AddTicks(1234567);
+            var claim = new FrontlineProductionClaimComponent { OwnerUserId = owner, CompletedAtUtc = completed };
+            var restoredClaim = serialization.Read<FrontlineProductionClaimComponent>(serialization.WriteValue(claim, alwaysWrite: true, notNullableOverride: true), notNullableOverride: true);
+            Assert.That(restoredClaim.OwnerUserId, Is.EqualTo(owner));
+            Assert.That(restoredClaim.CompletedAtUtc, Is.EqualTo(completed));
+            Assert.That(restoredClaim.CompletedAtUtcTicks, Is.EqualTo(completed.UtcTicks));
+            Assert.That(restoredClaim.IsPersonal(completed.AddHours(2).AddTicks(-1)), Is.True);
+            Assert.That(restoredClaim.IsPersonal(completed.AddHours(2)), Is.False);
+        });
+    }
+
     [Test]
     [NonParallelizable]
     public async Task PartialRefineryCancellationRefundsOriginalReceiptWithoutCompletedGoods()
