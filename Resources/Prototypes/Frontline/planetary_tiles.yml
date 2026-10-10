@@ -46,3 +46,235 @@
   sprite: /Textures/Frontline/Tiles/dirt_road.png
   variants: 1
   itemDrop: null
+
+- type: tile
+  id: FrontlineFloorGrassDark
+  parent: BaseFloorPlanet
+  name: frontline-tiles-grass-dark
+  sprite: /Textures/Frontline/Tiles/grass2.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorGrassLight
+  parent: BaseFloorPlanet
+  name: frontline-tiles-grass-light
+  sprite: /Textures/Frontline/Tiles/grass3.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt1
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-1
+  sprite: /Textures/Frontline/Tiles/asphalt1.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt2
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-2
+  sprite: /Textures/Frontline/Tiles/asphalt2.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt3
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-3
+  sprite: /Textures/Frontline/Tiles/asphalt3.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt4
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-4
+  sprite: /Textures/Frontline/Tiles/asphalt4.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt5
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-5
+  sprite: /Textures/Frontline/Tiles/asphalt5.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt6
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-6
+  sprite: /Textures/Frontline/Tiles/asphalt6.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt7
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-7
+  sprite: /Textures/Frontline/Tiles/asphalt7.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt8
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-8
+  sprite: /Textures/Frontline/Tiles/asphalt8.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt9
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-9
+  sprite: /Textures/Frontline/Tiles/asphalt9.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt10
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-10
+  sprite: /Textures/Frontline/Tiles/asphalt10.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt11
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-11
+  sprite: /Textures/Frontline/Tiles/asphalt11.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt12
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-12
+  sprite: /Textures/Frontline/Tiles/asphalt12.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt13
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-13
+  sprite: /Textures/Frontline/Tiles/asphalt13.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt14
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-14
+  sprite: /Textures/Frontline/Tiles/asphalt14.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt15
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-15
+  sprite: /Textures/Frontline/Tiles/asphalt15.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt16
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-16
+  sprite: /Textures/Frontline/Tiles/asphalt16.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphalt17
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-17
+  sprite: /Textures/Frontline/Tiles/asphalt17.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorAsphaltSunbleached
+  parent: BaseFloorPlanet
+  name: frontline-tiles-asphalt-sunbleached
+  sprite: /Textures/Frontline/Tiles/sunbleached_asphalt.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorConcreteSlab
+  parent: BaseFloorPlanet
+  name: frontline-tiles-concrete-slab
+  sprite: /Textures/Frontline/Tiles/cement19.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorConcreteSlabEdge
+  parent: BaseFloorPlanet
+  name: frontline-tiles-concrete-slab-edge
+  sprite: /Textures/Frontline/Tiles/cement20.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorStonePaving
+  parent: BaseFloorPlanet
+  name: frontline-tiles-stone-paving
+  sprite: /Textures/Frontline/Tiles/special_stonetile.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorPavingTile
+  parent: BaseFloorPlanet
+  name: frontline-tiles-paving-tile
+  sprite: /Textures/Frontline/Tiles/tile.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorIndustrialTiles
+  parent: BaseFloorPlanet
+  name: frontline-tiles-industrial-tiles
+  sprite: /Textures/Frontline/Tiles/squares.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorWoodTiles
+  parent: BaseFloorPlanet
+  name: frontline-tiles-wood-tiles
+  sprite: /Textures/Frontline/Tiles/squareswood.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorIndustrialPlate
+  parent: BaseFloorPlanet
+  name: frontline-tiles-industrial-plate
+  sprite: /Textures/Frontline/Tiles/plate.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorPlastic
+  parent: BaseFloorPlanet
+  name: frontline-tiles-plastic
+  sprite: /Textures/Frontline/Tiles/plasticfloor1.png
+  variants: 1
+  itemDrop: null
+
+- type: tile
+  id: FrontlineFloorTatami
+  parent: BaseFloorPlanet
+  name: frontline-tiles-tatami
+  sprite: /Textures/Frontline/Tiles/tatami.png
+  variants: 1
+  itemDrop: null

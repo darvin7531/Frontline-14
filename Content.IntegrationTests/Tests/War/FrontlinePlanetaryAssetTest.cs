@@ -27,6 +27,35 @@ public sealed class FrontlinePlanetaryAssetTest : GameTest
     [
         "FrontlineFloorDirt", "FrontlineFloorGrass", "FrontlineFloorSand",
         "FrontlineFloorAsphalt", "FrontlineFloorConcrete", "FrontlineFloorDirtRoad",
+        "FrontlineFloorGrassDark",
+        "FrontlineFloorGrassLight",
+        "FrontlineFloorAsphalt1",
+        "FrontlineFloorAsphalt2",
+        "FrontlineFloorAsphalt3",
+        "FrontlineFloorAsphalt4",
+        "FrontlineFloorAsphalt5",
+        "FrontlineFloorAsphalt6",
+        "FrontlineFloorAsphalt7",
+        "FrontlineFloorAsphalt8",
+        "FrontlineFloorAsphalt9",
+        "FrontlineFloorAsphalt10",
+        "FrontlineFloorAsphalt11",
+        "FrontlineFloorAsphalt12",
+        "FrontlineFloorAsphalt13",
+        "FrontlineFloorAsphalt14",
+        "FrontlineFloorAsphalt15",
+        "FrontlineFloorAsphalt16",
+        "FrontlineFloorAsphalt17",
+        "FrontlineFloorAsphaltSunbleached",
+        "FrontlineFloorConcreteSlab",
+        "FrontlineFloorConcreteSlabEdge",
+        "FrontlineFloorStonePaving",
+        "FrontlineFloorPavingTile",
+        "FrontlineFloorIndustrialTiles",
+        "FrontlineFloorWoodTiles",
+        "FrontlineFloorIndustrialPlate",
+        "FrontlineFloorPlastic",
+        "FrontlineFloorTatami",
     ];
 
     private static readonly EntProtoId[] Decorations =
@@ -49,8 +78,8 @@ public sealed class FrontlinePlanetaryAssetTest : GameTest
             using var stream = cache.ContentFileRead("/Textures/Frontline/Attribution/manifest.json");
             using var manifest = JsonDocument.Parse(stream);
             var files = manifest.RootElement.GetProperty("files").EnumerateArray().ToArray();
-            Assert.That(files, Has.Length.EqualTo(11));
-            Assert.That(files.Select(file => file.GetProperty("destination").GetString()).Distinct().Count(), Is.EqualTo(11));
+            Assert.That(files, Has.Length.EqualTo(40));
+            Assert.That(files.Select(file => file.GetProperty("destination").GetString()).Distinct().Count(), Is.EqualTo(40));
             var pngPaths = cache.ContentFindFiles("/Textures/Frontline")
                 .Where(path => path.ToString().EndsWith(".png", StringComparison.Ordinal))
                 .Select(path => "Resources" + path);
@@ -115,6 +144,13 @@ public sealed class FrontlinePlanetaryAssetTest : GameTest
         {
             var maps = Server.System<SharedMapSystem>();
             var tiles = Server.ResolveDependency<ITileDefinitionManager>();
+            for (var i = 0; i < Tiles.Length; i++)
+            {
+                var position = new Vector2i(i, 1);
+                var tile = new Tile(tiles[Tiles[i].Id].TileId);
+                maps.SetTile(map.Grid, position, tile);
+                Assert.That(maps.GetTileRef(map.Grid, position).Tile, Is.EqualTo(tile), Tiles[i].Id);
+            }
             for (var i = 0; i < entities.Length; i++)
             {
                 maps.SetTile(map.Grid, new Vector2i(i, 0), new Tile(tiles[Tiles[i % Tiles.Length].Id].TileId));

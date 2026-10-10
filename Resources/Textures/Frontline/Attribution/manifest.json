@@ -136,6 +136,470 @@
         32
       ],
       "metadata_path": "Resources/Textures/_RMC14/Structures/Storage/Crates/supply.rsi/meta.json"
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/grass2/grass.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/grass2/grass.png",
+      "destination": "Resources/Textures/Frontline/Tiles/grass2.png",
+      "state": "grass2",
+      "sha256": "37cc60ed1c73810a22be4905e94280d1c2540ec866ca216c8c0a1b8893082537",
+      "git_blob_sha": "0ac7913d90993873e1d5db0e28fc1db773ac4f6b",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/grass3/grass.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/grass3/grass.png",
+      "destination": "Resources/Textures/Frontline/Tiles/grass3.png",
+      "state": "grass3",
+      "sha256": "a41c3c9495a7e1967c14a76828e7e27304b37d95c74bebc53b2a6bcd0f6319c7",
+      "git_blob_sha": "7adac1ce34d30554507bb5441de046c240182aee",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt1.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt1.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt1.png",
+      "state": "asphalt1",
+      "sha256": "44a04043f914cfc359b548d1fd32824e1644eb3e594096d1a7d8448242728ec2",
+      "git_blob_sha": "678fc28886c0feeed5878fa85f583f3e8ce995a0",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt2.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt2.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt2.png",
+      "state": "asphalt2",
+      "sha256": "2b68e67ef171c2687f1405ae94eb743e2f0f1f2f474f90b7740eb94dad39c4a2",
+      "git_blob_sha": "77190dd8642b8b4b80b4e3dfd3d00c8908c57dfe",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt3.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt3.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt3.png",
+      "state": "asphalt3",
+      "sha256": "7775a556d70e40bc150d5d7ef9daf16f67650675244f64b0e52f591cf5ddba85",
+      "git_blob_sha": "a7e656775706f0175cfb66328ef8e23bb22d0e33",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt4.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt4.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt4.png",
+      "state": "asphalt4",
+      "sha256": "3cf9a59175fe5d0afb59dbcd907d6708c87acbcd367a634e2c949d6e8a48d648",
+      "git_blob_sha": "1fd61411d3880866b217a7d8ca09ec418742ac93",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt5.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt5.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt5.png",
+      "state": "asphalt5",
+      "sha256": "c7aeef573e9a9795d17e9886a04e49d5794b048378a2073effedbdca8275a97f",
+      "git_blob_sha": "8e6b2a2f886e73a0968a54f1ec36bc147ccc51d4",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt6.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt6.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt6.png",
+      "state": "asphalt6",
+      "sha256": "393933f1c473c629b44f6e703e098b28a9b2c227f546b997ae76d2f2e6dcd376",
+      "git_blob_sha": "d56ba4bf5266aae1c92da4b9bfa9e1a90d0824a9",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt7.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt7.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt7.png",
+      "state": "asphalt7",
+      "sha256": "f3d197d33bc702c79e2d0cf7694750d6b53f54b450e6d23f9ff1112e29019298",
+      "git_blob_sha": "03158791fac20512f338b71d748eb57e263101ae",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt8.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt8.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt8.png",
+      "state": "asphalt8",
+      "sha256": "96ec3081364dcddee94dfac34173839da5b37ea642453d7c4db1117ed45aae49",
+      "git_blob_sha": "441108394ced91278c9732d952b80891d3a3bdc5",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt9.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt9.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt9.png",
+      "state": "asphalt9",
+      "sha256": "6ba9bc2aa4f7f544e4de9956bbbaf5e550620abc73bfc222c0ad3059b0d7a0e6",
+      "git_blob_sha": "fb1006d886c4f31b270d23e2813384324da2c450",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt10.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt10.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt10.png",
+      "state": "asphalt10",
+      "sha256": "a7c80ce6ce130e06cc680a6dfafba726f231e002ee7d537e6675f39b90353e5e",
+      "git_blob_sha": "3c5aa8faa2826faddf113c2d190b56294f70d829",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt11.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt11.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt11.png",
+      "state": "asphalt11",
+      "sha256": "6335facc8ecb2acf48317baa97911a5dbe34618e86ee9b922446a48151d899a0",
+      "git_blob_sha": "4a21352707f6fa8392b17e73310f754b1dfb6f3d",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt12.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt12.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt12.png",
+      "state": "asphalt12",
+      "sha256": "81803e09f9aa841d3da65c8cd60c1fa546832f3360045b6ede25213fd2488948",
+      "git_blob_sha": "840d4ad524a1bb5c49eaf7dc3f2adb596485b178",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt13.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt13.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt13.png",
+      "state": "asphalt13",
+      "sha256": "5a7ef41bfe537d4afa4d843db4857580dd7975cf993d5583a087e4025ee87dac",
+      "git_blob_sha": "1439d807dee03f3d958c17396e516da0cd69c731",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt14.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt14.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt14.png",
+      "state": "asphalt14",
+      "sha256": "caeaf8a181853404c28491fe07a626f5b798c3630656ce40c8c9623afb3cb3f1",
+      "git_blob_sha": "36563d579d2b5551316a8355c2739bb2c245d0e6",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt15.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt15.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt15.png",
+      "state": "asphalt15",
+      "sha256": "5f1a3c7e15a9edada20467c1aea5813fe7d0a8ebe875a2529a597d531e4faaec",
+      "git_blob_sha": "59aac3ee872321abe09b3ba1e44b0f4733556f27",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt16.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt16.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt16.png",
+      "state": "asphalt16",
+      "sha256": "a0437e41c1305a05991ad0de9eb81d64668d4a720653bcfc9439d4075a1ea181",
+      "git_blob_sha": "5a28b5d6ec4bcb281d61a1cd0870468d435d06df",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt17.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/asphalt17.png",
+      "destination": "Resources/Textures/Frontline/Tiles/asphalt17.png",
+      "state": "asphalt17",
+      "sha256": "2d282d0f445cdf30e91f2f0ee0ab97b15f1a388312497d065c2cbd01a286d127",
+      "git_blob_sha": "eaf39b2365c5fde86b5c3dd2066741c1ff6e7e0e",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/sunbleached_asphalt.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/sunbleached_asphalt.png",
+      "destination": "Resources/Textures/Frontline/Tiles/sunbleached_asphalt.png",
+      "state": "sunbleached_asphalt",
+      "sha256": "b23675a4baa10c13a3ef460c99883a6bf854ada03db6a56e49e2872ac4e5d5af",
+      "git_blob_sha": "67891eb3f3a0cfa91a3d035330eaf241e9ce1e4e",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/cement19.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/cement19.png",
+      "destination": "Resources/Textures/Frontline/Tiles/cement19.png",
+      "state": "cement19",
+      "sha256": "3c093500dcbc275c43d7c8c742a48b3d83a6730ec7adcfff31f13d5753721d62",
+      "git_blob_sha": "9558e4021726a3a6b4298e5d270cccbc18aa5990",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/cement20.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/cement20.png",
+      "destination": "Resources/Textures/Frontline/Tiles/cement20.png",
+      "state": "cement20",
+      "sha256": "eef1ca22975548545b67e2bf3c04dd54a155f7854980bdb409bb6350c9c797d5",
+      "git_blob_sha": "fa7c647ef593a5b7e4107c5f495fa38e5164ee5a",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/special_stonetile.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/special_stonetile.png",
+      "destination": "Resources/Textures/Frontline/Tiles/special_stonetile.png",
+      "state": "special_stonetile",
+      "sha256": "be418bad7416c670dec9c58d932735d4aff311cc7c886f09d16103495bbfeca6",
+      "git_blob_sha": "dc6074828d3edb8552bbb4b34cd6dc7623947705",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/asphalt/tile.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/tile.png",
+      "destination": "Resources/Textures/Frontline/Tiles/tile.png",
+      "state": "tile",
+      "sha256": "3abc3257cc5cda2e2580d8b6b774c5d1bb72a3a142eb7b719b44922deed36fac",
+      "git_blob_sha": "d21269bf48e02e6959c728d2a5241803d90e71e7",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/asphalt/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/corsat/squares.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/corsat/squares.png",
+      "destination": "Resources/Textures/Frontline/Tiles/squares.png",
+      "state": "squares",
+      "sha256": "17a3e8d340861f3a61de451afce2068cb88d07b8a100d6f05fe84e1495a7026a",
+      "git_blob_sha": "a4e3a0b81c2f482a3bb45be89c22932e399376e3",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/corsat/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/corsat/squareswood.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/corsat/squareswood.png",
+      "destination": "Resources/Textures/Frontline/Tiles/squareswood.png",
+      "state": "squareswood",
+      "sha256": "5060b36ceaa7edf3a5147d2d8a445e14fcb9158facc05f81db9c40d5c8d46d48",
+      "git_blob_sha": "7afa8944ec640106ec40600e0dc2137efd747b0b",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/corsat/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/corsat/plate.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/corsat/plate.png",
+      "destination": "Resources/Textures/Frontline/Tiles/plate.png",
+      "state": "plate",
+      "sha256": "43ab24e915b8f5a9dfceb220665dd9568313afa77c3950508ada458ed0743933",
+      "git_blob_sha": "10ddeaad449bb1dafe57fb8429b72adf10d11e3c",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/corsat/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/interior/plasticfloor1.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/interior/plasticfloor1.png",
+      "destination": "Resources/Textures/Frontline/Tiles/plasticfloor1.png",
+      "state": "plasticfloor1",
+      "sha256": "f7951162d9019ed51743a7244688f3386293a36f56dbab96727e698859d2d74e",
+      "git_blob_sha": "b749b1b840d30481fe19eb04ce45c23185c72243",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/interior/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/interior/tatami.png",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/interior/tatami.png",
+      "destination": "Resources/Textures/Frontline/Tiles/tatami.png",
+      "state": "tatami",
+      "sha256": "e4a72944b533d9e86a3ffa9ab42b4349d922aec563aca439283bab8ef7b26193",
+      "git_blob_sha": "e40f70792ecaeb56fc6f1c207822078a53171f7f",
+      "size": [
+        32,
+        32
+      ],
+      "metadata_path": "Resources/Textures/_RMC14/Tiles/planet/interior/meta.json",
+      "license": "CC-BY-SA-3.0",
+      "decision": "approved",
+      "state_mapping": "Exact unnormalized RGBA match to the named single 32x32 DMI state at the immutable source cited by RMC metadata."
     }
   ],
   "metadata": [
@@ -150,7 +614,9 @@
       "selected_states": [
         "dirt",
         "grass1",
-        "sand"
+        "sand",
+        "grass2",
+        "grass3"
       ],
       "source_chain": [
         {
@@ -214,7 +680,29 @@
       "copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/turf/floors/asphalt.dmi",
       "selected_states": [
         "asphalt",
-        "cement1"
+        "cement1",
+        "asphalt1",
+        "asphalt2",
+        "asphalt3",
+        "asphalt4",
+        "asphalt5",
+        "asphalt6",
+        "asphalt7",
+        "asphalt8",
+        "asphalt9",
+        "asphalt10",
+        "asphalt11",
+        "asphalt12",
+        "asphalt13",
+        "asphalt14",
+        "asphalt15",
+        "asphalt16",
+        "asphalt17",
+        "sunbleached_asphalt",
+        "cement19",
+        "cement20",
+        "special_stonetile",
+        "tile"
       ],
       "source_chain": [
         {
@@ -443,6 +931,79 @@
           ]
         }
       ]
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/corsat/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/corsat/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/08.json",
+      "sha256": "9529f460fd1a5de97a9d172f2f5e2747b64a3c7f1e99db4b053880993424b082",
+      "git_blob_sha": "be822680b2f2201ea1c087002f56119a507214e8",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/turf/floors/corsat.dmi",
+      "selected_states": [
+        "squares",
+        "squareswood",
+        "plate"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/turf/floors/corsat.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "718b6531ec71e34f671ab37c269469e1638cc2ec",
+          "path": "icons/turf/floors/corsat.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": [
+            {
+              "path": "icons/mob/xenos/ATTRIBUTION.txt",
+              "url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/mob/xenos/ATTRIBUTION.txt",
+              "applies": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_path": "Resources/Textures/_RMC14/Tiles/planet/interior/meta.json",
+      "source_url": "https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/interior/meta.json",
+      "raw_destination": "Resources/Textures/Frontline/Attribution/metadata/09.json",
+      "sha256": "2e4e09b4580e97030f891d1919426cb6cea9dd010dafd8d59d4ea6d62d64987d",
+      "git_blob_sha": "2d2dfcbfee881640b8b0dd29438bc34462fcb2a8",
+      "license": "CC-BY-SA-3.0",
+      "copyright": "Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/turf/floors/interior.dmi",
+      "selected_states": [
+        "plasticfloor1",
+        "tatami"
+      ],
+      "source_chain": [
+        {
+          "raw_url": "https://github.com/cmss13-devs/cmss13/blob/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/turf/floors/interior.dmi",
+          "repository": "cmss13-devs/cmss13",
+          "resolved_sha": "09a5191fb11aab8ddffe3f9be94292b53e4d96f6",
+          "path": "icons/turf/floors/interior.dmi",
+          "decision": "approved",
+          "reasons": [
+            "Immutable cited source exists; asset-specific BY-SA-3.0 grant agrees with RMC metadata; no applicable scoped exception found in reviewed documents."
+          ],
+          "source_author_designation": "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit).",
+          "readme_asset_license_lines": [
+            "Assets including icons and sound are under the [Creative Commons 3.0 BY-SA license](https://creativecommons.org/licenses/by-sa/3.0/) unless otherwise indicated. Authorship for assets including art and sound under the CC BY-SA license is defined as the active development team of CM-SS13 unless stated otherwise (by author of the commit)."
+          ],
+          "scoped_notices_reviewed": [
+            {
+              "path": "icons/mob/xenos/ATTRIBUTION.txt",
+              "url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/mob/xenos/ATTRIBUTION.txt",
+              "applies": false
+            }
+          ]
+        }
+      ]
     }
   ],
   "evidence": [
@@ -485,6 +1046,36 @@
       "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/7cb618c69b75873f3ce893022fe08d1233b3152d/README.md",
       "destination": "Resources/Textures/Frontline/Attribution/notices/80cc91f39cb5553d.txt",
       "sha256": "80cc91f39cb5553da7fc181cfff2767d74a087d9b05d9ab608fc3badaa1333f0"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/turf/ground_map.dmi",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/c42278add376965b.dmi",
+      "sha256": "c42278add376965ba9e9b97ccfad8ac0d70c8dd3cda5e1f7c88955cb43ec0ac5",
+      "git_blob_sha": "1970ad966106a7e58b8afd7bb7e091138b5e5326"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/turf/floors/asphalt.dmi",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/7da5f847ccdaaebb.dmi",
+      "sha256": "7da5f847ccdaaebbe229a5a5f2c3954094d4bb723040ba75713aa987088b4a50",
+      "git_blob_sha": "57b807b1c3f4783527bd2fdf4f21c45c4268d375"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/turf/floors/corsat.dmi",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/0c8c0caf95829bf8.dmi",
+      "sha256": "0c8c0caf95829bf82e55ae2fe97e9c1f5f6d05d94f2ef83b3a94918b4bd28632",
+      "git_blob_sha": "7d42977b3eaf54ac2a4c146757b905f978597a4d"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/turf/floors/interior.dmi",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/b8bce991c78a1c01.dmi",
+      "sha256": "b8bce991c78a1c01558525c0d677a1196f591c2c15c68319396dad82d1bfd971",
+      "git_blob_sha": "1af642ec74020540789c50424eb39d75e53b0ad9"
+    },
+    {
+      "source_url": "https://raw.githubusercontent.com/cmss13-devs/cmss13/718b6531ec71e34f671ab37c269469e1638cc2ec/README.md",
+      "destination": "Resources/Textures/Frontline/Attribution/notices/6dc39c355fb3df32.txt",
+      "sha256": "6dc39c355fb3df322f32dbeeca010c910895d36d822113817badda6859a6e853",
+      "git_blob_sha": "94ccaf07031f04b814d4fd0b5d771d2e32d890fd"
     }
   ],
   "excluded_candidates": [
@@ -691,6 +1282,34 @@
       "rationale": [
         "No explicit asset-specific CC-BY-SA grant at the cited source revision; GPL/LGPL software documents do not establish the declared art license."
       ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Tiles/asphalt/asphalt_old.png",
+      "decision": "excluded",
+      "rationale": [
+        "State is declared in RMC metadata but absent from its cited immutable CM asphalt DMI; no exact mapping established."
+      ]
+    },
+    {
+      "path": "Resources/Textures/_RMC14/Tiles/planet/browndirt_road/browndirt_road_{1,2,3,corner}.png",
+      "decision": "not-selected",
+      "rationale": [
+        "64x64 directional sheets are not native horizontal 32px tile strips. Existing base dirt road retained; no repacking in this expansion."
+      ]
     }
-  ]
+  ],
+  "tile_expansion_audit": {
+    "source_tree_sha": "8d9ab3924a70d8b654c29941bed02362b33ad1a0",
+    "source_tree_entries": 3020,
+    "source_tree_truncated": false,
+    "new_tile_count": 29,
+    "source_tree_response_sha256": "f93f20606243c2574df37975af53f4412ef9bd335fa64c65059817bec2bd178e",
+    "license_scope": "Only individually enumerated files/states; no blanket repository or descendant grant.",
+    "reviewed_source_revisions": [
+      "718b6531ec71e34f671ab37c269469e1638cc2ec",
+      "09a5191fb11aab8ddffe3f9be94292b53e4d96f6"
+    ],
+    "notice_review": "Complete source Git trees contained no terrain-scoped exception. icons/mob/xenos/ATTRIBUTION.txt is scoped to xenos, not these turf assets. Root LICENSE/AGPL/GPL are software grants; the READMEs explicitly grant icon assets BY-SA-3.0. Full CC legalcode retained among evidence.",
+    "provenance_limit": "Exact unnormalized single-state RGBA equality supports mapping, not a guarantee of ownership or proof of the importer download revision."
+  }
 }

@@ -104,7 +104,7 @@
     baseWalkSpeed: 3
     baseSprintSpeed: 4.5
   - type: VehicleSurfaceSpeed
-    roadTiles: [FloorConcrete, FrontlineFloorAsphalt, FrontlineFloorConcrete]
+    roadTiles: [FloorConcrete, FrontlineFloorAsphalt, FrontlineFloorConcrete, FrontlineFloorAsphalt1, FrontlineFloorAsphalt2, FrontlineFloorAsphalt3, FrontlineFloorAsphalt4, FrontlineFloorAsphalt5, FrontlineFloorAsphalt6, FrontlineFloorAsphalt7, FrontlineFloorAsphalt8, FrontlineFloorAsphalt9, FrontlineFloorAsphalt10, FrontlineFloorAsphalt11, FrontlineFloorAsphalt12, FrontlineFloorAsphalt13, FrontlineFloorAsphalt14, FrontlineFloorAsphalt15, FrontlineFloorAsphalt16, FrontlineFloorAsphalt17, FrontlineFloorAsphaltSunbleached]
     offRoadModifier: 0.55
   - type: ContainerContainer
     containers:

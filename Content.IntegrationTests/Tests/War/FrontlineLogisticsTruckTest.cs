@@ -368,6 +368,8 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
     [TestCase("FrontlineFloorConcrete", "FrontlineFloorGrass")]
     [TestCase("FrontlineFloorAsphalt", "FrontlineFloorSand")]
     [TestCase("FrontlineFloorConcrete", "FrontlineFloorDirtRoad")]
+    [TestCase("FrontlineFloorAsphalt9", "FrontlineFloorGrassDark")]
+    [TestCase("FrontlineFloorAsphaltSunbleached", "FrontlineFloorGrassLight")]
     public async Task ProductionTruckClientRoadDirtRoadTravelPreservesDriverAndCargo(string road, string dirt)
     {
         await Server.WaitPost(() =>

@@ -1,4 +1,4 @@
-# Third-party assets — Frontline Planetary Asset Pack v1
+# Third-party assets — Frontline Planetary Asset Pack
 
 RMC-14 source pinned at `46bc517117f195f0b6a3f0de629fbe110e21ff6f`. Only the following whitelist is imported.
 
@@ -9,12 +9,12 @@ CM-SS13 notices designate its active development team as the author unless other
 The machine-readable `Resources/Textures/Frontline/Attribution/manifest.json` records exact file hashes, pinned source links, untouched raw metadata, source grants/notices and blocked candidates. Raw mixed-source tile metadata is evidence only: it does **not** authorize excluded ice/snow exports.
 
 ## `Tiles/planet`
-- Selected states: `dirt`, `grass1`, `sand`.
+- Selected states: `dirt`, `grass1`, `grass2`, `grass3`, `sand`.
 - License: CC-BY-SA-3.0; source metadata: https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/planet/meta.json
 - Original notice (verbatim): Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/turf/ground_map.dmi, ice from https://github.com/cmss13-devs/cmss13/blob/8d0e113dfafcc590812ff4d55bc002b9b93ece67/icons/turf/ice.dmi, snow from https://github.com/cmss13-devs/cmss13/blob/d0648b581f5f063a3191cf954e9806f09d2c8763/icons/turf/floors/snow2.dmi
 
 ## `Tiles/asphalt`
-- Selected states: `asphalt`, `cement1`.
+- Selected states: `asphalt`, `asphalt1`–`asphalt17`, `sunbleached_asphalt`, `cement1`, `cement19`, `cement20`, `special_stonetile`, `tile`.
 - License: CC-BY-SA-3.0; source metadata: https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Tiles/asphalt/meta.json
 - Original notice (verbatim): Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/turf/floors/asphalt.dmi
 
@@ -48,10 +48,23 @@ The machine-readable `Resources/Textures/Frontline/Attribution/manifest.json` re
 - License: CC-BY-SA-3.0; source metadata: https://raw.githubusercontent.com/RMC-14/RMC-14/46bc517117f195f0b6a3f0de629fbe110e21ff6f/Resources/Textures/_RMC14/Structures/Storage/Crates/supply.rsi/meta.json
 - Original notice (verbatim): Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/7cb618c69b75873f3ce893022fe08d1233b3152d/icons/obj/structures/crates.dmi
 
-## Explicit omissions
-Only six base tile strips, two temperate flora states, one sandbag state, one barrel color and the supply-crate icon are used. Decorations are non-colliding graphics, not combat cover or harvestable plants. Crate art reskins native sealed Frontline crates, not RMC storage.
+## Temperate tile expansion
 
-Candidates blocked by the planetary-pack audit remain excluded until their conflicting, missing or mutable provenance is resolved. The truck states cleared by the subsequent historical audit are documented separately below. Their exact reasons are retained in the manifest; no NC or uncertain files are imported. Approved but unused variants, second biomes, road decals, truck art, mechanics and maps are not part of this pack.
+29 additional distinct 32×32 PNGs are imported without changing their bytes; the tile pack now contains 35 native tile prototypes. All added files/states are CC-BY-SA-3.0, attributed to the CM-SS13 active development team as designated by its historical notices; RMC-14 supplied the export packaging. No individual artist is inferred.
+
+- `planet/grass2/grass.png` → `grass2` and `planet/grass3/grass.png` → `grass3`, from the existing pinned `ground_map.dmi` source.
+- `asphalt/asphalt1.png`–`asphalt17.png`, `sunbleached_asphalt.png`, `cement19.png`, `cement20.png`, `special_stonetile.png`, `tile.png`: same-named states in the existing pinned asphalt DMI. The complete numbered road-section set is individually selectable in the native tile editor; it is not a random-variant strip.
+- `planet/corsat/{squares,squareswood,plate}.png`: same-named states in `cmss13-devs/cmss13` at `718b6531ec71e34f671ab37c269469e1638cc2ec`, `icons/turf/floors/corsat.dmi`. Original RMC notice: Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/718b6531ec71e34f671ab37c269469e1638cc2ec/icons/turf/floors/corsat.dmi
+- `planet/interior/{plasticfloor1,tatami}.png`: same-named states at `09a5191fb11aab8ddffe3f9be94292b53e4d96f6`, `icons/turf/floors/interior.dmi`. Original RMC notice: Taken from cmss13 at https://github.com/cmss13-devs/cmss13/blob/09a5191fb11aab8ddffe3f9be94292b53e4d96f6/icons/turf/floors/interior.dmi
+
+Every added PNG matches its named historical single DMI state byte-for-byte in unnormalized RGBA. Source DMI bytes, raw metadata and historical notices are bundled and hashed in the manifest; the existing complete CC-BY-SA-3.0 legalcode is retained. The complete pinned RMC tile subtree was enumerated with `truncated=false`; file selection does not authorize unlisted descendants. The historical README explicitly grants icon assets BY-SA-3.0; reviewed scoped xeno notices do not apply to terrain. Pixel equality supports provenance but is not a legal ownership guarantee or proof of the exact revision downloaded by the RMC importer.
+
+Only the 18 additional actual asphalt road IDs join the existing truck road list; speeds and the 0.55 off-road modifier are unchanged. Building floors and dirt-road surfaces retain existing off-road treatment. No mechanics, engine, maps, entities or resource items are added.
+
+## Explicit omissions
+Only the 35 enumerated tile strips, two temperate flora states, one sandbag state, one barrel color and the supply-crate icon are used. Decorations are non-colliding graphics, not combat cover or harvestable plants. Crate art reskins native sealed Frontline crates, not RMC storage.
+
+Candidates blocked by the planetary-pack audit remain excluded until their conflicting, missing or mutable provenance is resolved. The truck states cleared by the subsequent historical audit are documented separately below. Their exact reasons are retained in the manifest; no NC or uncertain files are imported. Unlisted variants, second biomes, road decals, mechanics and maps are not part of this pack. `asphalt_old` has no matching state in its cited historical DMI and is excluded. The 64×64 directional dirt-road sheets are not imported as native 32px strips.
 
 ---
 
