@@ -15,8 +15,8 @@ frontline-ui-recipes-empty = Нет доступных рецептов.
 frontline-ui-select-recipe = Выберите рецепт для просмотра затрат и результата.
 frontline-ui-load-hint = Используйте материалы из руки на машине для загрузки.
 frontline-ui-produce = Произвести
-frontline-ui-ready = Доступно производство
-frontline-ui-insufficient = Недостаточно сырья
+frontline-ui-ready = Готово
+frontline-ui-insufficient = Нет сырья
 frontline-ui-recipe-details = { $name }
     { $input }
     → { $output } ×{ $amount }

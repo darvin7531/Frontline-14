@@ -90,14 +90,14 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         var hint = new RichTextLabel();
         hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));
         left.AddChild(hint);
-        _inputs = new FrontlineItemGrid(Loc.GetString("frontline-factory-input-empty")) { Name = "Inputs" };
+        _inputs = new FrontlineItemGrid(Loc.GetString("frontline-factory-input-empty"), mode: FrontlineItemGridMode.Slots) { Name = "Inputs" };
         left.AddChild(_inputs);
         _eject.Text = Loc.GetString("frontline-factory-eject-all");
         _eject.OnPressed += _ => Eject?.Invoke();
         left.AddChild(_eject);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { left } });
         var center = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-recipes-heading"));
-        _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty"), true) { Name = "Recipes" };
+        _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty"), true, mode: FrontlineItemGridMode.Recipes) { Name = "Recipes" };
         _recipes.SelectionChanged += UpdateSelection;
         center.AddChild(_recipes);
         var detailsScroll = FrontlineItemGrid.CreateScroll(_details);
@@ -114,7 +114,7 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         center.AddChild(_produce);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, SizeFlagsStretchRatio = 1.4f, Children = { center } });
         var right = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-output-heading"));
-        _outputs = new FrontlineItemGrid(Loc.GetString("frontline-factory-output-empty")) { Name = "Outputs" };
+        _outputs = new FrontlineItemGrid(Loc.GetString("frontline-factory-output-empty"), mode: FrontlineItemGridMode.Slots) { Name = "Outputs" };
         right.AddChild(_outputs);
         _take.Text = Loc.GetString("frontline-factory-take-output");
         _take.OnPressed += _ => TakeOutput?.Invoke();

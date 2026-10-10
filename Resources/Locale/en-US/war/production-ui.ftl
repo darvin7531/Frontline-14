@@ -15,8 +15,8 @@ frontline-ui-recipes-empty = No recipes available.
 frontline-ui-select-recipe = Select a recipe to see its cost and output.
 frontline-ui-load-hint = Use a held material stack on this machine to load it.
 frontline-ui-produce = Produce
-frontline-ui-ready = Ready to produce
-frontline-ui-insufficient = Not enough input materials
+frontline-ui-ready = Ready
+frontline-ui-insufficient = Missing input
 frontline-ui-recipe-details = { $name }
     { $input }
     → { $output } ×{ $amount }

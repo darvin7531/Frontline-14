@@ -55,7 +55,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         Button action = default!;
         FrontlineItemGrid grid = default!;
         ContainerButton cell = default!;
-        await Client.WaitPost(() =>
+        await Client.WaitAssertion(() =>
         {
             window = prototype switch
             {
@@ -69,9 +69,16 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             Assert.That(cell.ToolTip, Is.Not.Empty);
             Assert.That(cell.HasStyleClass(ContainerButton.StyleClassButton), Is.True,
                 "Native button styling must expose hover and selected states.");
-            Assert.That(GetControlFromChildren<RichTextLabel>(label => label.Name == "ItemName", cell).GetMessage(),
-                Is.Not.Empty, "Every cell needs a visible localized name, not only a tooltip.");
-            Assert.That(cell.MinHeight, Is.GreaterThanOrEqualTo(80));
+            if (prototype == "TownHallCoreFactionOne")
+                Assert.That(GetControlFromChildren<RichTextLabel>(label => label.Name == "ItemName", cell).GetMessage(), Is.Not.Empty);
+            else
+            {
+                var name = GetControlFromChildren<Label>(label => label.Name == "ItemName", cell);
+                Assert.That(name.Text, Is.Not.Empty);
+                Assert.That(name.ClipText, Is.True, "Recipe names never wrap inside words.");
+                Assert.That(cell.MinHeight, Is.LessThanOrEqualTo(64));
+                Assert.That(grid.Cells.Columns, Is.EqualTo(1), "Recipes use the full column width.");
+            }
             Assert.That(grid.Cells.ChildCount, Is.GreaterThan(0));
             if (prototype == "TownHallCoreFactionOne")
             {
@@ -104,7 +111,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         Control? queueRow = null;
         float queuePosition = 0;
         if (prototype != "TownHallCoreFactionOne")
-            await Client.WaitPost(() =>
+            await Client.WaitAssertion(() =>
             {
                 var queue = GetControlFromChildren<FrontlineJobList>(window, true);
                 queueScroll = (ScrollContainer) queue.Parent!;
@@ -142,7 +149,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         {
             foreach (var scale in new[] { 1f, 1.5f })
             foreach (var size in new[] { new Vector2(640, 480), new Vector2(1000, 700) })
-                await Client.WaitPost(() =>
+                await Client.WaitAssertion(() =>
                 {
                     Client.CfgMan.SetCVar(CVars.ResAutoScaleEnabled, false);
                     Client.CfgMan.SetCVar(CVars.DisplayUIScale, scale);
@@ -157,9 +164,26 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                         foreach (var item in itemGrid.Cells.Children.Where(c => c.Visible))
                         {
                             Assert.That(item.Position.X + item.Size.X, Is.LessThanOrEqualTo(itemGrid.Scroll.Size.X + 1), "Cells fit their independent scroll viewport.");
-                            var name = GetControlFromChildren<RichTextLabel>(label => label.Name == "ItemName", item);
-                            Assert.That(name.Size.Y, Is.GreaterThan(0), "Names remain visible at each scale.");
-                            Assert.That(name.Size.X, Is.LessThanOrEqualTo(item.Size.X));
+                            if (itemGrid.Name is "Inputs" or "Outputs")
+                            {
+                                Assert.That(item.Size.X, Is.EqualTo(item.Size.Y), "Machine contents are square slots.");
+                                Assert.That(item.Size.X, Is.LessThanOrEqualTo(48));
+                            }
+                            else if (prototype == "TownHallCoreFactionOne")
+                            {
+                                var name = GetControlFromChildren<RichTextLabel>(label => label.Name == "ItemName", item);
+                                Assert.That(name.Size.Y, Is.GreaterThan(0));
+                                Assert.That(name.Size.X, Is.LessThanOrEqualTo(item.Size.X));
+                            }
+                            else
+                            {
+                                var name = GetControlFromChildren<Label>(label => label.Name == "ItemName", item);
+                                name.Text = "Синтез технологического сплава из необработанного технологического материала";
+                                item.Measure(item.Size);
+                                item.Arrange(UIBox2.FromDimensions(item.Position, item.Size));
+                                Assert.That(name.ClipText, Is.True);
+                                Assert.That(item.Size.Y, Is.LessThanOrEqualTo(64), "Long Russian names do not grow multi-line cards.");
+                            }
                             foreach (var icon in Descendants(item).OfType<TextureRect>())
                                 Assert.That(icon.Size.X, Is.GreaterThanOrEqualTo(32), "Item art is not shrunk into micro icons.");
                         }
@@ -180,6 +204,49 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             "FrontlineRefinery" => FrontlineRefineryUiKey.Key,
             _ => (System.Enum) FrontlineStockpileUiKey.Key,
         });
+    }
+
+    [TestCase("FrontlineFactory")]
+    [TestCase("FrontlineRefinery")]
+    public async Task NativeMachineContentsUseCompactSlots(string prototype)
+    {
+        await SpawnTarget(prototype);
+        await Server.WaitPost(() =>
+        {
+            var input = Stack.SpawnAtPosition(10, prototype == "FrontlineFactory" ? "BasicMaterials" : "FrontlineRawIron",
+                SEntMan.GetCoordinates(PlayerCoords));
+            var output = prototype == "FrontlineFactory"
+                ? SEntMan.SpawnEntity("FrontlineWeaponPistolMk58", SEntMan.GetCoordinates(PlayerCoords))
+                : Stack.SpawnAtPosition(5, "BasicMaterials", SEntMan.GetCoordinates(PlayerCoords));
+            var inserted = prototype == "FrontlineFactory"
+                ? Server.System<FrontlineFactorySystem>().TryInsertInput(STarget!.Value, input)
+                : Server.System<FrontlineRefinerySystem>().TryInsertInput(STarget!.Value, input);
+            Assert.That(inserted, Is.True);
+            var container = prototype == "FrontlineFactory"
+                ? SComp<FrontlineFactoryComponent>(STarget!.Value).OutputContainer
+                : SComp<FrontlineRefineryComponent>(STarget!.Value).OutputContainer;
+            Assert.That(Server.System<Robust.Shared.Containers.SharedContainerSystem>().Insert(output, container), Is.True);
+        });
+        await Interact();
+        await Pair.RunUntilSynced();
+        BaseWindow window = default!;
+        await Client.WaitAssertion(() =>
+        {
+            window = prototype == "FrontlineFactory" ? GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>();
+            foreach (var name in new[] { "Inputs", "Outputs" })
+            {
+                var grid = GetControlFromChildren<FrontlineItemGrid>(g => g.Name == name, window);
+                var slot = grid.Cells.Children.OfType<ContainerButton>().Single();
+                Assert.That(slot.Size.X, Is.EqualTo(slot.Size.Y));
+                Assert.That(slot.Size.X, Is.LessThanOrEqualTo(48));
+                Assert.That(slot.ToolTip, Is.Not.Empty);
+                Assert.That(Descendants(slot).OfType<RichTextLabel>(), Is.Empty, "Names live in tooltips, not below compact slots.");
+                Assert.That(Descendants(slot).OfType<PanelContainer>().Any(p => p.HasStyleClass("InventorySlotBackground")), Is.True,
+                    "Reuse the native item slot background.");
+                Assert.That(Descendants(slot).OfType<Label>().Single(l => l.Name == "ItemCount").Text, Is.Not.Empty);
+            }
+        });
+        await CloseBui(prototype == "FrontlineFactory" ? FrontlineFactoryUiKey.Key : (System.Enum) FrontlineRefineryUiKey.Key);
     }
 
     [TestCase("FrontlineFactory", "FrontlineFactorySupplyCrate", "BasicMaterials", 10)]

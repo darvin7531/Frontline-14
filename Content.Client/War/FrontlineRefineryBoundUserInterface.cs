@@ -80,14 +80,14 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         var hint = new RichTextLabel();
         hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));
         left.AddChild(hint);
-        _inputs = new FrontlineItemGrid(Loc.GetString("frontline-refinery-input-empty")) { Name = "Inputs" };
+        _inputs = new FrontlineItemGrid(Loc.GetString("frontline-refinery-input-empty"), mode: FrontlineItemGridMode.Slots) { Name = "Inputs" };
         left.AddChild(_inputs);
         _eject.Text = Loc.GetString("frontline-refinery-eject-all");
         _eject.OnPressed += _ => Eject?.Invoke();
         left.AddChild(_eject);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { left } });
         var center = FrontlineItemGrid.Column(Loc.GetString("frontline-refinery-recipes-heading"));
-        _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty")) { Name = "Recipes" };
+        _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty"), mode: FrontlineItemGridMode.Recipes) { Name = "Recipes" };
         _recipes.SelectionChanged += UpdateSelection;
         center.AddChild(_recipes);
         var detailsScroll = FrontlineItemGrid.CreateScroll(_details);
@@ -104,7 +104,7 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         center.AddChild(_produce);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, SizeFlagsStretchRatio = 1.4f, Children = { center } });
         var right = FrontlineItemGrid.Column(Loc.GetString("frontline-refinery-output-heading"));
-        _outputs = new FrontlineItemGrid(Loc.GetString("frontline-refinery-output-empty")) { Name = "Outputs" };
+        _outputs = new FrontlineItemGrid(Loc.GetString("frontline-refinery-output-empty"), mode: FrontlineItemGridMode.Slots) { Name = "Outputs" };
         right.AddChild(_outputs);
         _take.Text = Loc.GetString("frontline-refinery-take-output");
         _take.OnPressed += _ => TakeOutput?.Invoke();
@@ -130,7 +130,7 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
             _outputs.StackIcon(output.Stack), output.Amount, $"{stackName(output.Stack)} ×{output.Amount}", Name: stackName(output.Stack))));
         _recipes.SetItems(state.Recipes.Select(recipe => new FrontlineItemView(recipe.Id.Id,
             _recipes.StackIcon(recipe.Output.Stack), recipe.Output.Amount, Details(recipe),
-            Available: recipe.CanSubmit, InputIcon: _recipes.StackIcon(recipe.Inputs[0].Stack), InputAmount: recipe.Inputs[0].Amount, Caption: Loc.GetString("frontline-ui-duration", ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds))), Name: recipeName(recipe.Id))));
+            Available: recipe.CanSubmit, Caption: Loc.GetString("frontline-ui-duration", ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds))), Name: recipeName(recipe.Id))));
         _jobs.SetJobs(state.Jobs.Select(job =>
         {
             var recipe = state.Recipes.FirstOrDefault(recipe => recipe.Id == job.Recipe);
