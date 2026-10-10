@@ -1,3 +1,4 @@
+using System.Numerics;
 using Content.Client.Eui;
 using Content.Shared.Eui;
 using Content.Shared.War;
@@ -23,7 +24,7 @@ public sealed class RespawnChoiceEui : BaseEui
         var wait = new Button { Text = Loc.GetString("frontline-respawn-choice-wait") };
         wait.OnPressed += _ => SendMessage(new CloseEuiMessage());
         contents.AddChild(wait);
-        contents.AddChild(_bases);
+        contents.AddChild(FrontlineItemGrid.CreateScroll(_bases));
         _window.SetContents(contents);
     }
 
@@ -54,6 +55,12 @@ public sealed class RespawnChoiceEui : BaseEui
 
 public sealed class RespawnChoiceWindow : DefaultWindow
 {
+    public RespawnChoiceWindow()
+    {
+        MinSize = new Vector2(300, 180);
+        SetSize = new Vector2(420, 260);
+    }
+
     public void SetContents(Control contents)
     {
         ContentsContainer.AddChild(contents);

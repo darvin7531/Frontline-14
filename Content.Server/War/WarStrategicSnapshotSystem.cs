@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 using Content.Server.GameTicking;
 using Content.Shared.Containers.ItemSlots;
 using Content.Shared.Damage;
@@ -72,7 +73,8 @@ public sealed record WarRefinerySnapshot(
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record WarRefineryJobSnapshot(
     [property: JsonRequired] string Recipe,
-    [property: JsonRequired] long RemainingTicks);
+    [property: JsonRequired] long RemainingTicks,
+    [property: JsonRequired] long Batches = 1);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record WarRefineryStackSnapshot(
@@ -115,7 +117,7 @@ public sealed record WarBaseSnapshot(
 public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 {
     // Earlier versions omitted vehicle claims; never accept omitted state as fresh defaults.
-    public const int SnapshotVersion = 6;
+    public const int SnapshotVersion = 7;
     public static readonly ResPath SavePath = new("/persistent-war-strategic.json");
     public static readonly ResPath TemporaryPath = new("/persistent-war-strategic.json.tmp");
     public static readonly ResPath BackupPath = new("/persistent-war-strategic.json.bak");
@@ -252,6 +254,28 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         }
     }
 
+    internal static WarStrategicSnapshot ReadSnapshot(JsonElement document)
+    {
+        RejectDuplicateKeys(document);
+        if (document.TryGetProperty("SnapshotVersion", out var version) && version.GetInt32() == 6)
+        {
+            // v6 stored exactly one anonymous/public batch per row. Preserve every other claim verbatim.
+            var upgraded = JsonNode.Parse(document.GetRawText())!.AsObject();
+            foreach (var refinery in upgraded["Refineries"]!.AsArray())
+            foreach (var job in refinery!["Jobs"]!.AsArray())
+            {
+                if (job!.AsObject().ContainsKey("Batches"))
+                    throw new InvalidDataException("v6 refinery jobs cannot contain batch claims.");
+                job["Batches"] = 1;
+            }
+            upgraded["SnapshotVersion"] = SnapshotVersion;
+            return upgraded.Deserialize<WarStrategicSnapshot>() ??
+                throw new InvalidDataException("Empty strategic snapshot.");
+        }
+        return document.Deserialize<WarStrategicSnapshot>() ??
+            throw new InvalidDataException("Empty strategic snapshot.");
+    }
+
     /// <summary>Call once on the validated, initialized fresh map, before any player deployment.</summary>
     public void Restore(EntityUid map, int warId)
     {
@@ -294,8 +318,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             }
             using var document = parsed;
             RejectDuplicateKeys(document.RootElement);
-            var snapshot = document.RootElement.Deserialize<WarStrategicSnapshot>() ??
-                           throw new InvalidDataException("Empty strategic snapshot.");
+            var snapshot = ReadSnapshot(document.RootElement);
             ValidateHeader(snapshot);
             if (snapshot.WarId != warId)
             {

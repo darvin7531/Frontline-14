@@ -1,3 +1,4 @@
+using System.Numerics;
 using Content.Client.Eui;
 using Content.Shared.Eui;
 using Content.Shared.War;
@@ -43,15 +44,25 @@ public sealed class WarVictoryWindow : DefaultWindow
 {
     public readonly Button Return = new();
 
+    public WarVictoryWindow()
+    {
+        MinSize = new Vector2(320, 200);
+        SetSize = new Vector2(420, 280);
+    }
+
     public void SetVictory(WarVictoryEuiState victory, string faction)
     {
         ContentsContainer.RemoveAllChildren();
         var contents = new BoxContainer { Orientation = LayoutOrientation.Vertical };
-        contents.AddChild(new Label { Text = Loc.GetString("frontline-victory-faction", ("faction", faction)) });
+        var winner = new RichTextLabel();
+        winner.SetMessage(Loc.GetString("frontline-victory-faction", ("faction", faction)));
+        contents.AddChild(winner);
         contents.AddChild(new Label { Text = Loc.GetString("frontline-victory-territories", ("owned", victory.TerritoriesHeld), ("total", victory.TotalTerritories)) });
         contents.AddChild(new Label { Text = Loc.GetString("frontline-victory-duration", ("days", victory.Duration.Days), ("hours", victory.Duration.Hours)) });
         Return.Text = Loc.GetString("frontline-victory-return-lobby");
-        contents.AddChild(Return);
-        ContentsContainer.AddChild(contents);
+        var body = new BoxContainer { Orientation = LayoutOrientation.Vertical, VerticalExpand = true };
+        body.AddChild(FrontlineItemGrid.CreateScroll(contents));
+        body.AddChild(Return);
+        ContentsContainer.AddChild(body);
     }
 }

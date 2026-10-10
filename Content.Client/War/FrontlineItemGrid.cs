@@ -15,7 +15,9 @@ namespace Content.Client.War;
 
 public readonly record struct FrontlineItemView(
     string Id, Texture? Icon, int Amount, string Tooltip,
-    string Category = "frontline-ui-category-other", bool Available = true, Texture? InputIcon = null, int InputAmount = 0, string Caption = "", string Name = "");
+    string Category = "frontline-ui-category-other", bool Available = true, string Caption = "", string Name = "");
+
+public enum FrontlineItemGridMode { Cards, Recipes, Slots }
 
 /// <summary>Prototype icons only: never spawn a client entity to render an item.</summary>
 public sealed partial class FrontlineItemGrid : BoxContainer
@@ -26,18 +28,23 @@ public sealed partial class FrontlineItemGrid : BoxContainer
     public readonly ScrollContainer Scroll;
     public readonly GridContainer Cells;
     private readonly RichTextLabel _empty = new();
-    private readonly Dictionary<string, (ContainerButton Button, TextureRect Icon, Label Count, Label Fallback, RichTextLabel Caption, RichTextLabel Name)> _cells = new();
+    private readonly Dictionary<string, (ContainerButton Button, TextureRect Icon, Label Count, Label Fallback, Control Caption, Control Name)> _cells = new();
     private readonly Dictionary<string, FrontlineItemView> _items = new();
+    private readonly FrontlineItemGridMode _mode;
     private string[] _categories = [];
     public string? SelectedId { get; private set; }
     public string SelectedCategory { get; private set; } = "";
     public event Action? SelectionChanged;
 
-    public FrontlineItemGrid(string empty, bool categories = false)
+    public FrontlineItemGrid(string empty, bool categories = false, FrontlineItemGridMode mode = FrontlineItemGridMode.Cards)
     {
         IoCManager.InjectDependencies(this);
         Orientation = LayoutOrientation.Vertical;
-        Cells = new ResponsiveGrid(164) { HSeparationOverride = 8, VSeparationOverride = 8 };
+        _mode = mode;
+        Cells = mode == FrontlineItemGridMode.Recipes
+            ? new GridContainer { Columns = 1, HSeparationOverride = 4, VSeparationOverride = 4 }
+            : new ResponsiveGrid(mode == FrontlineItemGridMode.Slots ? 52 : 164)
+            { HSeparationOverride = mode == FrontlineItemGridMode.Cards ? 8 : 4, VSeparationOverride = mode == FrontlineItemGridMode.Cards ? 8 : 4 };
         HorizontalExpand = VerticalExpand = true;
         MinWidth = 156;
         Categories.Visible = categories;
@@ -83,38 +90,64 @@ public sealed partial class FrontlineItemGrid : BoxContainer
             {
                 var button = new ContainerButton
                 {
-                    Name = id, MinWidth = 156, MinHeight = 96, HorizontalExpand = true, ToggleMode = true,
+                    Name = id, MinWidth = _mode == FrontlineItemGridMode.Slots ? 48 : 156,
+                    MinHeight = _mode == FrontlineItemGridMode.Cards ? 96 : 48,
+                    HorizontalExpand = _mode != FrontlineItemGridMode.Slots, ToggleMode = true,
                     StyleClasses = { ContainerButton.StyleClassButton },
                     CanKeyboardFocus = true, KeyboardFocusOnClick = true,
                 };
-                var body = new BoxContainer { Orientation = LayoutOrientation.Vertical, SeparationOverride = 4 };
-                var header = new BoxContainer { SeparationOverride = 4 };
                 var icon = new TextureRect
                 {
                     SetSize = new Vector2(32), CanShrink = true, Stretch = TextureRect.StretchMode.KeepAspectCentered,
+                    MouseFilter = MouseFilterMode.Ignore,
                 };
-                var count = new Label();
-                var fallback = new Label { Text = "?" };
-                if (item.InputIcon != null)
+                var count = new Label { Name = "ItemCount", MouseFilter = MouseFilterMode.Ignore };
+                var fallback = new Label { Text = "?", MouseFilter = MouseFilterMode.Ignore };
+                Control caption;
+                Control name;
+                if (_mode == FrontlineItemGridMode.Slots)
                 {
-                    header.AddChild(new TextureRect
-                    {
-                        Texture = item.InputIcon, SetSize = new Vector2(32), CanShrink = true,
-                        Stretch = TextureRect.StretchMode.KeepAspectCentered,
-                    });
-                    header.AddChild(new Label { Text = item.InputAmount.ToString() });
-                    header.AddChild(new Label { Text = "→" });
+                    button.SetSize = button.MaxSize = new Vector2(48);
+                    var slot = new PanelContainer { StyleClasses = { "InventorySlotBackground" }, MouseFilter = MouseFilterMode.Ignore };
+                    icon.HorizontalAlignment = HAlignment.Center;
+                    icon.VerticalAlignment = VAlignment.Center;
+                    fallback.HorizontalAlignment = HAlignment.Center;
+                    fallback.VerticalAlignment = VAlignment.Center;
+                    count.HorizontalAlignment = HAlignment.Right;
+                    count.VerticalAlignment = VAlignment.Bottom;
+                    count.StyleClasses.Add("LabelSmall");
+                    slot.AddChild(icon);
+                    slot.AddChild(fallback);
+                    slot.AddChild(count);
+                    button.AddChild(slot);
+                    name = new Label();
+                    caption = new Label();
                 }
-                var caption = new RichTextLabel { MaxWidth = 140 };
-                var name = new RichTextLabel { Name = "ItemName", MaxWidth = 140 };
-                header.AddChild(icon);
-                header.AddChild(fallback);
-                header.AddChild(new Label { Text = "×" });
-                header.AddChild(count);
-                body.AddChild(header);
-                body.AddChild(name);
-                body.AddChild(caption);
-                button.AddChild(body);
+                else
+                {
+                    var body = new BoxContainer { Orientation = LayoutOrientation.Vertical, SeparationOverride = _mode == FrontlineItemGridMode.Recipes ? 2 : 4 };
+                    var header = new BoxContainer { SeparationOverride = 4 };
+                    header.AddChild(icon);
+                    header.AddChild(fallback);
+                    if (_mode == FrontlineItemGridMode.Recipes)
+                    {
+                        name = new Label { Name = "ItemName", ClipText = true, HorizontalExpand = true, MouseFilter = MouseFilterMode.Ignore };
+                        caption = new Label { ClipText = true, MouseFilter = MouseFilterMode.Ignore };
+                        header.AddChild(name);
+                    }
+                    else
+                    {
+                        name = new RichTextLabel { Name = "ItemName", MaxWidth = 140 };
+                        caption = new RichTextLabel { MaxWidth = 140 };
+                        header.AddChild(new Label { Text = "×" });
+                        header.AddChild(count);
+                    }
+                    body.AddChild(header);
+                    if (_mode == FrontlineItemGridMode.Cards)
+                        body.AddChild(name);
+                    body.AddChild(caption);
+                    button.AddChild(body);
+                }
                 button.OnPressed += _ =>
                 {
                     SelectedId = id;
@@ -128,10 +161,17 @@ public sealed partial class FrontlineItemGrid : BoxContainer
             cell.Icon.Texture = item.Icon;
             cell.Fallback.Visible = item.Icon == null;
             cell.Count.Text = item.Amount.ToString();
-            cell.Name.SetMessage(FormattedMessage.FromUnformatted(item.Name));
+            var status = string.IsNullOrEmpty(item.Caption) ? "" :
+                $"{item.Caption} · {Loc.GetString(item.Available ? "frontline-ui-ready" : "frontline-ui-insufficient")}";
+            if (cell.Name is Label title)
+                title.Text = item.Name;
+            else if (cell.Name is RichTextLabel richName)
+                richName.SetMessage(FormattedMessage.FromUnformatted(item.Name));
             cell.Caption.Visible = !string.IsNullOrEmpty(item.Caption);
-            cell.Caption.SetMessage(FormattedMessage.FromUnformatted(string.IsNullOrEmpty(item.Caption) ? "" :
-                $"{item.Caption}\n{Loc.GetString(item.Available ? "frontline-ui-ready" : "frontline-ui-insufficient")}"));
+            if (cell.Caption is Label statusLabel)
+                statusLabel.Text = status;
+            else if (cell.Caption is RichTextLabel richCaption)
+                richCaption.SetMessage(FormattedMessage.FromUnformatted(status));
             cell.Button.ToolTip = item.Tooltip;
             cell.Icon.Modulate = item.Available ? Color.White : Color.Gray;
         }
@@ -193,13 +233,13 @@ public sealed partial class FrontlineItemGrid : BoxContainer
 }
 
 public readonly record struct FrontlineJobView(
-    string Id, string Name, Texture? Icon, TimeSpan Duration, TimeSpan Remaining, bool Processing);
+    string Id, string Name, Texture? Icon, TimeSpan Duration, TimeSpan Remaining, bool Processing, long Batches = 1);
 
 /// <summary>Jobs have no server ID; keep positional rows while updating their real recipe and snapshot.</summary>
 public sealed partial class FrontlineJobList : BoxContainer
 {
     [Dependency] private IGameTiming _timing = default!;
-    private readonly List<(BoxContainer Row, TextureRect Icon, RichTextLabel Text, ProgressBar Progress)> _rows = new();
+    private readonly List<(BoxContainer Row, TextureRect Icon, RichTextLabel Text, RichTextLabel Status, ProgressBar Progress)> _rows = new();
     private readonly RichTextLabel _empty = new();
     private FrontlineJobView[] _jobs = [];
     private TimeSpan _received;
@@ -225,16 +265,16 @@ public sealed partial class FrontlineJobList : BoxContainer
         while (_rows.Count < _jobs.Length)
         {
             var row = new BoxContainer { Orientation = LayoutOrientation.Vertical, HorizontalExpand = true };
-            var header = new BoxContainer { HorizontalExpand = true };
             var icon = new TextureRect { SetSize = new Vector2(32), CanShrink = true, Stretch = TextureRect.StretchMode.KeepAspectCentered };
             var text = new RichTextLabel { HorizontalExpand = true };
+            var header = new JobHeader(icon, text) { HorizontalExpand = true };
+            var status = new RichTextLabel { HorizontalExpand = true };
             var progress = new ProgressBar { MinHeight = 12, MaxValue = 1 };
-            header.AddChild(icon);
-            header.AddChild(text);
             row.AddChild(header);
+            row.AddChild(status);
             row.AddChild(progress);
             AddChild(row);
-            _rows.Add((row, icon, text, progress));
+            _rows.Add((row, icon, text, status, progress));
         }
         _empty.Visible = _jobs.Length == 0;
         Refresh();
@@ -246,6 +286,29 @@ public sealed partial class FrontlineJobList : BoxContainer
         Refresh();
     }
 
+    private sealed class JobHeader : BoxContainer
+    {
+        private readonly TextureRect _icon;
+        private readonly RichTextLabel _name;
+
+        public JobHeader(TextureRect icon, RichTextLabel name)
+        {
+            _icon = icon;
+            _name = name;
+            SeparationOverride = 4;
+            AddChild(icon);
+            AddChild(name);
+        }
+
+        protected override Vector2 MeasureOverride(Vector2 availableSize)
+        {
+            _icon.Measure(availableSize);
+            _name.Measure(new Vector2(Math.Max(0, availableSize.X - _icon.DesiredSize.X - 4), availableSize.Y));
+            return new Vector2(_icon.DesiredSize.X + 4 + _name.DesiredSize.X,
+                Math.Max(_icon.DesiredSize.Y, _name.DesiredSize.Y));
+        }
+    }
+
     private void Refresh()
     {
         for (var i = 0; i < _jobs.Length; i++)
@@ -254,7 +317,8 @@ public sealed partial class FrontlineJobList : BoxContainer
             var remaining = Math.Max(0, (job.Remaining - (job.Processing ? _timing.CurTime - _received : TimeSpan.Zero)).TotalSeconds);
             var row = _rows[i];
             row.Icon.Texture = job.Icon;
-            row.Text.SetMessage(Loc.GetString("frontline-ui-job", ("position", i + 1), ("name", job.Name),
+            row.Text.SetMessage(Loc.GetString("frontline-ui-job", ("position", i + 1), ("name", job.Batches == 1 ? job.Name : $"{job.Name} ×{job.Batches}")));
+            row.Status.SetMessage(Loc.GetString("frontline-ui-job-status",
                 ("status", Loc.GetString(job.Processing ? "frontline-ui-processing" : "frontline-ui-waiting")),
                 ("seconds", Math.Ceiling(remaining))));
             row.Progress.Value = job.Duration > TimeSpan.Zero ? (float) Math.Clamp(1 - remaining / job.Duration.TotalSeconds, 0, 1) : 0;

@@ -1,3 +1,4 @@
+using System.Numerics;
 using Content.Client.Eui;
 using Content.Shared.Eui;
 using Content.Shared.War;
@@ -37,7 +38,9 @@ public sealed class FactionSelectionWindow : DefaultWindow
     public FactionSelectionWindow()
     {
         Title = Loc.GetString("frontline-faction-select-title");
-        ContentsContainer.AddChild(_factions);
+        MinSize = new Vector2(300, 180);
+        SetSize = new Vector2(420, 260);
+        ContentsContainer.AddChild(FrontlineItemGrid.CreateScroll(_factions));
     }
 
     public void SetFactions(IEnumerable<FactionSelectionOption> factions, Action<FactionId> choose)
@@ -47,7 +50,9 @@ public sealed class FactionSelectionWindow : DefaultWindow
         {
             var button = new Button { Text = faction.Name, ModulateSelfOverride = faction.Color };
             button.OnPressed += _ => choose(faction.Id);
-            _factions.AddChild(new Label { Text = faction.Description });
+            var description = new RichTextLabel();
+            description.SetMessage(faction.Description);
+            _factions.AddChild(description);
             _factions.AddChild(button);
         }
     }

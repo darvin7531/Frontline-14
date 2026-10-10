@@ -1349,10 +1349,13 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
-    [TestCase(false)]
-    [TestCase(true)]
+    [TestCase(false, 1, false)]
+    [TestCase(true, 1, false)]
+    [TestCase(false, 3, false)]
+    [TestCase(true, 3, false)]
+    [TestCase(false, 1, true)]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
-    public async Task TechnicalRestartPreservesPaidRefineryQueueAndRetainedMaterials(bool writeFault)
+    public async Task TechnicalRestartPreservesPaidRefineryQueueAndRetainedMaterials(bool writeFault, int batches, bool versionSix)
     {
         ProtoId<FrontlineRefineryRecipePrototype> recipe = "FrontlineSteel";
         var ticker = Server.System<GameTicker>();
@@ -1444,15 +1447,15 @@ public sealed class PersistentWarRuleTest : GameTest
                 Server.System<SharedTransformSystem>().SetCoordinates(session.AttachedEntity!.Value,
                     coordinates.Offset(new Vector2(0, 1)));
                 // Owning insertion API; submission is the public player/container-only API, not the BUI.
-                input = stacks.SpawnAtPosition(13, "FrontlineRawIron", coordinates);
+                input = stacks.SpawnAtPosition(13 + 5 * (batches - 1), "FrontlineRawIron", coordinates);
                 inserted = refineries.TryInsertInput(refinery, input);
                 submitted = refineries.TrySubmitPlayerJob(refinery, session.AttachedEntity.Value, recipe);
             });
             await Server.WaitAssertion(() =>
             {
                 Assert.That(selected && inserted && submitted, Is.True);
-                Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(8));
-                Assert.That(refineries.GetJobs(refinery), Has.Count.EqualTo(1));
+                Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(8 + 5 * (batches - 1)));
+                Assert.That(refineries.GetJobs(refinery).Sum(job => job.Batches), Is.EqualTo(1));
             });
             await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
             await Server.WaitAssertion(() =>
@@ -1461,12 +1464,12 @@ public sealed class PersistentWarRuleTest : GameTest
                 AssertContainer(refinery, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", 5);
             });
             await Server.WaitPost(() => submitted = refineries.TrySubmitPlayerJob(refinery,
-                session.AttachedEntity!.Value, recipe));
+                session.AttachedEntity!.Value, recipe, batches));
             await Pair.RunTicksSync(30);
             await Server.WaitAssertion(() =>
             {
                 Assert.That(submitted, Is.True);
-                Assert.That(refineries.GetJobs(refinery), Has.Count.EqualTo(1));
+                Assert.That(refineries.GetJobs(refinery).Sum(job => job.Batches), Is.EqualTo(batches));
                 Assert.That(refineries.GetJobs(refinery)[0].Remaining, Is.InRange(SGameTiming.TickPeriod, duration - SGameTiming.TickPeriod));
                 AssertGoods(5); // Three independent claims: paid pending work, committed output, unused input.
             });
@@ -1497,8 +1500,8 @@ public sealed class PersistentWarRuleTest : GameTest
                             SEntMan.EntityExists(input), Is.True);
                         Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(liveMap));
                         Assert.That(FindRefinery(new Vector2(6.5f, -19.5f)), Is.EqualTo(refinery));
-                        Assert.That(refineries.GetJobs(refinery).Select(job => (job.Recipe, job.Remaining.Ticks)),
-                            Is.EqualTo(liveJobs.Select(job => (job.Recipe, job.Remaining.Ticks))),
+                        Assert.That(refineries.GetJobs(refinery).Select(job => (job.Recipe, job.Remaining.Ticks, job.Batches)),
+                            Is.EqualTo(liveJobs.Select(job => (job.Recipe, job.Remaining.Ticks, job.Batches))),
                             "Failed capture must retain the ordered paid recipe and exact remaining ticks.");
                         AssertGoods(5);
                         using var unchangedStream = new StreamReader(data.OpenRead(WarStrategicSnapshotSystem.SavePath));
@@ -1531,6 +1534,18 @@ public sealed class PersistentWarRuleTest : GameTest
                 oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
                 beforeRestart = war.State!;
                 ticker.RestartRound();
+                if (versionSix)
+                {
+                    using var oldStream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+                    var legacy = System.Text.Json.Nodes.JsonNode.Parse(oldStream)!.AsObject();
+                    legacy["SnapshotVersion"] = 6;
+                    foreach (var machine in legacy["Refineries"]!.AsArray())
+                    foreach (var job in machine!["Jobs"]!.AsArray())
+                        job!.AsObject().Remove("Batches");
+                    using var output = data.OpenWrite(WarStrategicSnapshotSystem.SavePath);
+                    using var writer = new StreamWriter(output);
+                    writer.Write(legacy.ToJsonString());
+                }
                 ticker.SetGamePreset("PersistentWar");
                 ticker.ToggleReadyAll(true);
                 ticker.StartRound(true);
@@ -1544,16 +1559,20 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(war.State, Is.EqualTo(beforeRestart));
                 Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldRefinery) || SEntMan.EntityExists(input), Is.False);
                 Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.Not.EqualTo(oldMap));
-                Assert.That(restoredJobs, Has.Length.EqualTo(1),
+                Assert.That(restoredJobs.Sum(job => job.Batches), Is.EqualTo(batches),
                     "Technical restart must restore the paid refinery job instead of reloading an empty queue.");
                 Assert.That(restoredJobs[0].Recipe, Is.EqualTo(recipe));
                 Assert.That(restoredJobs[0].Remaining, Is.EqualTo(remaining), "Restore exact paid progress, not a fresh recipe duration.");
                 using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
-                var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+                using var savedDocument = JsonDocument.Parse(stream);
+                Assert.That(savedDocument.RootElement.GetProperty("SnapshotVersion").GetInt32(),
+                    Is.EqualTo(versionSix ? 6 : WarStrategicSnapshotSystem.SnapshotVersion));
+                var saved = WarStrategicSnapshotSystem.ReadSnapshot(savedDocument.RootElement);
                 Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
                 var claim = saved.Refineries.Single(entry => entry.RefineryId == SComp<FrontlineRefineryComponent>(refinery).RefineryId);
-                Assert.That(claim.Jobs.Select(job => (job.Recipe, job.RemainingTicks)),
-                    Is.EqualTo(new[] { (recipe.Id, remaining.Ticks) }));
+                Assert.That(claim.Jobs.Select(job => (job.Recipe, job.RemainingTicks, job.Batches)),
+                    Is.EqualTo(batches == 1 ? new[] { (recipe.Id, remaining.Ticks, 1L) } :
+                        new[] { (recipe.Id, remaining.Ticks, 1L), (recipe.Id, duration.Ticks, (long) batches - 1) }));
                 Assert.That(claim.Inputs.Select(stack => (stack.StackId, stack.Count)),
                     Is.EqualTo(new[] { ("FrontlineRawIron", inputAmount) }));
                 Assert.That(claim.Outputs.Select(stack => (stack.StackId, stack.Count)),
@@ -1563,22 +1582,22 @@ public sealed class PersistentWarRuleTest : GameTest
             await Pair.RunTicksSync(1);
             await Server.WaitAssertion(() =>
             {
-                Assert.That(refineries.GetJobs(refinery), Has.Count.EqualTo(1));
+                Assert.That(refineries.GetJobs(refinery).Sum(job => job.Batches), Is.EqualTo(batches));
                 Assert.That(refineries.GetJobs(refinery)[0].Remaining, Is.GreaterThan(TimeSpan.Zero).And.LessThan(remaining),
                     "Restoration after MapInit must activate the paid queue for native processing.");
                 AssertGoods(5);
             });
-            await Pair.RunSeconds((float) remaining.TotalSeconds + 0.1f);
+            await Pair.RunSeconds((float) (remaining.TotalSeconds + (batches - 1) * duration.TotalSeconds) + 0.1f);
             await Server.WaitAssertion(() =>
             {
                 Assert.That(refineries.GetJobs(refinery), Is.Empty);
-                AssertGoods(10);
+                AssertGoods(5 * (batches + 1));
             });
             await Pair.RunSeconds((float) duration.TotalSeconds + 0.1f);
             await Server.WaitAssertion(() =>
             {
                 Assert.That(refineries.GetJobs(refinery), Is.Empty);
-                AssertGoods(10); // Completion is once-only and must not consume the unused raw iron.
+                AssertGoods(5 * (batches + 1)); // Completion is once-only and must not consume the unused raw iron.
             });
         }
         finally
@@ -2130,7 +2149,7 @@ public sealed class PersistentWarRuleTest : GameTest
                         Factories = factories.CaptureSnapshot(source.MapId),
                         Vehicles = Server.System<WarStrategicSnapshotSystem>().CaptureVehicles(source.MapId),
                     };
-                    Assert.That(full.SnapshotVersion, Is.EqualTo(6));
+                    Assert.That(full.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
                     if (vehicleCase)
                     {
                         Assert.That(full.Vehicles, Has.Count.EqualTo(1));
@@ -3277,7 +3296,7 @@ public sealed class PersistentWarRuleTest : GameTest
     [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 0)]
     [TestCase(1, 41)]
     [TestCase(2, 41)]
-    [TestCase(7, 41)]
+    [TestCase(WarStrategicSnapshotSystem.SnapshotVersion + 1, 41)]
     [TestCase(WarStrategicSnapshotSystem.SnapshotVersion, 42)]
     public async Task MalformedStrategicHeaderCannotBypassValidationAsAnotherWar(int version, int savedWarId)
     {
