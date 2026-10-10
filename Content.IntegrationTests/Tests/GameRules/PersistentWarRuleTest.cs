@@ -3094,9 +3094,13 @@ public sealed class PersistentWarRuleTest : GameTest
             if (!provisional.Contains(uid) && !factoryProvisional.Contains(uid))
                 return;
             queued.Add(uid);
+            Server.PlayerMan.SetAttachedEntity(ServerSession!, player);
             guardedDuringQueue &= !refineries.TryTakePlayerOutput(refinery, player);
             if (includeFactory)
+            {
+                Server.PlayerMan.SetAttachedEntity(ServerSession!, factoryPlayer);
                 guardedDuringQueue &= !factories.TryTakePlayerOutput(factory, factoryPlayer);
+            }
             if (uid == (includeFactory ? factoryProvisional[0] : provisional[0]) && !threw)
             {
                 threw = true;
@@ -3107,7 +3111,7 @@ public sealed class PersistentWarRuleTest : GameTest
 
         try
         {
-            await Server.WaitPost(() =>
+            await Server.WaitAssertion(() =>
             {
                 try
                 {
@@ -3115,6 +3119,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     var output = SComp<FrontlineRefineryComponent>(refinery).OutputContainer;
                     var coordinates = SComp<TransformComponent>(refinery).Coordinates.Offset(new Vector2(0, 1));
                     player = SEntMan.SpawnEntity("MobHuman", coordinates);
+                    Server.PlayerMan.SetAttachedEntity(ServerSession!, player);
                     // Positive control: the same actor can really take retained output at this machine.
                     var control = stacks.SpawnAtPosition(5, "BasicMaterials", coordinates);
                     Assert.That(containers.Insert(control, output), Is.True);
@@ -3130,6 +3135,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     {
                         var factoryCoordinates = SComp<TransformComponent>(factory).Coordinates.Offset(new Vector2(0, 1));
                         factoryPlayer = SEntMan.SpawnEntity("MobHuman", factoryCoordinates);
+                        Server.PlayerMan.SetAttachedEntity(ServerSession!, factoryPlayer);
                         var factoryControl = SEntMan.SpawnEntity("FrontlineFactoryMedicalCrate", factoryCoordinates);
                         var crate = SComp<FrontlineSupplyCrateComponent>(factoryControl);
                         crate.Product = "SoldierSupplies";
@@ -3226,11 +3232,13 @@ public sealed class PersistentWarRuleTest : GameTest
                             Assert.That(!SEntMan.EntityExists(uid) || SEntMan.IsQueuedForDeletion(uid), Is.True,
                                 "EVERY provisional factory claim must be queued/deleted before restoring guards release.");
                         // No tick may hide the leak between FinishSnapshotRestore and queue draining.
+                        Server.PlayerMan.SetAttachedEntity(ServerSession!, player);
                         Assert.That(refineries.TryTakePlayerOutput(refinery, player), Is.False,
                             "A refused restore must not release a later provisional output to a player's hand.");
                         Assert.That(hands.GetActiveItem(player), Is.Null);
                         if (includeFactory)
                         {
+                            Server.PlayerMan.SetAttachedEntity(ServerSession!, factoryPlayer);
                             Assert.That(factories.TryTakePlayerOutput(factory, factoryPlayer), Is.False);
                             Assert.That(hands.GetActiveItem(factoryPlayer), Is.Null);
                             Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(crate =>
