@@ -27,16 +27,25 @@ public sealed partial class FrontlineRefineryBoundUserInterface : BoundUserInter
     {
         base.Open();
         _window = this.CreateWindowCenteredRight<FrontlineRefineryWindow>();
-        _window.Submit += (recipe, batches, all) => SendMessage(new FrontlineRefinerySubmitMessage(recipe, batches, all));
+        _window.Submit += (recipe, batches, all) => SendMessage(new FrontlineRefinerySubmitMessage(recipe, batches, all, _window.Personal));
         _window.Eject += () => SendMessage(new FrontlineRefineryEjectMessage());
-        _window.TakeOutput += () => SendMessage(new FrontlineRefineryTakeOutputMessage());
+        _window.TakeOutput += () => SendMessage(new FrontlineRefineryTakeOutputMessage(_window.Personal));
+        _window.ModeChanged += personal => SendMessage(new FrontlineRefineryModeMessage(personal));
+        _window.Cancel += id => SendMessage(new FrontlineRefineryCancelMessage(id, _window.Personal));
     }
 
     protected override void UpdateState(BoundUserInterfaceState state)
     {
         base.UpdateState(state);
-        if (state is FrontlineRefineryUiState refinery)
+        if (_window?.Personal != true && state is FrontlineRefineryUiState refinery)
             _window?.SetState(refinery, StackName, RecipeName);
+    }
+
+    protected override void ReceiveMessage(BoundUserInterfaceMessage message)
+    {
+        base.ReceiveMessage(message);
+        if (message is FrontlineRefineryViewMessage view && _window != null && view.Personal == _window.Personal)
+            _window.SetState(view.State, StackName, RecipeName);
     }
 
     private string StackName(ProtoId<StackPrototype> id)
@@ -69,6 +78,11 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
     private readonly Button _produce = new() { Name = "Produce", Disabled = true };
     private readonly Button _eject = new() { Name = "Eject" };
     private readonly Button _take = new() { Name = "TakeOutput" };
+    private readonly Button _public = new() { Name = "Public", ToggleMode = true, Pressed = true, Text = "Public" };
+    private readonly Button _personal = new() { Name = "Personal", ToggleMode = true, Text = "Personal" };
+    public bool Personal => _personal.Pressed;
+    public event Action<bool>? ModeChanged;
+    public event Action<Guid>? Cancel;
     private FrontlineRefineryUiState _state = new([], [], []);
     private Func<ProtoId<StackPrototype>, string> _stackName = id => id.Id;
     private Func<ProtoId<FrontlineRefineryRecipePrototype>, string> _recipeName = id => id.Id;
@@ -129,7 +143,16 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         right.AddChild(new Label { Text = Loc.GetString("frontline-refinery-queue-heading"), StyleClasses = { "LabelHeading" } });
         right.AddChild(FrontlineItemGrid.CreateScroll(_jobs));
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { right } });
-        ContentsContainer.AddChild(columns);
+        var mode = new BoxContainer();
+        mode.AddChild(_public);
+        mode.AddChild(_personal);
+        _public.OnPressed += _ => SetMode(false);
+        _personal.OnPressed += _ => SetMode(true);
+        _jobs.Cancel += id => Cancel?.Invoke(id);
+        var layout = new BoxContainer { Orientation = LayoutOrientation.Vertical, HorizontalExpand = true, VerticalExpand = true };
+        layout.AddChild(mode);
+        layout.AddChild(columns);
+        ContentsContainer.AddChild(layout);
         UpdateSelection();
     }
 
@@ -152,7 +175,7 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
             var recipe = state.Recipes.FirstOrDefault(recipe => recipe.Id == job.Recipe);
             return new FrontlineJobView(job.Recipe.Id, recipeName(job.Recipe),
                 recipe == null ? null : _recipes.StackIcon(recipe.Output.Stack),
-                recipe?.Duration ?? TimeSpan.Zero, job.Remaining, job.Processing, job.Batches);
+                recipe?.Duration ?? TimeSpan.Zero, job.Remaining, job.Processing, job.Batches, job.Id, job.CanCancel);
         }));
         _eject.Disabled = state.Inputs.Length == 0;
         _take.Disabled = state.OutputStackCount == 0;
@@ -165,6 +188,13 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
             ("output", _stackName(recipe.Output.Stack)), ("amount", recipe.Output.Amount),
             ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds)),
             ("availability", Loc.GetString(recipe.CanSubmit ? "frontline-ui-ready" : "frontline-ui-insufficient")));
+
+    private void SetMode(bool personal)
+    {
+        _public.Pressed = !personal;
+        _personal.Pressed = personal;
+        ModeChanged?.Invoke(personal);
+    }
 
     private void UpdateSelection()
     {

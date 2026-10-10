@@ -17,6 +17,156 @@ public sealed class FrontlineProductionUiTest : InteractionTest
 {
     [TestCase("FrontlineFactory")]
     [TestCase("FrontlineRefinery")]
+    public async Task TwoConnectedAccountsKeepModeIndependentAndRejectForgedPrivateActions(string prototype)
+    {
+        await using var other = await PoolManager.GetServerClient(new PoolSettings { Connected = false, Dirty = true });
+        var second = other.Client;
+        await second.Connect(Server);
+        async Task Pump()
+        {
+            for (var i = 0; i < 20; i++)
+            {
+                await second.WaitRunTicks(1);
+                await Pair.RunTicksSync(1);
+            }
+        }
+        await Pump();
+        await SpawnTarget(prototype);
+        var uid = STarget ?? throw new AssertionException("Missing production machine.");
+        var key = prototype == "FrontlineFactory" ? (Enum) FrontlineFactoryUiKey.Key : FrontlineRefineryUiKey.Key;
+        var secondSession = second.Session ?? throw new AssertionException("Second client did not connect.");
+        Robust.Shared.GameObjects.EntityUid secondActor = default;
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(secondSession.UserId, Is.Not.EqualTo(ServerSession!.UserId));
+            var session = Server.PlayerMan.GetSessionById(secondSession.UserId);
+            secondActor = SEntMan.SpawnEntity(PlayerPrototype, SEntMan.GetCoordinates(PlayerCoords));
+            Server.PlayerMan.SetAttachedEntity(session, secondActor);
+            SUiSys.TryOpenUi(uid, key, secondActor);
+            var input = Stack.SpawnAtPosition(10, prototype == "FrontlineFactory" ? "BasicMaterials" : "FrontlineRawIron",
+                SEntMan.GetCoordinates(PlayerCoords));
+            Assert.That(prototype == "FrontlineFactory" ? Server.System<FrontlineFactorySystem>().TryInsertInput(uid, input) :
+                Server.System<FrontlineRefinerySystem>().TryInsertInput(uid, input), Is.True);
+        });
+        await Interact();
+        await Pump();
+        Button? personal = null;
+        await Client.WaitAssertion(() =>
+        {
+            var window = prototype == "FrontlineFactory" ? (BaseWindow) GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>();
+            Assert.That(TryGetControlFromChildren<Button>(button => button.Name == "Personal", window, out personal), Is.True);
+        });
+        await ClickControl(personal ?? throw new AssertionException("Personal switch missing."));
+        await Pump();
+        await second.WaitAssertion(() =>
+        {
+            var windows = second.ResolveDependency<IUserInterfaceManager>().WindowRoot.Children;
+            Assert.That(prototype == "FrontlineFactory" ? windows.OfType<FrontlineFactoryWindow>().Single().Personal :
+                windows.OfType<FrontlineRefineryWindow>().Single().Personal, Is.False, "A different connected account retains Public mode.");
+        });
+        if (prototype == "FrontlineFactory")
+            await SendBui(key, new FrontlineFactorySubmitMessage("FrontlineFactoryBrutepack", true));
+        else
+            await SendBui(key, new FrontlineRefinerySubmitMessage("FrontlineSteel", personal: true));
+        await Pump();
+        Guid id = default;
+        await Server.WaitAssertion(() =>
+        {
+            if (prototype == "FrontlineFactory")
+            {
+                id = Server.System<FrontlineFactorySystem>().GetJobs(uid).Single().Id;
+                Assert.That(Server.System<FrontlineFactorySystem>().BuildUiState(uid).Jobs, Is.Empty);
+                Assert.That(Server.System<FrontlineFactorySystem>().BuildUiState(uid, secondSession.UserId.ToString()).Jobs, Is.Empty);
+            }
+            else
+            {
+                id = Server.System<FrontlineRefinerySystem>().GetJobs(uid).Single().Id;
+                Assert.That(Server.System<FrontlineRefinerySystem>().BuildUiState(uid).Jobs, Is.Empty);
+                Assert.That(Server.System<FrontlineRefinerySystem>().BuildUiState(uid, secondSession.UserId.ToString()).Jobs, Is.Empty);
+            }
+        });
+        await second.WaitPost(() => second.System<Robust.Shared.GameObjects.SharedUserInterfaceSystem>().ClientSendUiMessage(
+            second.EntMan.GetEntity(Target!.Value), key, prototype == "FrontlineFactory" ?
+                new FrontlineFactoryCancelMessage(id, true) : new FrontlineRefineryCancelMessage(id, true)));
+        await Pump();
+        await Server.WaitAssertion(() => Assert.That(prototype == "FrontlineFactory" ? Server.System<FrontlineFactorySystem>().GetJobs(uid).Count :
+            Server.System<FrontlineRefinerySystem>().GetJobs(uid).Count, Is.EqualTo(1), "Forged cancellation cannot refund another account's receipt."));
+        for (var i = 0; i < 10; i++) await Pump();
+        await second.WaitPost(() => second.System<Robust.Shared.GameObjects.SharedUserInterfaceSystem>().ClientSendUiMessage(
+            second.EntMan.GetEntity(Target!.Value), key, prototype == "FrontlineFactory" ?
+                new FrontlineFactoryTakeOutputMessage(true) : new FrontlineRefineryTakeOutputMessage(true)));
+        await Pump();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(Server.System<Content.Shared.Hands.EntitySystems.SharedHandsSystem>().GetActiveItem(secondActor), Is.Null);
+            Assert.That(prototype == "FrontlineFactory" ? Server.System<FrontlineFactorySystem>().BuildUiState(uid, ServerSession!.UserId.ToString()).Outputs.Length :
+                Server.System<FrontlineRefinerySystem>().BuildUiState(uid, ServerSession!.UserId.ToString()).OutputStackCount, Is.EqualTo(1));
+        });
+        if (prototype == "FrontlineFactory")
+            await SendBui(key, new FrontlineFactoryTakeOutputMessage(true));
+        else
+            await SendBui(key, new FrontlineRefineryTakeOutputMessage(true));
+        await Pump();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(Server.System<Content.Shared.Hands.EntitySystems.SharedHandsSystem>().GetActiveItem(SPlayer), Is.Not.Null,
+                "The authenticated owner can take their actual original physical output.");
+            Assert.That(prototype == "FrontlineFactory" ? SComp<FrontlineFactoryComponent>(uid).OutputContainer.ContainedEntities.Count :
+                SComp<FrontlineRefineryComponent>(uid).OutputContainer.ContainedEntities.Count, Is.Zero);
+        });
+        // A second actual account can add Public work while the first account's Public job is busy.
+        await Server.WaitPost(() =>
+        {
+            var input = Stack.SpawnAtPosition(10, prototype == "FrontlineFactory" ? "BasicMaterials" : "FrontlineRawIron",
+                SEntMan.GetCoordinates(PlayerCoords));
+            if (prototype == "FrontlineFactory") Server.System<FrontlineFactorySystem>().TryInsertInput(uid, input);
+            else Server.System<FrontlineRefinerySystem>().TryInsertInput(uid, input);
+        });
+        if (prototype == "FrontlineFactory") await SendBui(key, new FrontlineFactorySubmitMessage("FrontlineFactoryBrutepack"));
+        else await SendBui(key, new FrontlineRefinerySubmitMessage("FrontlineSteel"));
+        await second.WaitPost(() => second.System<Robust.Shared.GameObjects.SharedUserInterfaceSystem>().ClientSendUiMessage(
+            second.EntMan.GetEntity(Target!.Value), key, prototype == "FrontlineFactory" ?
+                new FrontlineFactorySubmitMessage("FrontlineFactoryBrutepack") : new FrontlineRefinerySubmitMessage("FrontlineSteel")));
+        await Pump();
+        await Server.WaitAssertion(() => Assert.That(prototype == "FrontlineFactory" ?
+            Server.System<FrontlineFactorySystem>().BuildUiState(uid).Jobs.Length : Server.System<FrontlineRefinerySystem>().BuildUiState(uid).Jobs.Length,
+            Is.EqualTo(2), "Public accepts another account's submission while busy."));
+        await CloseBui(key);
+        await second.WaitPost(() => second.ResolveDependency<Robust.Shared.Network.IClientNetManager>().ClientDisconnect("Production ownership test complete"));
+        await Pump();
+        await other.CleanReturnAsync();
+    }
+
+    [TestCase("FrontlineFactory")]
+    [TestCase("FrontlineRefinery")]
+    public async Task ProductionWindowExposesLocalPublicPersonalMode(string prototype)
+    {
+        await SpawnTarget(prototype);
+        await Interact();
+        await Pair.RunUntilSynced();
+        Button? personal = null;
+        BaseWindow window = default!;
+        await Client.WaitAssertion(() =>
+        {
+            window = prototype == "FrontlineFactory" ? GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>();
+            Assert.That(TryGetControlFromChildren<Button>(button => button.Name == "Public", window, out _), Is.True);
+            Assert.That(TryGetControlFromChildren<Button>(button => button.Name == "Personal", window, out personal), Is.True);
+        });
+        var personalControl = personal ?? throw new AssertionException("Personal mode control was not found.");
+        await ClickControl(personalControl);
+        await Pair.RunUntilSynced();
+        await Client.WaitAssertion(() => Assert.That(personalControl.Pressed, Is.True));
+        if (prototype == "FrontlineFactory")
+            await SendBui(FrontlineFactoryUiKey.Key, new FrontlineFactoryEjectMessage());
+        else
+            await SendBui(FrontlineRefineryUiKey.Key, new FrontlineRefineryEjectMessage());
+        await Pair.RunUntilSynced();
+        await Client.WaitAssertion(() => Assert.That(personalControl.Pressed, Is.True, "The mode is window-local and survives server refresh."));
+        await CloseBui(prototype == "FrontlineFactory" ? (Enum) FrontlineFactoryUiKey.Key : FrontlineRefineryUiKey.Key);
+    }
+
+    [TestCase("FrontlineFactory")]
+    [TestCase("FrontlineRefinery")]
     [TestCase("TownHallCoreFactionOne")]
     public async Task NativeStateRefreshRetainsControls(string prototype)
     {

@@ -3,6 +3,12 @@ using Robust.Shared.Prototypes;
 
 namespace Content.Shared.War;
 
+public enum FrontlineProductionAccess : byte
+{
+    Public,
+    Personal,
+}
+
 [Prototype]
 public sealed partial class FrontlineFactoryRecipePrototype : IPrototype
 {
@@ -31,11 +37,26 @@ public sealed partial class FrontlineFactoryRecipePrototype : IPrototype
 [DataDefinition]
 public sealed partial class FrontlineFactoryJob
 {
+    [DataField]
+    public Guid Id = Guid.NewGuid();
     [DataField(required: true)]
     public ProtoId<FrontlineFactoryRecipePrototype> Recipe;
 
     [DataField]
     public TimeSpan Remaining;
+
+    [DataField]
+    public FrontlineProductionAccess Access;
+
+    // Persist the authenticated account identity, never a client-provided faction or entity.
+    [DataField]
+    public string? Owner;
+
+    [DataField]
+    public bool Legacy;
+
+    [DataField]
+    public Dictionary<ProtoId<Content.Shared.Stacks.StackPrototype>, int> PaidInputs = new();
 }
 
 [RegisterComponent]
