@@ -8,6 +8,7 @@ using Content.Shared.Stacks;
 using Content.Shared.UserInterface;
 using Content.Shared.War;
 using Robust.Server.GameObjects;
+using Robust.Server.Player;
 using Robust.Shared.Containers;
 using Robust.Shared.Localization;
 using Robust.Shared.Map;
@@ -26,7 +27,10 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
     [Dependency] private SharedHandsSystem _hands = default!;
     [Dependency] private SharedPopupSystem _popup = default!;
     [Dependency] private UserInterfaceSystem _ui = default!;
+    [Dependency] private IPlayerManager _players = default!;
 
+    [Dependency] private FrontlineProductionSystem _production = default!;
+    private readonly Dictionary<(EntityUid Machine, EntityUid Actor), bool> _modes = new();
     private readonly HashSet<EntityUid> _active = new();
     private readonly HashSet<EntityUid> _submitting = new();
     private readonly HashSet<EntityUid> _completing = new();
@@ -43,6 +47,8 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         SubscribeLocalEvent<FrontlineFactoryComponent, InteractUsingEvent>(OnInteractUsing);
         SubscribeLocalEvent<FrontlineFactoryComponent, BeforeActivatableUIOpenEvent>(OnBeforeUiOpen);
         SubscribeLocalEvent<FrontlineFactoryComponent, FrontlineFactorySubmitMessage>(OnSubmitMessage);
+        SubscribeLocalEvent<FrontlineFactoryComponent, FrontlineFactoryModeMessage>(OnModeMessage);
+        SubscribeLocalEvent<FrontlineFactoryComponent, FrontlineFactoryCancelMessage>(OnCancelMessage);
         SubscribeLocalEvent<FrontlineFactoryComponent, FrontlineFactoryEjectMessage>(OnEjectMessage);
         SubscribeLocalEvent<FrontlineFactoryComponent, FrontlineFactoryTakeOutputMessage>(OnTakeOutputMessage);
         SubscribeLocalEvent<FrontlineFactoryComponent, EntInsertedIntoContainerMessage>(OnContainerChanged);
@@ -68,6 +74,18 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
     private void OnTerminating(Entity<FrontlineFactoryComponent> factory, ref EntityTerminatingEvent args)
     {
         _active.Remove(factory);
+        foreach (var key in _modes.Keys.Where(key => key.Machine == factory.Owner).ToArray())
+            _modes.Remove(key);
+        if (_production.Flushing) return;
+        // Native technical flush removes all entities after persistence has captured them.
+        // Actual destruction consumes private ready goods, never spills them into public logistics.
+        foreach (var output in factory.Comp.OutputContainer.ContainedEntities.ToArray())
+        {
+            if (TryComp<FrontlineProductionClaimComponent>(output, out var claim) &&
+                claim.IsPersonal(DateTimeOffset.UtcNow) && !TerminatingOrDeleted(output))
+                QueueDel(output);
+        }
+        factory.Comp.Jobs.Clear();
     }
 
     private void OnInteractUsing(Entity<FrontlineFactoryComponent> factory, ref InteractUsingEvent args)
@@ -91,9 +109,53 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         UpdateUi(factory);
     }
 
+    private void OnModeMessage(Entity<FrontlineFactoryComponent> factory, ref FrontlineFactoryModeMessage args)
+    {
+        if (!_players.TryGetSessionByEntity(args.Actor, out _) ||
+            !_interaction.InRangeUnobstructed(args.Actor, factory.Owner)) return;
+        _modes[(factory.Owner, args.Actor)] = args.Personal;
+        UpdateUi(factory);
+    }
+
+    private void OnCancelMessage(Entity<FrontlineFactoryComponent> factory, ref FrontlineFactoryCancelMessage args)
+    {
+        TryCancelPlayerJob(factory.Owner, args.Actor, args.Id, args.Personal);
+        UpdateUi(factory);
+    }
+
+    public bool TryCancelPlayerJob(EntityUid uid, EntityUid actor, Guid id, bool personal = false)
+    {
+        if (!IsOutputEntityAlive(uid) || !IsOutputEntityAlive(actor) ||
+            !TryComp<FrontlineFactoryComponent>(uid, out var component) ||
+            !_players.TryGetSessionByEntity(actor, out var session) ||
+            _restoring.ContainsKey(uid) || _submitting.Contains(uid) ||
+            _completing.Contains(uid) || _takingOutput.Contains(uid) || !_movingInputs.Add(uid)) return false;
+        try
+        {
+            var owner = personal ? session.UserId.ToString() : null;
+            var job = component.Jobs.FirstOrDefault(job => job.Id == id);
+            if (job == null || job.Legacy || job.PaidInputs.Count == 0 ||
+                (owner == null ? job.Access != FrontlineProductionAccess.Public :
+                 job.Access != FrontlineProductionAccess.Personal || job.Owner != owner)) return false;
+            var container = component.InputContainer;
+            var receipt = new Dictionary<ProtoId<StackPrototype>, int>(job.PaidInputs);
+            bool Authorized() => IsOutputEntityAlive(uid) && IsOutputEntityAlive(actor) &&
+                _players.TryGetSessionByEntity(actor, out var currentSession) && currentSession == session &&
+                _interaction.InRangeUnobstructed(actor, uid) &&
+                TryComp<FrontlineFactoryComponent>(uid, out var current) && current == component &&
+                current.InputContainer == container && current.Jobs.Contains(job) && !job.Legacy &&
+                job.Id == id && job.Owner == owner &&
+                (owner == null ? job.Access == FrontlineProductionAccess.Public : job.Access == FrontlineProductionAccess.Personal) &&
+                job.PaidInputs.Count == receipt.Count && receipt.All(entry => job.PaidInputs.GetValueOrDefault(entry.Key) == entry.Value);
+            return _production.TryRefund(container, receipt, 1,
+                Authorized, () => component.Jobs.Remove(job));
+        }
+        finally { _movingInputs.Remove(uid); }
+    }
+
     private void OnSubmitMessage(Entity<FrontlineFactoryComponent> factory, ref FrontlineFactorySubmitMessage args)
     {
-        if (!TrySubmitPlayerJob(factory.Owner, args.Actor, args.Recipe))
+        if (!TrySubmitPlayerJob(factory.Owner, args.Actor, args.Recipe, args.Personal))
             _popup.PopupEntity(Loc.GetString("frontline-factory-insufficient-input"), factory.Owner, args.Actor);
 
         UpdateUi(factory);
@@ -107,16 +169,24 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
     private void OnTakeOutputMessage(Entity<FrontlineFactoryComponent> factory, ref FrontlineFactoryTakeOutputMessage args)
     {
-        TryTakePlayerOutput(factory.Owner, args.Actor);
+        TryTakePlayerOutput(factory.Owner, args.Actor, args.Personal);
     }
 
-    public bool TryTakePlayerOutput(EntityUid factoryUid, EntityUid playerUid)
+    public bool TryTakePlayerOutput(EntityUid factoryUid, EntityUid playerUid, bool personal = false)
     {
         if (!IsOutputEntityAlive(factoryUid) || !IsOutputEntityAlive(playerUid) ||
             !TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) ||
             _restoring.ContainsKey(factoryUid) || _completing.Contains(factoryUid) || !_takingOutput.Add(factoryUid))
             return false;
 
+        if (!_players.TryGetSessionByEntity(playerUid, out var session))
+        {
+            _takingOutput.Remove(factoryUid);
+            return false;
+        }
+        var owner = personal ? session.UserId.ToString() : null;
+        bool Authorized() => _players.TryGetSessionByEntity(playerUid, out var currentSession) &&
+            currentSession == session && (owner == null || currentSession.UserId.ToString() == owner);
         EntityUid? output = null;
         var taken = false;
         try
@@ -126,7 +196,12 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 container != factory.OutputContainer || container.ContainedEntities.Count == 0)
                 return false;
 
-            output = container.ContainedEntities[0];
+            foreach (var candidate in container.ContainedEntities)
+            {
+                if (IsOutputEntityAlive(candidate) && _production.CanAccess(candidate, owner))
+                { output = candidate; break; }
+            }
+            if (output == null || !Authorized()) return false;
             var hand = _hands.GetActiveHand(playerUid);
             if (hand == null || !_hands.ActiveHandIsEmpty(playerUid) ||
                 !IsOutputEntityAlive(output.Value) ||
@@ -135,7 +210,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
             // Permission events may change the actor, hand or retained output.
             if (!IsOutputEntityAlive(factoryUid) || !IsOutputEntityAlive(playerUid) ||
-                !IsOutputEntityAlive(output.Value) ||
+                !IsOutputEntityAlive(output.Value) || !Authorized() || !_production.CanAccess(output.Value, owner) ||
                 !_interaction.InRangeUnobstructed(playerUid, factoryUid) ||
                 _hands.GetActiveHand(playerUid) != hand || !_hands.ActiveHandIsEmpty(playerUid) ||
                 !_containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var current) ||
@@ -144,13 +219,15 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
             _hands.TryPickup(playerUid, output.Value, hand);
             // TryPickup can return true even when DoPickup did not insert the item.
-            taken = IsOutputEntityAlive(factoryUid) && IsOutputEntityAlive(playerUid) &&
+            taken = Authorized() && _production.CanAccess(output.Value, owner) && IsOutputEntityAlive(factoryUid) && IsOutputEntityAlive(playerUid) &&
                     IsOutputEntityAlive(output.Value) &&
                     _interaction.InRangeUnobstructed(playerUid, factoryUid) &&
                     _hands.GetActiveHand(playerUid) == hand &&
                     _hands.GetActiveItem(playerUid) == output.Value &&
                     _containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out current) &&
                     current == container && !container.Contains(output.Value);
+            if (taken && output is { } withdrawn)
+                RemComp<FrontlineProductionClaimComponent>(withdrawn);
             return taken;
         }
         finally
@@ -199,10 +276,15 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             {
                 Recipe = job.Recipe,
                 Remaining = job.Remaining,
+                Id = job.Id,
+                Owner = job.Owner,
+                Access = job.Access,
+                Legacy = job.Legacy,
+                PaidInputs = new(job.PaidInputs),
             }).ToArray()
             : Array.Empty<FrontlineFactoryJob>();
 
-    public FrontlineFactoryUiState BuildUiState(EntityUid factoryUid)
+    public FrontlineFactoryUiState BuildUiState(EntityUid factoryUid, string? owner = null)
     {
         if (!TryComp<FrontlineFactoryComponent>(factoryUid, out var factory))
             return new FrontlineFactoryUiState([], [], []);
@@ -231,14 +313,15 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                     recipe.Input.All(entry => amounts.GetValueOrDefault(entry.Key) >= entry.Value));
             })
             .ToArray();
-        var processing = Math.Max(1, factory.ProcessingSlots);
         var jobs = factory.Jobs
+            .Where(job => owner == null ? job.Access == FrontlineProductionAccess.Public :
+                job.Access == FrontlineProductionAccess.Personal && job.Owner == owner)
             .Where(job => _prototypes.TryIndex(job.Recipe, out FrontlineFactoryRecipePrototype? recipe) && IsValidRecipe(recipe))
-            .Select((job, index) => new FrontlineFactoryJobState(job.Recipe, job.Remaining, index < processing))
+            .Select((job, index) => new FrontlineFactoryJobState(job.Recipe, job.Remaining, index < 5, job.Id, !job.Legacy && job.PaidInputs.Count > 0))
             .ToArray();
 
         var outputs = factory.OutputContainer.ContainedEntities
-            .Where(uid => !TerminatingOrDeleted(uid))
+            .Where(uid => !TerminatingOrDeleted(uid) && _production.CanAccess(uid, owner))
             .Select(uid => MetaData(uid).EntityPrototype?.ID)
             .Where(id => id != null)
             .GroupBy(id => id!)
@@ -255,6 +338,16 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             return;
 
         _ui.SetUiState(factory.Owner, FrontlineFactoryUiKey.Key, BuildUiState(factory.Owner));
+        var actors = _ui.GetActors(factory.Owner, FrontlineFactoryUiKey.Key).ToArray();
+        foreach (var actor in actors)
+        {
+            if (!_players.TryGetSessionByEntity(actor, out var session)) continue;
+            var personal = _modes.GetValueOrDefault((factory.Owner, actor));
+            _ui.ServerSendUiMessage(factory.Owner, FrontlineFactoryUiKey.Key,
+                new FrontlineFactoryViewMessage(BuildUiState(factory.Owner, personal ? session.UserId.ToString() : null), personal), actor);
+        }
+        foreach (var key in _modes.Keys.Where(key => key.Machine == factory.Owner && !actors.Contains(key.Actor)).ToArray())
+            _modes.Remove(key);
     }
 
     private bool IsValidRecipe(FrontlineFactoryRecipePrototype recipe)
@@ -354,18 +447,32 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         return true;
     }
 
-    public bool TrySubmitContainedJob(EntityUid factoryUid, ProtoId<FrontlineFactoryRecipePrototype> recipeId)
+    public bool TrySubmitContainedJob(EntityUid factoryUid, ProtoId<FrontlineFactoryRecipePrototype> recipeId,
+        string? owner = null)
     {
         return TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) &&
-               TrySubmitJob(factoryUid, recipeId, factory.InputContainer.ContainedEntities.ToArray());
+               TrySubmitJob(factoryUid, recipeId, factory.InputContainer.ContainedEntities.ToArray(), owner);
     }
 
     public bool TrySubmitPlayerJob(EntityUid factoryUid,
         EntityUid playerUid,
-        ProtoId<FrontlineFactoryRecipePrototype> recipeId)
+        ProtoId<FrontlineFactoryRecipePrototype> recipeId,
+        bool personal = false)
     {
-        return _interaction.InRangeUnobstructed(playerUid, factoryUid) &&
-               TrySubmitContainedJob(factoryUid, recipeId);
+        if (!IsOutputEntityAlive(playerUid) || !IsOutputEntityAlive(factoryUid) ||
+            !_players.TryGetSessionByEntity(playerUid, out var session) ||
+            !TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) ||
+            !_interaction.InRangeUnobstructed(playerUid, factoryUid))
+            return false;
+
+        var container = factory.InputContainer;
+        return TrySubmitJob(factoryUid, recipeId, container.ContainedEntities.ToArray(),
+            personal ? session.UserId.ToString() : null,
+            () => IsOutputEntityAlive(playerUid) && IsOutputEntityAlive(factoryUid) &&
+                _players.TryGetSessionByEntity(playerUid, out var currentSession) && currentSession == session &&
+                _interaction.InRangeUnobstructed(playerUid, factoryUid) &&
+                TryComp<FrontlineFactoryComponent>(factoryUid, out var current) && current == factory &&
+                current.InputContainer == container);
     }
 
     /// <summary>
@@ -375,10 +482,12 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
     public bool TrySubmitJob(
         EntityUid factoryUid,
         ProtoId<FrontlineFactoryRecipePrototype> recipeId,
-        IReadOnlyCollection<EntityUid> inputs)
+        IReadOnlyCollection<EntityUid> inputs,
+        string? owner = null, Func<bool>? authorized = null)
     {
         if (!TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) ||
             !IsOutputEntityAlive(factoryUid) || _restoring.ContainsKey(factoryUid) ||
+            _movingInputs.Contains(factoryUid) || _completing.Contains(factoryUid) || _takingOutput.Contains(factoryUid) ||
             string.IsNullOrWhiteSpace(recipeId.Id) || !_prototypes.TryIndex(recipeId, out var recipe) ||
             !IsValidRecipe(recipe) ||
             !_submitting.Add(factoryUid))
@@ -386,7 +495,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
         try
         {
-            return TrySubmitValidated(factoryUid, factory, recipeId, recipe, inputs);
+            return TrySubmitValidated(factoryUid, factory, recipeId, recipe, inputs, owner, authorized);
         }
         finally
         {
@@ -399,22 +508,26 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         FrontlineFactoryComponent factory,
         ProtoId<FrontlineFactoryRecipePrototype> recipeId,
         FrontlineFactoryRecipePrototype recipe,
-        IReadOnlyCollection<EntityUid> inputs)
+        IReadOnlyCollection<EntityUid> inputs,
+        string? owner, Func<bool>? authorized)
     {
         var coordinates = Transform(factoryUid).Coordinates;
+        var paidInputs = recipe.Input.ToDictionary(entry => entry.Key, entry => entry.Value);
+        if ((owner != null && !FrontlineProductionSystem.ValidOwner(owner)) ||
+            factory.Jobs.Count >= 4096 || !_production.RefundFits(paidInputs, 1)) return false;
 
         var stacks = new Dictionary<EntityUid, StackComponent>();
         foreach (var uid in inputs)
         {
             if (!stacks.ContainsKey(uid) &&
                 TryComp<StackComponent>(uid, out var stack) &&
-                !stack.Unlimited &&
-                !TerminatingOrDeleted(uid))
+                !stack.Unlimited && stack.Count > 0 &&
+                IsOutputEntityAlive(uid))
                 stacks.Add(uid, stack);
         }
 
         var consumption = new List<(EntityUid Uid, StackComponent Stack, int Amount)>();
-        foreach (var (stackType, required) in recipe.Input)
+        foreach (var (stackType, required) in paidInputs)
         {
             if (required <= 0 || !_prototypes.HasIndex<StackPrototype>(stackType))
                 return false;
@@ -438,8 +551,9 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         foreach (var entry in consumption)
         {
             var before = entry.Stack.Count;
-            var used = !TerminatingOrDeleted(factoryUid) &&
-                       !TerminatingOrDeleted(entry.Uid) &&
+            var used = IsOutputEntityAlive(factoryUid) && authorized?.Invoke() != false &&
+                       IsOutputEntityAlive(entry.Uid) &&
+                       (authorized == null || factory.InputContainer.Contains(entry.Uid)) &&
                        _stack.TryUse((entry.Uid, entry.Stack), entry.Amount);
             var consumedExactly = used &&
                                   !TerminatingOrDeleted(entry.Uid) &&
@@ -462,7 +576,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             consumed.Add((entry.Stack.StackTypeId, entry.Amount));
         }
 
-        if (TerminatingOrDeleted(factoryUid))
+        if (!IsOutputEntityAlive(factoryUid) || authorized?.Invoke() == false)
         {
             foreach (var rollback in consumed)
                 _stack.SpawnMultipleAtPosition(rollback.StackType, rollback.Amount, coordinates);
@@ -473,6 +587,9 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         {
             Recipe = recipeId,
             Remaining = recipe.Duration,
+            Access = owner == null ? FrontlineProductionAccess.Public : FrontlineProductionAccess.Personal,
+            Owner = owner,
+            PaidInputs = paidInputs,
         });
         _active.Add(factoryUid);
         return true;
@@ -506,6 +623,9 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 outputs.Any(output => output == null || !IsOutputEntityAlive(output.Value) || !container.Contains(output.Value)))
                 return false;
 
+            var completedAt = DateTimeOffset.UtcNow;
+            foreach (var output in outputs)
+                if (output is { } item) _production.CompleteClaim(item, job.Owner, completedAt);
             completed = factory.Jobs.Remove(job);
             return completed;
         }
@@ -583,7 +703,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 throw new InvalidDataException("Factory contains an invalid or unsettled physical claim.");
             var entry = new WarRefineryStackSnapshot(stack.StackTypeId.Id,
                 MetaData(uid).EntityPrototype?.ID ?? throw new InvalidDataException("Factory stack has no prototype."),
-                stack.Count);
+                stack.Count, _production.CaptureClaim(uid));
             ValidateStack(entry);
             result.Add(entry);
         }
@@ -604,7 +724,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 throw new InvalidDataException("Factory contains an invalid or unsettled sealed claim.");
             var entry = new WarFactoryCrateSnapshot(
                 MetaData(uid).EntityPrototype?.ID ?? throw new InvalidDataException("Factory crate has no prototype."),
-                crate.Product.Id, crate.Amount);
+                crate.Product.Id, crate.Amount, _production.CaptureClaim(uid));
             ValidateCrate(entry);
             result.Add(entry);
         }
@@ -624,6 +744,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             (product.Entity is { } goods && (string.IsNullOrWhiteSpace(goods.Id) ||
                 !_prototypes.TryIndex(goods, out var entity) || entity.Abstract)))
             throw new InvalidDataException("Invalid factory sealed crate prototype, product or amount.");
+        FrontlineProductionSystem.ValidateClaim(entry.Claim);
     }
 
     // Factory-owned configuration: restore the actual sealed entitlement, not a recipe/default profile.
@@ -633,6 +754,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             throw new InvalidDataException("Restored factory crate did not initialize correctly.");
         crate.Product = new ProtoId<FrontlineSupplyProductPrototype>(entry.Product);
         crate.Amount = entry.Amount;
+        _production.RestoreClaim(uid, entry.Claim);
         if (!IsOutputEntityAlive(uid) || MetaData(uid).EntityPrototype?.ID != entry.Prototype ||
             !TryComp<FrontlineSupplyCrateComponent>(uid, out var current) || current != crate ||
             current.Product.Id != entry.Product || current.Amount != entry.Amount ||
@@ -650,7 +772,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 throw new InvalidDataException("Factory restoration must settle before capture.");
             result.Add(new WarFactorySnapshot(id,
                 MetaData(entity.Owner).EntityPrototype?.ID ?? throw new InvalidDataException("Factory has no prototype."),
-                entity.Comp.Jobs.Select(job => new WarFactoryJobSnapshot(job.Recipe.Id, job.Remaining.Ticks)).ToList(),
+                entity.Comp.Jobs.Select(job => new WarFactoryJobSnapshot(job.Recipe.Id, job.Remaining.Ticks, _production.CaptureJob(job.Id, job.Owner, job.Legacy || job.PaidInputs.Count == 0, job.PaidInputs))).ToList(),
                 CaptureStacks(entity.Comp.InputContainer), CaptureCrates(entity.Comp.OutputContainer)));
         }
         ValidateSnapshot(mapId, result);
@@ -666,6 +788,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             stack.Unlimited || stack.StackTypeId.Id != entry.StackId || entry.Count <= 0 ||
             entry.Count > _stack.GetMaxCount(stack))
             throw new InvalidDataException("Invalid factory stack prototype, type or count.");
+        FrontlineProductionSystem.ValidateClaim(entry.Claim);
     }
 
     internal void ValidateSnapshot(MapId mapId, List<WarFactorySnapshot> entries)
@@ -683,12 +806,16 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 !prototype.HasComp<FrontlineFactoryComponent>(_componentFactory) ||
                 entry.Jobs == null || entry.Inputs == null || entry.Outputs == null)
                 throw new InvalidDataException("Invalid factory identity, prototype or claims.");
+            var jobIds = new HashSet<Guid>();
             foreach (var job in entry.Jobs)
             {
                 if (job == null || string.IsNullOrWhiteSpace(job.Recipe) ||
                     !_prototypes.TryIndex(new ProtoId<FrontlineFactoryRecipePrototype>(job.Recipe), out var recipe) ||
                     !IsValidRecipe(recipe) || job.RemainingTicks < 0 || job.RemainingTicks > recipe.Duration.Ticks)
                     throw new InvalidDataException("Invalid paid factory recipe or remaining time.");
+                if (job.Claim == null || !jobIds.Add(job.Claim.Id))
+                    throw new InvalidDataException("Missing or duplicate production job claim.");
+                _production.ValidateJob(job.Claim);
             }
             foreach (var stack in entry.Inputs)
                 ValidateStack(stack);
@@ -748,6 +875,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 if (!IsOutputEntityAlive(uid) || !TryComp<StackComponent>(uid, out var stack) ||
                     stack.Unlimited || stack.StackTypeId.Id != entry.StackId)
                     throw new InvalidDataException("Restored factory stack did not initialize correctly.");
+                _production.RestoreClaim(uid, entry.Claim);
                 _stack.SetCount((uid, stack), entry.Count);
                 ValidateStagedSnapshot(mapId, entries, staged.Take(staged.Count - 1).ToList(), partial: true);
                 if (!IsOutputEntityAlive(entity.Owner) || !IsOutputEntityAlive(uid) ||
@@ -774,7 +902,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         {
             var entity = factories[entry.FactoryId];
             if (!_restoring.ContainsKey(entity.Owner) ||
-                (committed ? !entity.Comp.Jobs.Select(job => new WarFactoryJobSnapshot(job.Recipe.Id, job.Remaining.Ticks))
+                (committed ? !entity.Comp.Jobs.Select(job => new WarFactoryJobSnapshot(job.Recipe.Id, job.Remaining.Ticks, _production.CaptureJob(job.Id, job.Owner, job.Legacy || job.PaidInputs.Count == 0, job.PaidInputs)))
                     .SequenceEqual(entry.Jobs) : entity.Comp.Jobs.Count != 0))
                 throw new InvalidDataException("Restored factory queue changed.");
             CheckStacks(entity.Comp.InputContainer, entry.Inputs);
@@ -806,6 +934,11 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             {
                 Recipe = new ProtoId<FrontlineFactoryRecipePrototype>(job.Recipe),
                 Remaining = TimeSpan.FromTicks(job.RemainingTicks),
+                Id = job.Claim!.Id,
+                Owner = job.Claim.Owner,
+                Access = job.Claim.Owner == null ? FrontlineProductionAccess.Public : FrontlineProductionAccess.Personal,
+                Legacy = job.Claim.Legacy,
+                PaidInputs = job.Claim.PaidInputs.ToDictionary(payment => new ProtoId<StackPrototype>(payment.StackId), payment => payment.Amount),
             }).ToList();
             if (entity.Comp.Jobs.Count > 0)
                 _active.Add(entity.Owner); // Restore is after MapInit; resume through native Update only.
@@ -854,7 +987,14 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         _uiUpdateAccumulator += frameTime;
         var updateUi = _uiUpdateAccumulator >= 1f;
         if (updateUi)
+        {
             _uiUpdateAccumulator = 0f;
+            // Ready goods expire by UTC even when the queue is empty or the map is paused.
+            var query = EntityQueryEnumerator<FrontlineFactoryComponent>();
+            while (query.MoveNext(out var machine, out var component))
+                if (_ui.GetActors(machine, FrontlineFactoryUiKey.Key).Any())
+                    UpdateUi((machine, component));
+        }
 
         foreach (var uid in _active.ToArray())
         {
@@ -871,11 +1011,15 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
             var jobsBefore = factory.Jobs.Count;
 
-            // Retain invalid paid claims, but do not let them occupy valid processing slots.
+            // Public has five slots, and every authenticated personal owner has five independent slots.
             var processing = factory.Jobs
                 .Where(job => !string.IsNullOrWhiteSpace(job.Recipe.Id) &&
                     _prototypes.TryIndex(job.Recipe, out var recipe) && IsValidRecipe(recipe))
-                .Take(Math.Max(1, factory.ProcessingSlots)).Reverse().ToArray();
+                .GroupBy(job => job.Access == FrontlineProductionAccess.Personal && !string.IsNullOrWhiteSpace(job.Owner)
+                    ? job.Owner!
+                    : string.Empty)
+                .SelectMany(group => group.Take(5))
+                .Reverse().ToArray();
             foreach (var job in processing)
             {
                 if (!_prototypes.TryIndex(job.Recipe, out var recipe) || !IsValidRecipe(recipe))

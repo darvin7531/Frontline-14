@@ -54,13 +54,15 @@ public sealed record WarFactorySnapshot(
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record WarFactoryJobSnapshot(
     [property: JsonRequired] string Recipe,
-    [property: JsonRequired] long RemainingTicks);
+    [property: JsonRequired] long RemainingTicks,
+    [property: JsonRequired] WarProductionJobClaim? Claim = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record WarFactoryCrateSnapshot(
     [property: JsonRequired] string Prototype,
     [property: JsonRequired] string Product,
-    [property: JsonRequired] int Amount);
+    [property: JsonRequired] int Amount,
+    [property: JsonRequired] WarProductionOutputClaim? Claim = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record WarRefinerySnapshot(
@@ -74,13 +76,15 @@ public sealed record WarRefinerySnapshot(
 public sealed record WarRefineryJobSnapshot(
     [property: JsonRequired] string Recipe,
     [property: JsonRequired] long RemainingTicks,
-    [property: JsonRequired] long Batches = 1);
+    [property: JsonRequired] long Batches = 1,
+    [property: JsonRequired] WarProductionJobClaim? Claim = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record WarRefineryStackSnapshot(
     [property: JsonRequired] string StackId,
     [property: JsonRequired] string Prototype,
-    [property: JsonRequired] int Count);
+    [property: JsonRequired] int Count,
+    [property: JsonRequired] WarProductionOutputClaim? Claim = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record WarResourceFieldSnapshot(
@@ -117,7 +121,7 @@ public sealed record WarBaseSnapshot(
 public sealed partial class WarStrategicSnapshotSystem : EntitySystem
 {
     // Earlier versions omitted vehicle claims; never accept omitted state as fresh defaults.
-    public const int SnapshotVersion = 7;
+    public const int SnapshotVersion = 8;
     public static readonly ResPath SavePath = new("/persistent-war-strategic.json");
     public static readonly ResPath TemporaryPath = new("/persistent-war-strategic.json.tmp");
     public static readonly ResPath BackupPath = new("/persistent-war-strategic.json.bak");
@@ -257,16 +261,48 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
     internal static WarStrategicSnapshot ReadSnapshot(JsonElement document)
     {
         RejectDuplicateKeys(document);
-        if (document.TryGetProperty("SnapshotVersion", out var version) && version.GetInt32() == 6)
+        if (document.TryGetProperty("SnapshotVersion", out var version) && version.GetInt32() is 6 or 7)
         {
-            // v6 stored exactly one anonymous/public batch per row. Preserve every other claim verbatim.
+            // v6/v7 jobs were anonymous public claims; only v6 omitted its one-batch marker.
+            var legacyVersion = version.GetInt32();
             var upgraded = JsonNode.Parse(document.GetRawText())!.AsObject();
             foreach (var refinery in upgraded["Refineries"]!.AsArray())
             foreach (var job in refinery!["Jobs"]!.AsArray())
             {
-                if (job!.AsObject().ContainsKey("Batches"))
-                    throw new InvalidDataException("v6 refinery jobs cannot contain batch claims.");
-                job["Batches"] = 1;
+                if (legacyVersion == 6)
+                {
+                    if (job!.AsObject().ContainsKey("Batches"))
+                        throw new InvalidDataException("v6 refinery jobs cannot contain batch claims.");
+                    job["Batches"] = 1;
+                }
+                else if (!job!.AsObject().ContainsKey("Batches"))
+                    throw new InvalidDataException("v7 refinery jobs require batch claims.");
+            }
+            foreach (var kind in new[] { "Factories", "Refineries" })
+            foreach (var machine in upgraded[kind]!.AsArray())
+            {
+                foreach (var job in machine!["Jobs"]!.AsArray())
+                {
+                    if (job!.AsObject().ContainsKey("Claim"))
+                        throw new InvalidDataException("Legacy jobs cannot contain ownership or payment claims.");
+                    job["Claim"] = JsonSerializer.SerializeToNode(new WarProductionJobClaim(Guid.NewGuid(), null, true, []));
+                }
+                foreach (var goods in machine!["Inputs"]!.AsArray().Concat(machine["Outputs"]!.AsArray()))
+                {
+                    if (goods!.AsObject().ContainsKey("Claim"))
+                        throw new InvalidDataException("Legacy physical goods cannot contain ownership claims.");
+                    goods["Claim"] = null;
+                }
+            }
+            foreach (var vehicle in upgraded["Vehicles"]!.AsArray())
+            foreach (var cargo in vehicle!["Cargo"]!.AsArray())
+            {
+                foreach (var type in new[] { "Stack", "Crate" })
+                {
+                    if (cargo![type] is not JsonObject goods) continue;
+                    if (goods.ContainsKey("Claim")) throw new InvalidDataException("Legacy cargo cannot contain claims.");
+                    goods["Claim"] = null;
+                }
             }
             upgraded["SnapshotVersion"] = SnapshotVersion;
             return upgraded.Deserialize<WarStrategicSnapshot>() ??

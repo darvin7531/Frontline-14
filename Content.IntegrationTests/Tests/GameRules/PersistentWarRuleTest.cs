@@ -1349,13 +1349,15 @@ public sealed class PersistentWarRuleTest : GameTest
         }
     }
 
-    [TestCase(false, 1, false)]
-    [TestCase(true, 1, false)]
-    [TestCase(false, 3, false)]
-    [TestCase(true, 3, false)]
-    [TestCase(false, 1, true)]
+    [TestCase(false, 1, 0, false)]
+    [TestCase(true, 1, 0, false)]
+    [TestCase(false, 3, 0, false)]
+    [TestCase(true, 3, 0, false)]
+    [TestCase(false, 1, 6, false)]
+    [TestCase(false, 3, 7, false)]
+    [TestCase(false, 3, 0, true)]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
-    public async Task TechnicalRestartPreservesPaidRefineryQueueAndRetainedMaterials(bool writeFault, int batches, bool versionSix)
+    public async Task TechnicalRestartPreservesPaidRefineryQueueAndRetainedMaterials(bool writeFault, int batches, int legacyVersion, bool personal)
     {
         ProtoId<FrontlineRefineryRecipePrototype> recipe = "FrontlineSteel";
         var ticker = Server.System<GameTicker>();
@@ -1374,6 +1376,7 @@ public sealed class PersistentWarRuleTest : GameTest
         EntityUid input = default;
         WarState beforeRestart = default!;
         FrontlineRefineryJob[] restoredJobs = default!;
+        WarProductionOutputClaim completedClaim = null;
         TimeSpan remaining = default;
         var selected = false;
         var inserted = false;
@@ -1449,7 +1452,7 @@ public sealed class PersistentWarRuleTest : GameTest
                 // Owning insertion API; submission is the public player/container-only API, not the BUI.
                 input = stacks.SpawnAtPosition(13 + 5 * (batches - 1), "FrontlineRawIron", coordinates);
                 inserted = refineries.TryInsertInput(refinery, input);
-                submitted = refineries.TrySubmitPlayerJob(refinery, session.AttachedEntity.Value, recipe);
+                submitted = refineries.TrySubmitPlayerJob(refinery, session.AttachedEntity.Value, recipe, personal: personal);
             });
             await Server.WaitAssertion(() =>
             {
@@ -1462,9 +1465,11 @@ public sealed class PersistentWarRuleTest : GameTest
             {
                 Assert.That(refineries.GetJobs(refinery), Is.Empty);
                 AssertContainer(refinery, FrontlineRefineryComponent.OutputContainerId, "BasicMaterials", 5);
+                completedClaim = Server.System<FrontlineProductionSystem>().CaptureClaim(
+                    SComp<FrontlineRefineryComponent>(refinery).OutputContainer.ContainedEntities.Single());
             });
             await Server.WaitPost(() => submitted = refineries.TrySubmitPlayerJob(refinery,
-                session.AttachedEntity!.Value, recipe, batches));
+                session.AttachedEntity!.Value, recipe, batches, personal: personal));
             await Pair.RunTicksSync(30);
             await Server.WaitAssertion(() =>
             {
@@ -1529,19 +1534,38 @@ public sealed class PersistentWarRuleTest : GameTest
                     inputAmount = 2;
                     stacks.SetCount((input, SComp<StackComponent>(input)), inputAmount);
                 }
+                if (personal)
+                {
+                    // Model offline elapsed time without sleeping or resetting the completion clock at restore.
+                    var output = SComp<FrontlineRefineryComponent>(refinery).OutputContainer.ContainedEntities.Single();
+                    SComp<FrontlineProductionClaimComponent>(output).CompletedAtUtc = DateTimeOffset.UtcNow.AddHours(-3);
+                    completedClaim = Server.System<FrontlineProductionSystem>().CaptureClaim(output);
+                }
                 remaining = refineries.GetJobs(refinery)[0].Remaining;
                 oldRefinery = refinery;
                 oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
                 beforeRestart = war.State!;
                 ticker.RestartRound();
-                if (versionSix)
+                if (legacyVersion != 0)
                 {
                     using var oldStream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
                     var legacy = System.Text.Json.Nodes.JsonNode.Parse(oldStream)!.AsObject();
-                    legacy["SnapshotVersion"] = 6;
-                    foreach (var machine in legacy["Refineries"]!.AsArray())
-                    foreach (var job in machine!["Jobs"]!.AsArray())
-                        job!.AsObject().Remove("Batches");
+                    legacy["SnapshotVersion"] = legacyVersion;
+                    if (legacyVersion == 6)
+                        foreach (var machine in legacy["Refineries"]!.AsArray())
+                        foreach (var job in machine!["Jobs"]!.AsArray())
+                            job!.AsObject().Remove("Batches");
+                    foreach (var kind in new[] { "Factories", "Refineries" })
+                    foreach (var machine in legacy[kind]!.AsArray())
+                    {
+                        foreach (var job in machine!["Jobs"]!.AsArray()) job!.AsObject().Remove("Claim");
+                        foreach (var goods in machine["Inputs"]!.AsArray().Concat(machine["Outputs"]!.AsArray()))
+                            goods!.AsObject().Remove("Claim");
+                    }
+                    foreach (var vehicle in legacy["Vehicles"]!.AsArray())
+                    foreach (var cargo in vehicle!["Cargo"]!.AsArray())
+                    foreach (var type in new[] { "Stack", "Crate" })
+                        if (cargo![type] is System.Text.Json.Nodes.JsonObject goods) goods.Remove("Claim");
                     using var output = data.OpenWrite(WarStrategicSnapshotSystem.SavePath);
                     using var writer = new StreamWriter(output);
                     writer.Write(legacy.ToJsonString());
@@ -1563,16 +1587,27 @@ public sealed class PersistentWarRuleTest : GameTest
                     "Technical restart must restore the paid refinery job instead of reloading an empty queue.");
                 Assert.That(restoredJobs[0].Recipe, Is.EqualTo(recipe));
                 Assert.That(restoredJobs[0].Remaining, Is.EqualTo(remaining), "Restore exact paid progress, not a fresh recipe duration.");
+                Assert.That(restoredJobs[0].Owner, Is.EqualTo(personal ? session.UserId.ToString() : null));
+                Assert.That(restoredJobs[0].Legacy, Is.EqualTo(legacyVersion != 0));
+                if (legacyVersion == 0) Assert.That(restoredJobs[0].PaidInputs.Single().Value, Is.EqualTo(5));
+                Assert.That(Server.System<FrontlineProductionSystem>().CaptureClaim(
+                    SComp<FrontlineRefineryComponent>(refinery).OutputContainer.ContainedEntities.Single()), Is.EqualTo(completedClaim),
+                    "A real technical restart preserves the original UTC completion time, including offline entitlement.");
+                if (personal)
+                {
+                    Assert.That(refineries.BuildUiState(refinery).Outputs.Single().Amount, Is.EqualTo(5),
+                        "Offline elapsed UTC releases the original ready goods to Public after restart.");
+                    Assert.That(refineries.BuildUiState(refinery, session.UserId.ToString()).OutputStackCount, Is.Zero);
+                }
                 using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
                 using var savedDocument = JsonDocument.Parse(stream);
                 Assert.That(savedDocument.RootElement.GetProperty("SnapshotVersion").GetInt32(),
-                    Is.EqualTo(versionSix ? 6 : WarStrategicSnapshotSystem.SnapshotVersion));
+                    Is.EqualTo(legacyVersion != 0 ? legacyVersion : WarStrategicSnapshotSystem.SnapshotVersion));
                 var saved = WarStrategicSnapshotSystem.ReadSnapshot(savedDocument.RootElement);
                 Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
                 var claim = saved.Refineries.Single(entry => entry.RefineryId == SComp<FrontlineRefineryComponent>(refinery).RefineryId);
                 Assert.That(claim.Jobs.Select(job => (job.Recipe, job.RemainingTicks, job.Batches)),
-                    Is.EqualTo(batches == 1 ? new[] { (recipe.Id, remaining.Ticks, 1L) } :
-                        new[] { (recipe.Id, remaining.Ticks, 1L), (recipe.Id, duration.Ticks, (long) batches - 1) }));
+                    Is.EqualTo(new[] { (recipe.Id, remaining.Ticks, (long) batches) }));
                 Assert.That(claim.Inputs.Select(stack => (stack.StackId, stack.Count)),
                     Is.EqualTo(new[] { ("FrontlineRawIron", inputAmount) }));
                 Assert.That(claim.Outputs.Select(stack => (stack.StackId, stack.Count)),
@@ -1587,7 +1622,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     "Restoration after MapInit must activate the paid queue for native processing.");
                 AssertGoods(5);
             });
-            await Pair.RunSeconds((float) (remaining.TotalSeconds + (batches - 1) * duration.TotalSeconds) + 0.1f);
+            await Pair.RunSeconds((float) remaining.TotalSeconds + 0.1f);
             await Server.WaitAssertion(() =>
             {
                 Assert.That(refineries.GetJobs(refinery), Is.Empty);
@@ -1614,12 +1649,13 @@ public sealed class PersistentWarRuleTest : GameTest
         TruncatedPrimary,
     }
 
-    [TestCase(false, FactorySnapshotRecovery.None)]
-    [TestCase(true, FactorySnapshotRecovery.None)]
-    [TestCase(false, FactorySnapshotRecovery.MissingPrimary)]
-    [TestCase(false, FactorySnapshotRecovery.TruncatedPrimary)]
+    [TestCase(false, FactorySnapshotRecovery.None, false)]
+    [TestCase(true, FactorySnapshotRecovery.None, false)]
+    [TestCase(false, FactorySnapshotRecovery.MissingPrimary, false)]
+    [TestCase(false, FactorySnapshotRecovery.TruncatedPrimary, false)]
+    [TestCase(false, FactorySnapshotRecovery.None, true)]
     [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
-    public async Task TechnicalRestartPreservesPaidFactoryQueueAndRetainedCrates(bool writeFault, FactorySnapshotRecovery recovery)
+    public async Task TechnicalRestartPreservesPaidFactoryQueueAndRetainedCrates(bool writeFault, FactorySnapshotRecovery recovery, bool personal)
     {
         ProtoId<FrontlineFactoryRecipePrototype> recipe = "FrontlineFactoryBrutepack";
         ProtoId<FrontlineSupplyProductPrototype> product = "Brutepack1";
@@ -1639,6 +1675,7 @@ public sealed class PersistentWarRuleTest : GameTest
         EntityUid input = default;
         WarState beforeRestart = default!;
         FrontlineFactoryJob[] restoredJobs = default!;
+        WarProductionOutputClaim completedFactoryClaim = null;
         TimeSpan remaining = default;
         var selected = false;
         var inserted = false;
@@ -1736,7 +1773,7 @@ public sealed class PersistentWarRuleTest : GameTest
                 // Owning insertion plus public player/container submission, not held interaction or BUI coverage.
                 input = stacks.SpawnAtPosition(13, "BasicMaterials", coordinates);
                 inserted = factories.TryInsertInput(factory, input);
-                submitted = factories.TrySubmitPlayerJob(factory, session.AttachedEntity.Value, recipe);
+                submitted = factories.TrySubmitPlayerJob(factory, session.AttachedEntity.Value, recipe, personal: personal);
             });
             await Server.WaitAssertion(() =>
             {
@@ -1766,7 +1803,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     crate.Product = retainedProduct;
                     crate.Amount = retainedAmount;
                 }
-                submitted = factories.TrySubmitPlayerJob(factory, session.AttachedEntity!.Value, recipe);
+                submitted = factories.TrySubmitPlayerJob(factory, session.AttachedEntity!.Value, recipe, personal: personal);
             });
             await Pair.RunTicksSync(30);
             await Server.WaitAssertion(() =>
@@ -1847,6 +1884,8 @@ public sealed class PersistentWarRuleTest : GameTest
                 oldFactory = factory;
                 oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
                 beforeRestart = war.State!;
+                completedFactoryClaim = Server.System<FrontlineProductionSystem>().CaptureClaim(
+                    SComp<FrontlineFactoryComponent>(factory).OutputContainer.ContainedEntities.Single());
                 ticker.RestartRound();
                 try
                 {
@@ -1910,6 +1949,15 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(restoredJobs[0].Recipe, Is.EqualTo(recipe));
                 Assert.That(restoredJobs[0].Remaining.Ticks, Is.EqualTo(remaining.Ticks),
                     "Restore exact paid progress, not a fresh recipe duration.");
+                Assert.That(restoredJobs[0].Owner, Is.EqualTo(personal ? session.UserId.ToString() : null));
+                Assert.That(restoredJobs[0].PaidInputs.Single().Value, Is.EqualTo(5));
+                Assert.That(Server.System<FrontlineProductionSystem>().CaptureClaim(
+                    SComp<FrontlineFactoryComponent>(factory).OutputContainer.ContainedEntities.Single()), Is.EqualTo(completedFactoryClaim));
+                if (personal)
+                {
+                    Assert.That(factories.BuildUiState(factory).Outputs, Is.Empty);
+                    Assert.That(factories.BuildUiState(factory, session.UserId.ToString()).Outputs.Single().Count, Is.EqualTo(1));
+                }
                 Assert.That(ticker.RunLevel, Is.EqualTo(GameRunLevel.InRound));
                 Assert.That(war.State, Is.EqualTo(beforeRestart));
                 Assert.That(SEntMan.EntityExists(oldMap) || SEntMan.EntityExists(oldFactory) || SEntMan.EntityExists(input), Is.False);
@@ -3046,9 +3094,13 @@ public sealed class PersistentWarRuleTest : GameTest
             if (!provisional.Contains(uid) && !factoryProvisional.Contains(uid))
                 return;
             queued.Add(uid);
+            Server.PlayerMan.SetAttachedEntity(ServerSession!, player);
             guardedDuringQueue &= !refineries.TryTakePlayerOutput(refinery, player);
             if (includeFactory)
+            {
+                Server.PlayerMan.SetAttachedEntity(ServerSession!, factoryPlayer);
                 guardedDuringQueue &= !factories.TryTakePlayerOutput(factory, factoryPlayer);
+            }
             if (uid == (includeFactory ? factoryProvisional[0] : provisional[0]) && !threw)
             {
                 threw = true;
@@ -3059,7 +3111,7 @@ public sealed class PersistentWarRuleTest : GameTest
 
         try
         {
-            await Server.WaitPost(() =>
+            await Server.WaitAssertion(() =>
             {
                 try
                 {
@@ -3067,6 +3119,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     var output = SComp<FrontlineRefineryComponent>(refinery).OutputContainer;
                     var coordinates = SComp<TransformComponent>(refinery).Coordinates.Offset(new Vector2(0, 1));
                     player = SEntMan.SpawnEntity("MobHuman", coordinates);
+                    Server.PlayerMan.SetAttachedEntity(ServerSession!, player);
                     // Positive control: the same actor can really take retained output at this machine.
                     var control = stacks.SpawnAtPosition(5, "BasicMaterials", coordinates);
                     Assert.That(containers.Insert(control, output), Is.True);
@@ -3082,6 +3135,7 @@ public sealed class PersistentWarRuleTest : GameTest
                     {
                         var factoryCoordinates = SComp<TransformComponent>(factory).Coordinates.Offset(new Vector2(0, 1));
                         factoryPlayer = SEntMan.SpawnEntity("MobHuman", factoryCoordinates);
+                        Server.PlayerMan.SetAttachedEntity(ServerSession!, factoryPlayer);
                         var factoryControl = SEntMan.SpawnEntity("FrontlineFactoryMedicalCrate", factoryCoordinates);
                         var crate = SComp<FrontlineSupplyCrateComponent>(factoryControl);
                         crate.Product = "SoldierSupplies";
@@ -3178,11 +3232,13 @@ public sealed class PersistentWarRuleTest : GameTest
                             Assert.That(!SEntMan.EntityExists(uid) || SEntMan.IsQueuedForDeletion(uid), Is.True,
                                 "EVERY provisional factory claim must be queued/deleted before restoring guards release.");
                         // No tick may hide the leak between FinishSnapshotRestore and queue draining.
+                        Server.PlayerMan.SetAttachedEntity(ServerSession!, player);
                         Assert.That(refineries.TryTakePlayerOutput(refinery, player), Is.False,
                             "A refused restore must not release a later provisional output to a player's hand.");
                         Assert.That(hands.GetActiveItem(player), Is.Null);
                         if (includeFactory)
                         {
+                            Server.PlayerMan.SetAttachedEntity(ServerSession!, factoryPlayer);
                             Assert.That(factories.TryTakePlayerOutput(factory, factoryPlayer), Is.False);
                             Assert.That(hands.GetActiveItem(factoryPlayer), Is.Null);
                             Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(crate =>
