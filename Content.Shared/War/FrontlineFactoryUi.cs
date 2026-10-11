@@ -58,22 +58,48 @@ public sealed class FrontlineFactoryRecipeState(
 public sealed class FrontlineFactoryJobState(
     ProtoId<FrontlineFactoryRecipePrototype> recipe,
     TimeSpan remaining,
-    bool processing)
+    bool processing, Guid id = default, bool canCancel = false)
 {
+    public readonly Guid Id = id;
+    public readonly bool CanCancel = canCancel;
     public readonly ProtoId<FrontlineFactoryRecipePrototype> Recipe = recipe;
     public readonly TimeSpan Remaining = remaining;
     public readonly bool Processing = processing;
 }
 
 [Serializable, NetSerializable]
-public sealed class FrontlineFactorySubmitMessage(ProtoId<FrontlineFactoryRecipePrototype> recipe)
+public sealed class FrontlineFactorySubmitMessage(ProtoId<FrontlineFactoryRecipePrototype> recipe, bool personal = false)
     : BoundUserInterfaceMessage
 {
     public readonly ProtoId<FrontlineFactoryRecipePrototype> Recipe = recipe;
+    public readonly bool Personal = personal;
 }
 
 [Serializable, NetSerializable]
 public sealed class FrontlineFactoryEjectMessage : BoundUserInterfaceMessage;
 
 [Serializable, NetSerializable]
-public sealed class FrontlineFactoryTakeOutputMessage : BoundUserInterfaceMessage;
+public sealed class FrontlineFactoryTakeOutputMessage(bool personal = false) : BoundUserInterfaceMessage
+{
+    public readonly bool Personal = personal;
+}
+
+[Serializable, NetSerializable]
+public sealed class FrontlineFactoryModeMessage(bool personal) : BoundUserInterfaceMessage
+{
+    public readonly bool Personal = personal;
+}
+
+[Serializable, NetSerializable]
+public sealed class FrontlineFactoryViewMessage(FrontlineFactoryUiState state, bool personal) : BoundUserInterfaceMessage
+{
+    public readonly FrontlineFactoryUiState State = state;
+    public readonly bool Personal = personal;
+}
+
+[Serializable, NetSerializable]
+public sealed class FrontlineFactoryCancelMessage(Guid id, bool personal = false) : BoundUserInterfaceMessage
+{
+    public readonly Guid Id = id;
+    public readonly bool Personal = personal;
+}

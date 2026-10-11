@@ -26,15 +26,37 @@ public sealed partial class FrontlineRefineryRecipePrototype : IPrototype
 [DataDefinition]
 public sealed partial class FrontlineRefineryJob
 {
+    public Guid Id = Guid.NewGuid();
+
+    // Native YAML supports strings, not Guid; keep the runtime/JSON identity unchanged.
+    [DataField("id")]
+    private string SerializedId
+    {
+        get => Id.ToString("D");
+        set => Id = Guid.ParseExact(value, "D");
+    }
+
     [DataField(required: true)]
     public ProtoId<FrontlineRefineryRecipePrototype> Recipe;
 
     [DataField]
     public TimeSpan Remaining;
 
-    // Unstarted identical paid batches stay compact; only processing slots are expanded.
+    // Identical paid batches share one parallel timer and retain their remaining receipt count.
     [DataField]
     public long Batches = 1;
+
+    [DataField]
+    public FrontlineProductionAccess Access;
+
+    [DataField]
+    public string? Owner;
+
+    [DataField]
+    public bool Legacy;
+
+    [DataField]
+    public Dictionary<ProtoId<StackPrototype>, int> PaidInputs = new();
 }
 
 [RegisterComponent]

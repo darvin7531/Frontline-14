@@ -26,16 +26,25 @@ public sealed partial class FrontlineFactoryBoundUserInterface : BoundUserInterf
     {
         base.Open();
         _window = this.CreateWindowCenteredRight<FrontlineFactoryWindow>();
-        _window.Submit += recipe => SendMessage(new FrontlineFactorySubmitMessage(recipe));
+        _window.Submit += recipe => SendMessage(new FrontlineFactorySubmitMessage(recipe, _window.Personal));
         _window.Eject += () => SendMessage(new FrontlineFactoryEjectMessage());
-        _window.TakeOutput += () => SendMessage(new FrontlineFactoryTakeOutputMessage());
+        _window.TakeOutput += () => SendMessage(new FrontlineFactoryTakeOutputMessage(_window.Personal));
+        _window.ModeChanged += personal => SendMessage(new FrontlineFactoryModeMessage(personal));
+        _window.Cancel += id => SendMessage(new FrontlineFactoryCancelMessage(id, _window.Personal));
     }
 
     protected override void UpdateState(BoundUserInterfaceState state)
     {
         base.UpdateState(state);
-        if (state is FrontlineFactoryUiState factory)
+        if (_window?.Personal != true && state is FrontlineFactoryUiState factory)
             _window?.SetState(factory, StackName, EntityName, RecipeName);
+    }
+
+    protected override void ReceiveMessage(BoundUserInterfaceMessage message)
+    {
+        base.ReceiveMessage(message);
+        if (message is FrontlineFactoryViewMessage view && _window != null && view.Personal == _window.Personal)
+            _window.SetState(view.State, StackName, EntityName, RecipeName);
     }
 
     private string StackName(ProtoId<StackPrototype> id)
@@ -74,6 +83,11 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
     private readonly Button _produce = new() { Name = "Produce", Disabled = true };
     private readonly Button _eject = new() { Name = "Eject" };
     private readonly Button _take = new() { Name = "TakeOutput" };
+    private readonly Button _public = new() { Name = "Public", ToggleMode = true, Pressed = true, Text = "Public" };
+    private readonly Button _personal = new() { Name = "Personal", ToggleMode = true, Text = "Personal" };
+    public bool Personal => _personal.Pressed;
+    public event Action<bool>? ModeChanged;
+    public event Action<Guid>? Cancel;
     private FrontlineFactoryUiState _state = new([], [], []);
     private Func<ProtoId<StackPrototype>, string> _stackName = id => id.Id;
     private Func<ProtoId<FrontlineFactoryRecipePrototype>, string> _recipeName = id => id.Id;
@@ -123,7 +137,16 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         right.AddChild(new Label { Text = Loc.GetString("frontline-factory-queue-heading"), StyleClasses = { "LabelHeading" } });
         right.AddChild(FrontlineItemGrid.CreateScroll(_jobs));
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { right } });
-        ContentsContainer.AddChild(columns);
+        var mode = new BoxContainer();
+        mode.AddChild(_public);
+        mode.AddChild(_personal);
+        _public.OnPressed += _ => SetMode(false);
+        _personal.OnPressed += _ => SetMode(true);
+        _jobs.Cancel += id => Cancel?.Invoke(id);
+        var layout = new BoxContainer { Orientation = LayoutOrientation.Vertical, HorizontalExpand = true, VerticalExpand = true };
+        layout.AddChild(mode);
+        layout.AddChild(columns);
+        ContentsContainer.AddChild(layout);
         UpdateSelection();
     }
 
@@ -147,7 +170,7 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         {
             var recipe = state.Recipes.FirstOrDefault(recipe => recipe.Id == job.Recipe);
             return new FrontlineJobView(job.Recipe.Id, recipeName(job.Recipe), _recipes.EntityIcon(recipe?.Output),
-                recipe?.Duration ?? TimeSpan.Zero, job.Remaining, job.Processing);
+                recipe?.Duration ?? TimeSpan.Zero, job.Remaining, job.Processing, ClaimId: job.Id, CanCancel: job.CanCancel);
         }));
         _eject.Disabled = state.Inputs.Length == 0;
         _take.Disabled = state.Outputs.Length == 0;
@@ -160,6 +183,13 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
             ("output", _entityName(recipe.Output)), ("amount", recipe.OutputAmount),
             ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds)),
             ("availability", Loc.GetString(recipe.CanSubmit ? "frontline-ui-ready" : "frontline-ui-insufficient")));
+
+    private void SetMode(bool personal)
+    {
+        _public.Pressed = !personal;
+        _personal.Pressed = personal;
+        ModeChanged?.Invoke(personal);
+    }
 
     private void UpdateSelection()
     {

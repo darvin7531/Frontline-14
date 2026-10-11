@@ -99,6 +99,43 @@ public sealed class FrontlineFactoryTest : GameTest
     }
 
     [Test]
+    [NonParallelizable]
+    public async Task PaidReceiptFreezesPriceBeforeNativeDebitCallback()
+    {
+        var map = await Pair.CreateTestMap();
+        var system = Pair.Server.System<FrontlineFactorySystem>();
+        var mutation = Pair.Server.System<FrontlineRefineryTest.ReentrantStackMutationSystem>();
+        var recipe = Pair.Server.ProtoMan.Index(new Robust.Shared.Prototypes.ProtoId<FrontlineFactoryRecipePrototype>("FrontlineFactoryBrutepack"));
+        var original = recipe.Input.ToDictionary(entry => entry.Key, entry => entry.Value);
+        EntityUid machine = default;
+        try
+        {
+            await Pair.Server.WaitPost(() =>
+            {
+                machine = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
+                var input = Pair.Server.System<StackSystem>().SpawnAtPosition(10, "BasicMaterials", map.GridCoords);
+                mutation.SkipEvents = 0;
+                mutation.RestoreCurrent = false;
+                mutation.PriceMutation = () => recipe.Input["BasicMaterials"] = 7;
+                mutation.Enabled = true;
+                Assert.That(system.TrySubmitJob(machine, recipe.ID, new[] { input }), Is.True);
+                Assert.That(SComp<StackComponent>(input).Count, Is.EqualTo(5));
+            });
+            await Pair.Server.WaitAssertion(() => Assert.That(
+                SComp<FrontlineFactoryComponent>(machine).Jobs.Single().PaidInputs["BasicMaterials"], Is.EqualTo(5)));
+        }
+        finally
+        {
+            await Pair.Server.WaitPost(() =>
+            {
+                mutation.Enabled = false;
+                mutation.PriceMutation = null;
+                recipe.Input = original;
+            });
+        }
+    }
+
+    [Test]
     public void InvalidOutputAndMissingLocalizationAreRejected()
     {
         var system = Pair.Server.System<FrontlineFactorySystem>();
@@ -457,6 +494,7 @@ public sealed class FrontlineFactoryTest : GameTest
         {
             core = SEntMan.SpawnEntity("TownHallCoreFactionOne", map.GridCoords);
             actor = SEntMan.SpawnEntity("MobHuman", map.GridCoords);
+            Server.PlayerMan.SetAttachedEntity(ServerSession!, actor);
             factory = SEntMan.SpawnEntity(alreadyFunded ? "TestPersistedFrontlineFactory" : "FrontlineFactory",
                 map.GridCoords);
             if (alreadyFunded)
@@ -672,6 +710,7 @@ public sealed class FrontlineFactoryTest : GameTest
         {
             factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
             actor = SEntMan.SpawnEntity("MobHuman", map.GridCoords);
+            Server.PlayerMan.SetAttachedEntity(ServerSession!, actor);
             materials = stacks.SpawnAtPosition(15, "BasicMaterials", map.GridCoords);
             Assert.That(system.TryInsertInput(factory, materials), Is.True);
             Assert.That(system.TrySubmitContainedJob(factory, "FrontlineFactorySupplyCrate"), Is.True);
@@ -783,6 +822,7 @@ public sealed class FrontlineFactoryTest : GameTest
             factory = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
             core = SEntMan.SpawnEntity("TownHallCoreFactionOne", map.GridCoords);
             actor = SEntMan.SpawnEntity("MobHuman", map.GridCoords);
+            Server.PlayerMan.SetAttachedEntity(ServerSession!, actor);
             var materials = stackSystem.SpawnAtPosition(25, "BasicMaterials", map.GridCoords);
             Assert.That(factorySystem.TrySubmitJob(factory, "FrontlineFactoryMk58", new[] { materials }), Is.True);
             Assert.That(factorySystem.TrySubmitJob(factory, "FrontlineFactoryMagazinePistol", new[] { materials }), Is.True);
@@ -797,10 +837,12 @@ public sealed class FrontlineFactoryTest : GameTest
         });
         await server.WaitPost(() =>
         {
-            foreach (var product in new[] { "FrontlineWeaponPistolMk58", "MagazinePistol" })
+            foreach (var product in SComp<FrontlineFactoryComponent>(factory).OutputContainer.ContainedEntities
+                         .Select(uid => SComp<FrontlineSupplyCrateComponent>(uid).Product.Id).ToArray())
             {
                 var entity = product == "MagazinePistol" ? "FrontlineMagazinePistol" : product;
-                var crate = SComp<FrontlineFactoryComponent>(factory).OutputContainer.ContainedEntities[0];
+                var crate = SComp<FrontlineFactoryComponent>(factory).OutputContainer.ContainedEntities
+                    .Single(uid => SComp<FrontlineSupplyCrateComponent>(uid).Product.Id == product);
                 Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Product.Id, Is.EqualTo(product));
                 Assert.That(SComp<FrontlineSupplyCrateComponent>(crate).Amount, Is.EqualTo(1));
                 Assert.That(factorySystem.TryTakePlayerOutput(factory, actor), Is.True);
@@ -828,7 +870,81 @@ public sealed class FrontlineFactoryTest : GameTest
     }
 
     [Test]
-    public async Task DefaultProcessingSlotKeepsSecondJobWaiting()
+    public async Task BackToBackContainerSubmissionsIgnoreSpentStacksAwaitingDeletion()
+    {
+        var map = await Pair.CreateTestMap();
+        var system = Server.System<FrontlineFactorySystem>();
+        await Server.WaitAssertion(() =>
+        {
+            var machine = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
+            for (var i = 0; i < 2; i++)
+            {
+                var input = Server.System<StackSystem>().SpawnAtPosition(5, "BasicMaterials", map.GridCoords);
+                Assert.That(system.TryInsertInput(machine, input), Is.True);
+                Assert.That(system.TrySubmitContainedJob(machine, "FrontlineFactoryBrutepack"), Is.True,
+                    "Spent stacks remain queued until the next tick and must not invalidate another paid submission.");
+            }
+            Assert.That(system.GetJobs(machine), Has.Count.EqualTo(2));
+            Assert.That(SComp<FrontlineFactoryComponent>(machine).InputContainer.ContainedEntities
+                .Sum(uid => SComp<StackComponent>(uid).Count), Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task PersonalJobsAreAbsentFromPublicUiState()
+    {
+        var map = await Pair.CreateTestMap();
+        var system = Pair.Server.System<FrontlineFactorySystem>();
+        EntityUid machine = default;
+        await Pair.Server.WaitPost(() =>
+        {
+            machine = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
+            var input = Pair.Server.System<StackSystem>().SpawnAtPosition(5, "BasicMaterials", map.GridCoords);
+            Assert.That(system.TrySubmitJob(machine, "FrontlineFactoryBrutepack", new[] { input }, Guid.NewGuid().ToString()), Is.True);
+        });
+        await Pair.Server.WaitAssertion(() => Assert.That(system.BuildUiState(machine).Jobs, Is.Empty,
+            "Global BUI state must never contain another account's private job."));
+    }
+
+    [Test]
+    public async Task FivePublicAndFivePerPersonalAccountAdvanceIndependently()
+    {
+        var map = await Pair.CreateTestMap();
+        var system = Pair.Server.System<FrontlineFactorySystem>();
+        var owners = new string[] { null, Guid.NewGuid().ToString(), Guid.NewGuid().ToString() };
+        EntityUid machine = default;
+        await Pair.Server.WaitPost(() =>
+        {
+            machine = SEntMan.SpawnEntity("FrontlineFactory", map.GridCoords);
+            foreach (var owner in owners)
+            for (var index = 0; index < 6; index++)
+            {
+                var input = Pair.Server.System<StackSystem>().SpawnAtPosition(5, "BasicMaterials", map.GridCoords);
+                Assert.That(system.TrySubmitJob(machine, "FrontlineFactoryBrutepack", new[] { input }, owner), Is.True);
+            }
+        });
+        await Pair.RunSeconds(1f);
+        await Pair.Server.WaitAssertion(() =>
+        {
+            foreach (var owner in owners)
+            {
+                var group = SComp<FrontlineFactoryComponent>(machine).Jobs.Where(job => job.Owner == owner).ToArray();
+                Assert.That(group, Has.Length.EqualTo(6));
+                Assert.That(group.Take(5).Select(job => job.Remaining.TotalSeconds), Is.All.EqualTo(4).Within(0.2));
+                Assert.That(group.Last().Remaining, Is.EqualTo(TimeSpan.FromSeconds(5)));
+            }
+        });
+        await Pair.RunSeconds(4.1f);
+        await Pair.Server.WaitAssertion(() =>
+        {
+            Assert.That(SComp<FrontlineFactoryComponent>(machine).OutputContainer.ContainedEntities, Has.Count.EqualTo(15));
+            Assert.That(system.GetJobs(machine), Has.Count.EqualTo(3));
+            Assert.That(CountStacks("BasicMaterials"), Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task FivePublicSlotsAdvanceBothFundedJobs()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -848,12 +964,12 @@ public sealed class FrontlineFactoryTest : GameTest
         {
             var jobs = system.GetJobs(factory);
             Assert.That(jobs[0].Remaining.TotalSeconds, Is.EqualTo(4).Within(0.2));
-            Assert.That(jobs[1].Remaining, Is.EqualTo(TimeSpan.FromSeconds(5)));
+            Assert.That(jobs[1].Remaining.TotalSeconds, Is.EqualTo(4).Within(0.2));
         });
     }
 
     [Test]
-    public async Task FifoSlotsPausedAndPersistedJobsBehave()
+    public async Task PublicSlotsPausedAndPersistedJobsBehave()
     {
         var server = Pair.Server;
         var map = await Pair.CreateTestMap();
@@ -891,7 +1007,7 @@ public sealed class FrontlineFactoryTest : GameTest
             var jobs = system.GetJobs(factory);
             Assert.That(jobs[0].Remaining.TotalSeconds, Is.EqualTo(4.4).Within(0.2));
             Assert.That(jobs[1].Remaining.TotalSeconds, Is.EqualTo(4.4).Within(0.2));
-            Assert.That(jobs[2].Remaining, Is.EqualTo(TimeSpan.FromSeconds(5)));
+            Assert.That(jobs[2].Remaining.TotalSeconds, Is.EqualTo(4.4).Within(0.2));
             var persistedJobs = system.GetJobs(persisted);
             Assert.That(persistedJobs, Has.Count.EqualTo(2), "Keep the invalid paid claim without assigning it a processing slot.");
             Assert.That(persistedJobs[0].Recipe.Id, Is.EqualTo("MissingFrontlineFactoryRecipe"));

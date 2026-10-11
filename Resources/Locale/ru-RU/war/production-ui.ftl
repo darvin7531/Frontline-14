@@ -15,6 +15,8 @@ frontline-ui-recipes-empty = Нет доступных рецептов.
 frontline-ui-select-recipe = Выберите рецепт для просмотра затрат и результата.
 frontline-ui-load-hint = Используйте материалы из руки на машине для загрузки.
 frontline-ui-produce = Произвести
+frontline-production-cancel = Отменить и вернуть материалы
+frontline-production-legacy-no-receipt = У старого заказа нет исходного чека оплаты. Он завершится, но отмена недоступна.
 frontline-refinery-batches = Количество партий
 frontline-refinery-batch-hint = Одна партия = полный рецепт, не единица сырья. Shift + Произвести: все доступные партии выбранного рецепта.
 frontline-ui-ready = Готово

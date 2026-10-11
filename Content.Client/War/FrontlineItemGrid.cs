@@ -233,13 +233,15 @@ public sealed partial class FrontlineItemGrid : BoxContainer
 }
 
 public readonly record struct FrontlineJobView(
-    string Id, string Name, Texture? Icon, TimeSpan Duration, TimeSpan Remaining, bool Processing, long Batches = 1);
+    string Id, string Name, Texture? Icon, TimeSpan Duration, TimeSpan Remaining, bool Processing,
+    long Batches = 1, Guid ClaimId = default, bool CanCancel = false);
 
-/// <summary>Jobs have no server ID; keep positional rows while updating their real recipe and snapshot.</summary>
+/// <summary>Keep native controls while updating server-owned job identities and receipt availability.</summary>
 public sealed partial class FrontlineJobList : BoxContainer
 {
     [Dependency] private IGameTiming _timing = default!;
-    private readonly List<(BoxContainer Row, TextureRect Icon, RichTextLabel Text, RichTextLabel Status, ProgressBar Progress)> _rows = new();
+    private readonly List<(BoxContainer Row, TextureRect Icon, RichTextLabel Text, RichTextLabel Status, ProgressBar Progress, Button Cancel)> _rows = new();
+    public event Action<Guid>? Cancel;
     private readonly RichTextLabel _empty = new();
     private FrontlineJobView[] _jobs = [];
     private TimeSpan _received;
@@ -273,8 +275,16 @@ public sealed partial class FrontlineJobList : BoxContainer
             row.AddChild(header);
             row.AddChild(status);
             row.AddChild(progress);
+            var index = _rows.Count;
+            var cancel = new Button { Text = Loc.GetString("frontline-production-cancel") };
+            cancel.OnPressed += _ =>
+            {
+                if (index < _jobs.Length && _jobs[index].CanCancel)
+                    Cancel?.Invoke(_jobs[index].ClaimId);
+            };
+            row.AddChild(cancel);
             AddChild(row);
-            _rows.Add((row, icon, text, status, progress));
+            _rows.Add((row, icon, text, status, progress, cancel));
         }
         _empty.Visible = _jobs.Length == 0;
         Refresh();
@@ -323,6 +333,8 @@ public sealed partial class FrontlineJobList : BoxContainer
                 ("seconds", Math.Ceiling(remaining))));
             row.Progress.Value = job.Duration > TimeSpan.Zero ? (float) Math.Clamp(1 - remaining / job.Duration.TotalSeconds, 0, 1) : 0;
             row.Progress.Visible = job.Processing;
+            row.Cancel.Disabled = !job.CanCancel;
+            row.Cancel.ToolTip = job.CanCancel ? null : Loc.GetString("frontline-production-legacy-no-receipt");
         }
     }
 }
