@@ -19,15 +19,16 @@ frontline-production-cancel = Отменить и вернуть материа�
 frontline-production-legacy-no-receipt = У старого заказа нет исходного чека оплаты. Он завершится, но отмена недоступна.
 frontline-refinery-batches = Количество партий
 frontline-refinery-batch-hint = Одна партия = полный рецепт, не единица сырья. Shift + Произвести: все доступные партии выбранного рецепта.
-frontline-ui-ready = Готово
+frontline-ui-ready = Можно произвести
 frontline-ui-insufficient = Нет сырья
 frontline-ui-recipe-details = { $name }
     { $input }
     → { $output } ×{ $amount }
-    { $seconds } с: { $availability }
+    Время производства: { $seconds } с
+    { $availability }
 frontline-ui-queue-empty = Очередь пуста.
 frontline-ui-job = №{ $position } { $name }
 frontline-ui-job-status = { $status }: { $seconds } с
-frontline-ui-duration = { $seconds } с
+frontline-ui-duration = Время производства: { $seconds } с
 frontline-ui-processing = Производится
 frontline-ui-waiting = Ожидает

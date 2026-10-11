@@ -99,7 +99,7 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         Title = Loc.GetString("frontline-factory-title");
         MinSize = new Vector2(600, 400);
         SetSize = new Vector2(740, 480);
-        var columns = new BoxContainer { HorizontalExpand = true, VerticalExpand = true, SeparationOverride = 8 };
+        var columns = new FrontlineProductionColumns();
         var left = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-input-heading"));
         var hint = new RichTextLabel();
         hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));

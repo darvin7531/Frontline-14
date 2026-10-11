@@ -137,6 +137,63 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         await other.CleanReturnAsync();
     }
 
+    [TestCase("FrontlineFactory", 1f)]
+    [TestCase("FrontlineFactory", 1.5f)]
+    [TestCase("FrontlineRefinery", 1f)]
+    [TestCase("FrontlineRefinery", 1.5f)]
+    public async Task InitialProductionWindowContainsItsColumnsAndLabelsProductionTime(string prototype, float scale)
+    {
+        var previousScale = Client.CfgMan.GetCVar(CVars.DisplayUIScale);
+        var previousAutoScale = Client.CfgMan.GetCVar(CVars.ResAutoScaleEnabled);
+        try
+        {
+            await Client.WaitPost(() =>
+            {
+                Client.CfgMan.SetCVar(CVars.ResAutoScaleEnabled, false);
+                Client.CfgMan.SetCVar(CVars.DisplayUIScale, scale);
+            });
+            await SpawnTarget(prototype);
+            await Interact();
+            await Pair.RunUntilSynced();
+            await Client.WaitAssertion(() =>
+            {
+                BaseWindow window = prototype == "FrontlineFactory" ? GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>();
+                // Exercise CreateWindowCenteredRight and its first state, not a generously resized test window.
+                var panels = Descendants(window).OfType<PanelContainer>().Where(p => p.HasStyleClass("BackgroundDark")).ToArray();
+                Assert.That(panels, Has.Length.EqualTo(3));
+                foreach (var panel in panels)
+                {
+                    Assert.That(panel.GlobalPosition.X, Is.GreaterThanOrEqualTo(window.GlobalPosition.X));
+                    Assert.That(panel.GlobalPosition.X + panel.Size.X, Is.LessThanOrEqualTo(window.GlobalPosition.X + window.Size.X + 1),
+                        "All sections must fit on the first open, including empty-state text.");
+                    foreach (var column in panel.Children)
+                        Assert.That(column.GlobalPosition.X + column.Size.X,
+                            Is.LessThanOrEqualTo(panel.GlobalPosition.X + panel.Size.X + 1),
+                            "A clipped panel is not a layout fix: its actual column must fit too.");
+                }
+                for (var i = 1; i < panels.Length; i++)
+                    Assert.That(panels[i].GlobalPosition.X, Is.GreaterThanOrEqualTo(panels[i - 1].GlobalPosition.X + panels[i - 1].Size.X),
+                        "Recipe and output sections must not overlap.");
+                var recipes = GetControlFromChildren<FrontlineItemGrid>(g => g.Name == "Recipes", window);
+                var recipe = recipes.Cells.Children.OfType<ContainerButton>().First();
+                var caption = Descendants(recipe).OfType<Label>().Single(l => l.Visible && l.Name != "ItemName");
+                Assert.That(caption.Text!.Contains("Production time:") || caption.Text.Contains("Время производства:"), Is.True,
+                    "A bare '5 s' is not an identified production duration.");
+                Assert.That(caption.Text.Contains("Ready") || caption.Text.Contains("Готово"), Is.False,
+                    "CanSubmit means available to produce, not a completed product.");
+            });
+        }
+        finally
+        {
+            await CloseBui(prototype == "FrontlineFactory" ? (Enum) FrontlineFactoryUiKey.Key : FrontlineRefineryUiKey.Key);
+            await Client.WaitPost(() =>
+            {
+                Client.CfgMan.SetCVar(CVars.DisplayUIScale, previousScale);
+                Client.CfgMan.SetCVar(CVars.ResAutoScaleEnabled, previousAutoScale);
+            });
+        }
+    }
+
     [TestCase("FrontlineFactory")]
     [TestCase("FrontlineRefinery")]
     public async Task ProductionWindowExposesLocalPublicPersonalMode(string prototype)

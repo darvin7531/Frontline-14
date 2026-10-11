@@ -93,7 +93,7 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         Title = Loc.GetString("frontline-refinery-title");
         MinSize = new Vector2(600, 400);
         SetSize = new Vector2(740, 480);
-        var columns = new BoxContainer { HorizontalExpand = true, VerticalExpand = true, SeparationOverride = 8 };
+        var columns = new FrontlineProductionColumns();
         var left = FrontlineItemGrid.Column(Loc.GetString("frontline-refinery-input-heading"));
         var hint = new RichTextLabel();
         hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));
