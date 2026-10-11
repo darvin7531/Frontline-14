@@ -556,7 +556,7 @@ public sealed class FrontlineRefineryTest : GameTest
         {
             Assert.That(refinerySystem.GetJobs(refinery), Is.Empty);
             Assert.That(CountStacks("BasicMaterials"), Is.EqualTo(5));
-            Assert.That(containers.TryGetContainer(refinery, "outputContainer", out var output), Is.True,
+            Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(refinery, "outputContainer", out var output), Is.True,
                 "Completed BasicMaterials must be retained in refinery outputContainer.");
             Assert.That(output.ContainedEntities, Has.Count.EqualTo(1));
             var stack = SComp<StackComponent>(output.ContainedEntities.Single());
@@ -1098,7 +1098,7 @@ public sealed class FrontlineRefineryTest : GameTest
             await Server.WaitPost(() =>
             {
                 Assert.That(system.GetJobs(refinery), Is.Empty);
-                Assert.That(containers.TryGetContainer(refinery, "outputContainer", out output), Is.True);
+                Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(refinery, "outputContainer", out output), Is.True);
                 paidOutputs = output.ContainedEntities.ToArray();
                 paidCounts = paidOutputs.Select(uid => SComp<StackComponent>(uid).Count).ToArray();
                 Assert.That(paidCounts.Sum(), Is.EqualTo(35));
@@ -1175,7 +1175,7 @@ public sealed class FrontlineRefineryTest : GameTest
         }
 
         [Test]
-        public async Task ConnectedPlayerTakesCompletedMaterialStackThroughNativeButtonWithoutDuplication()
+        public async Task ConnectedPlayerTakesCompletedMaterialStackThroughNativeStorageWithoutDuplication()
         {
             await SpawnTarget("FrontlineRefinery");
             var refinery = STarget!.Value;
@@ -1193,7 +1193,7 @@ public sealed class FrontlineRefineryTest : GameTest
             await Server.WaitPost(() =>
             {
                 Assert.That(system.GetJobs(refinery), Is.Empty);
-                Assert.That(containers.TryGetContainer(refinery, "outputContainer", out output), Is.True);
+                Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(refinery, "outputContainer", out output), Is.True);
                 Assert.That(output.ContainedEntities, Has.Count.EqualTo(1));
                 materials = output.ContainedEntities.Single();
                 Assert.That(SComp<StackComponent>(materials).StackTypeId, Is.EqualTo("BasicMaterials"));
@@ -1205,16 +1205,10 @@ public sealed class FrontlineRefineryTest : GameTest
             Assert.That(TryGetBui(FrontlineRefineryUiKey.Key, out _), Is.True);
             for (var click = 0; click < 2; click++)
             {
-                Button take = default!;
-                await Client.WaitAssertion(() =>
-                {
-                    var window = GetWindow<FrontlineRefineryWindow>();
-                    Assert.That(TryGetControlFromChildren<Button>(button => button.Name == "TakeOutput", window, out take),
-                        Is.True, "Refinery production BUI must expose a button named TakeOutput.");
-                    if (click == 0)
-                        Assert.That(take.Disabled, Is.False);
-                });
-                await ClickControl(take);
+                var itemNet = SEntMan.GetNetEntity(materials);
+                var storageNet = SEntMan.GetNetEntity(output.Owner);
+                await Client.WaitPost(() => CEntMan.RaisePredictiveEvent(new Content.Shared.Storage.StorageInteractWithItemEvent(itemNet, storageNet)));
+                await RunTicks(3);
                 await Pair.RunUntilSynced();
                 await Server.WaitAssertion(() =>
                 {

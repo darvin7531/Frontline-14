@@ -1,0 +1,21 @@
+- type: entity
+  id: FrontlineProductionStorage
+  categories: [HideSpawnMenu]
+  components:
+  - type: Storage
+    grid:
+    - 0,0,19,19
+    maxItemSize: Huge
+    clickInsert: false
+    openOnActivate: false
+    showVerb: false
+    storageInsertSound: null
+    storageOpenSound: null
+    storageCloseSound: null
+  - type: UserInterface
+    interfaces:
+      enum.StorageComponent.StorageUiKey.Key:
+        type: StorageBoundUserInterface
+  - type: ContainerContainer
+    containers:
+      storagebase: !type:Container

@@ -196,6 +196,46 @@ public sealed class FrontlineProductionUiTest : InteractionTest
 
     [TestCase("FrontlineFactory")]
     [TestCase("FrontlineRefinery")]
+    [TestCase("TownHallCoreFactionOne")]
+    public async Task NativeProductionUsesStorageWindowWithoutLegacyTransferButtons(string prototype)
+    {
+        await SpawnTarget(prototype);
+        await Interact();
+        await Pair.RunUntilSynced();
+        Assert.That(Pair.ClientLogHandler.FailingLogs, Is.Empty);
+        await Client.WaitAssertion(() =>
+        {
+            BaseWindow window = prototype switch
+            {
+                "FrontlineFactory" => GetWindow<FrontlineFactoryWindow>(),
+                "FrontlineRefinery" => GetWindow<FrontlineRefineryWindow>(),
+                _ => GetWindow<FrontlineStockpileWindow>()
+            };
+            var links = CEntMan.EntityQueryEnumerator<FrontlineProductionStorageComponent>();
+            var debug = new System.Text.StringBuilder();
+            while (links.MoveNext(out var uid, out var link))
+            {
+                CEntMan.System<Robust.Shared.GameObjects.SharedUserInterfaceSystem>().TryGetOpenUi<Content.Client.Storage.StorageBoundUserInterface>(uid,
+                    Content.Shared.Storage.StorageComponent.StorageUiKey.Key, out var nativeBui);
+                debug.Append($"{uid}:machine={link.Machine},output={link.Output},bui={nativeBui != null},parent={nativeBui?.Window?.Parent?.GetType().Name}/{nativeBui?.Window?.Parent?.Name}; ");
+            }
+            debug.Append(string.Join("; ", Descendants(window).OfType<FrontlineNativeStoragePanel>().Select(panel => $"{panel.Name}:machine={panel.Machine},size={panel.Size},visible={panel.VisibleInTree}")));
+            Assert.That(Descendants(window).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Count(),
+                Is.EqualTo(prototype == "TownHallCoreFactionOne" ? 1 : 2), debug.ToString());
+            Assert.That(Descendants(window).OfType<Button>().Any(button => button.Name is "Deposit" or "Withdraw" or "Eject" or "TakeOutput"), Is.False);
+        });
+        await CloseBui(prototype switch
+        {
+            "FrontlineFactory" => FrontlineFactoryUiKey.Key,
+            "FrontlineRefinery" => FrontlineRefineryUiKey.Key,
+            _ => (Enum) FrontlineStockpileUiKey.Key
+        });
+        await RunTicks(3);
+        Assert.That(Pair.ClientLogHandler.FailingLogs, Is.Empty);
+    }
+
+    [TestCase("FrontlineFactory")]
+    [TestCase("FrontlineRefinery")]
     public async Task ProductionWindowExposesLocalPublicPersonalMode(string prototype)
     {
         await SpawnTarget(prototype);
@@ -224,7 +264,6 @@ public sealed class FrontlineProductionUiTest : InteractionTest
 
     [TestCase("FrontlineFactory")]
     [TestCase("FrontlineRefinery")]
-    [TestCase("TownHallCoreFactionOne")]
     public async Task NativeStateRefreshRetainsControls(string prototype)
     {
         await SpawnTarget(prototype);
@@ -293,8 +332,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                 Assert.That(GetControlFromChildren<Label>(label => label.Text == "5", cell), Is.Not.Null);
             }
             scroll = GetControlFromChildren<ScrollContainer>(window, true);
-            action = GetControlFromChildren<Button>(button => button.Name == "TakeOutput" ||
-                (prototype == "TownHallCoreFactionOne" && !button.Disabled), window);
+            action = GetControlFromChildren<Button>(button => button.Name == "Produce", window);
             action.CanKeyboardFocus = true;
             action.GrabKeyboardFocus();
         });
@@ -442,6 +480,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             Assert.That(Server.System<Robust.Shared.Containers.SharedContainerSystem>().Insert(output, container), Is.True);
         });
         await Interact();
+        await RunTicks(5);
         await Pair.RunUntilSynced();
         BaseWindow window = default!;
         await Client.WaitAssertion(() =>
@@ -449,15 +488,19 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             window = prototype == "FrontlineFactory" ? GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>();
             foreach (var name in new[] { "Inputs", "Outputs" })
             {
-                var grid = GetControlFromChildren<FrontlineItemGrid>(g => g.Name == name, window);
-                var slot = grid.Cells.Children.OfType<ContainerButton>().Single();
-                Assert.That(slot.Size.X, Is.EqualTo(slot.Size.Y));
-                Assert.That(slot.Size.X, Is.LessThanOrEqualTo(48));
-                Assert.That(slot.ToolTip, Is.Not.Empty);
-                Assert.That(Descendants(slot).OfType<RichTextLabel>(), Is.Empty, "Names live in tooltips, not below compact slots.");
-                Assert.That(Descendants(slot).OfType<PanelContainer>().Any(p => p.HasStyleClass("InventorySlotBackground")), Is.True,
-                    "Reuse the native item slot background.");
-                Assert.That(Descendants(slot).OfType<Label>().Single(l => l.Name == "ItemCount").Text, Is.Not.Empty);
+                var panel = GetControlFromChildren<FrontlineNativeStoragePanel>(g => g.Name == name, window);
+                var nativeWindows = Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().ToArray();
+                Assert.That(nativeWindows, Has.Length.EqualTo(1), $"{name} native window for machine {panel.Machine} must remain open with physical goods.");
+                var native = nativeWindows.Single();
+                var pieces = Descendants(native).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().ToArray();
+                var state = CEntMan.GetComponent<Content.Shared.Storage.StorageComponent>(native.StorageEntity!.Value);
+                Assert.That(pieces, Has.Length.EqualTo(1), $"{name}: stored={state.StoredItems.Count},contained={state.Container.ContainedEntities.Count},expected={state.Container.ExpectedEntities.Count},visible={native.VisibleInTree}");
+                var piece = pieces.Single();
+                Assert.That(CEntMan.HasComponent<Content.Shared.Item.ItemComponent>(piece.Entity), Is.True);
+                Assert.That(piece.Size.X, Is.GreaterThan(0));
+                Assert.That(piece.Size.Y, Is.GreaterThan(0));
+                Assert.That(native.Size.X, Is.LessThanOrEqualTo(panel.Size.X + 1));
+                Assert.That(Descendants(panel).OfType<FrontlineItemGrid>(), Is.Empty, "Only native entity-backed storage pieces render machine goods.");
             }
         });
         await CloseBui(prototype == "FrontlineFactory" ? FrontlineFactoryUiKey.Key : (System.Enum) FrontlineRefineryUiKey.Key);

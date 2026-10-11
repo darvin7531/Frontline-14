@@ -146,7 +146,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         base.Initialize();
         SubscribeLocalEvent<RoundRestartCleanupEvent>(OnCleanup);
         SubscribeLocalEvent<VehiclePersistenceComponent, MapInitEvent>(OnVehicleInit);
-        SubscribeLocalEvent<VehiclePersistenceComponent, ItemSlotEjectAttemptEvent>(OnVehicleCargoEject);
+        SubscribeLocalEvent<VehiclePersistenceComponent, Content.Shared.Storage.StorageInteractAttemptEvent>(OnVehicleCargoEject);
         EntityManager.BeforeEntityFlush += OnBeforeEntityFlush;
     }
 
@@ -529,7 +529,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
         {
             var hall = TryComp<TownHallComponent>(uid, out var component);
             var counts = hall
-                ? Comp<FrontlineStockpileComponent>(uid).Counts.ToDictionary(entry => entry.Key.Id, entry => entry.Value)
+                ? _stockpiles.ReadCounts(uid)
                 : new Dictionary<string, int>();
             bases.Add(new WarBaseSnapshot(territory, hall ? "hall" : "ruin",
                 MetaData(uid).EntityPrototype?.ID ?? throw new InvalidDataException("Objective has no prototype."),
@@ -568,8 +568,7 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
                 (entry.ObjectiveKind == "hall"
                     ? !TryComp<TownHallComponent>(uid, out var hall) || hall.TerritoryId != entry.TerritoryId ||
                       hall.FactionId != entry.FactionId || !TryComp<FrontlineStockpileComponent>(uid, out var stockpile) ||
-                      !stockpile.Counts.OrderBy(pair => pair.Key.Id)
-                          .Select(pair => new KeyValuePair<string, int>(pair.Key.Id, pair.Value))
+                      !_stockpiles.ReadCounts(uid).OrderBy(pair => pair.Key)
                           .SequenceEqual(entry.Counts.OrderBy(pair => pair.Key))
                     : !TryComp<TownHallRuinComponent>(uid, out var ruin) || ruin.TerritoryId != entry.TerritoryId ||
                       ruin.DepositedBasicMaterials != entry.RuinMaterialDeposited))

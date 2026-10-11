@@ -5,7 +5,8 @@ using System.Linq;
 using System.Numerics;
 using System.Text.Json.Serialization;
 using Content.Server.Stack;
-using Content.Shared.Containers.ItemSlots;
+using Content.Shared.Storage;
+using Content.Shared.Storage.EntitySystems;
 using Content.Shared.Damage;
 using Content.Shared.Damage.Components;
 using Content.Shared.Damage.Prototypes;
@@ -46,15 +47,16 @@ public sealed partial class WarStrategicSnapshotSystem
 {
     [Dependency] private SharedTransformSystem _vehicleTransforms = default!;
     [Dependency] private SharedContainerSystem _vehicleContainers = default!;
-    [Dependency] private ItemSlotsSystem _vehicleSlots = default!;
+    [Dependency] private SharedStorageSystem _vehicleStorage = default!;
+    [Dependency] private FrontlineProductionSystem _production = default!;
     [Dependency] private StackSystem _vehicleStacks = default!;
     [Dependency] private VehicleSystem _vehicles = default!;
 
     private readonly HashSet<EntityUid> _restoringVehicles = new();
 
-    private void OnVehicleCargoEject(Entity<VehiclePersistenceComponent> ent, ref ItemSlotEjectAttemptEvent args)
+    private void OnVehicleCargoEject(Entity<VehiclePersistenceComponent> ent, ref StorageInteractAttemptEvent args)
     {
-        if (_restoringVehicles.Contains(ent.Owner) || !Usable(ent.Owner) || !Usable(args.Item))
+        if (_restoringVehicles.Contains(ent.Owner) || !Usable(ent.Owner) || args.Item is { } item && !Usable(item))
             args.Cancelled = true;
     }
 
@@ -126,7 +128,8 @@ public sealed partial class WarStrategicSnapshotSystem
     {
         if (!Usable(uid) || !HasComp<VehicleComponent>(uid) || !HasComp<DamageableComponent>(uid) ||
             !TryComp<VehiclePersistenceComponent>(uid, out var identity) ||
-            !TryComp<ItemSlotsComponent>(uid, out var slots) ||
+            !TryComp<StorageComponent>(uid, out var storage) ||
+            !TryComp<FrontlineVehicleCargoComponent>(uid, out var cargoIdentity) ||
             !_vehicles.TryGetOperatorContainer(uid, out var driver) ||
             (vacant && (driver.ContainedEntities.Count != 0 || Comp<VehicleComponent>(uid).Operator != null ||
                 HasComp<RelayInputMoverComponent>(uid) ||
@@ -140,23 +143,20 @@ public sealed partial class WarStrategicSnapshotSystem
         if (transform.ParentUid != ground || transform.Anchored)
             throw new InvalidDataException("Persistent vehicle must be directly on the ground grid.");
         var cargo = new List<WarVehicleCargoSnapshot>();
-        foreach (var (id, slot) in slots.Slots.OrderBy(pair => pair.Key))
+        if (storage.Container == driver || storage.Container.Owner != uid ||
+            !_vehicleContainers.TryGetContainer(uid, StorageComponent.ContainerId, out var retained) || retained != storage.Container ||
+            storage.Container.ContainedEntities.Count > 10 ||
+            !cargoIdentity.CargoIds.Keys.ToHashSet().SetEquals(storage.Container.ContainedEntities))
+            throw new InvalidDataException("Vehicle native cargo identity changed.");
+        foreach (var (item, id) in cargoIdentity.CargoIds.OrderBy(pair => pair.Value))
         {
-            if (slot.ContainerSlot == null || slot.ContainerSlot.Owner != uid || slot.ContainerSlot.ID != id ||
-                !_vehicleContainers.TryGetContainer(uid, id, out var container) || container != slot.ContainerSlot ||
-                container == driver)
-                throw new InvalidDataException("Vehicle cargo slot identity changed.");
-            if (slot.Item is not { } item)
-                continue;
-            if (!_vehicleContainers.TryGetContainingContainer(item, out var owner) || owner != container)
+            if (!_vehicleContainers.TryGetContainingContainer(item, out var owner) || owner != retained ||
+                !storage.StoredItems.ContainsKey(item))
                 throw new InvalidDataException("Vehicle cargo containment changed.");
             cargo.Add(ReadVehicleCargo(id, item));
         }
-        foreach (var container in _vehicleContainers.GetAllContainers(uid))
-        {
-            if (container != driver && !_vehicleSlots.TryGetSlot((uid, slots), container.ID, out _))
-                throw new InvalidDataException("Vehicle has an unsupported container.");
-        }
+        if (_vehicleContainers.GetAllContainers(uid).Any(container => container != driver && container != retained))
+            throw new InvalidDataException("Vehicle has an unsupported container.");
         return new WarVehicleSnapshot(identity.VehicleId,
             MetaData(uid).EntityPrototype?.ID ?? throw new InvalidDataException("Vehicle has no prototype."),
             transform.LocalPosition.X, transform.LocalPosition.Y, transform.LocalRotation.Theta,
@@ -166,7 +166,7 @@ public sealed partial class WarStrategicSnapshotSystem
     public List<WarVehicleSnapshot> CaptureVehicles(MapId mapId)
     {
         var vehicles = VehicleEntities(mapId);
-        if (vehicles.Any(uid => _restoringVehicles.Contains(uid)))
+        if (vehicles.Any(uid => _restoringVehicles.Contains(uid) || _production.NativeTransferActive(uid)))
             throw new InvalidDataException("Vehicle restoration must settle before capture.");
         var result = vehicles.Count == 0 ? new List<WarVehicleSnapshot>() :
             vehicles.Select(uid => ReadVehicle(uid, VehicleGround(mapId))).ToList();
@@ -189,13 +189,13 @@ public sealed partial class WarStrategicSnapshotSystem
                 !prototype.HasComp<VehicleComponent>(EntityManager.ComponentFactory) ||
                 !prototype.HasComp<DamageableComponent>(EntityManager.ComponentFactory) ||
                 !prototype.TryGetComponent<ContainerVehicleComponent>(out var driver, EntityManager.ComponentFactory) ||
-                !prototype.TryGetComponent<ItemSlotsComponent>(out var slots, EntityManager.ComponentFactory) ||
+                !prototype.HasComp<FrontlineVehicleCargoComponent>(EntityManager.ComponentFactory) ||
+                !prototype.HasComp<StorageComponent>(EntityManager.ComponentFactory) ||
                 !prototype.TryGetComponent<ContainerManagerComponent>(out var containers, EntityManager.ComponentFactory) ||
                 string.IsNullOrWhiteSpace(driver.ContainerId) ||
                 !containers.Containers.TryGetValue(driver.ContainerId, out var seat) || seat is not ContainerSlot ||
-                slots.Slots.Any(pair => pair.Key == driver.ContainerId || pair.Value.StartingItem != null ||
-                    !containers.Containers.TryGetValue(pair.Key, out var container) || container is not ContainerSlot) ||
-                containers.Containers.Keys.Any(id => id != driver.ContainerId && !slots.Slots.Any(pair => pair.Key == id)))
+                !containers.Containers.TryGetValue(StorageComponent.ContainerId, out var cargoContainer) || cargoContainer is not Container ||
+                containers.Containers.Keys.Any(id => id != driver.ContainerId && id != StorageComponent.ContainerId))
                 throw new InvalidDataException("Invalid persistent vehicle identity, prototype or state.");
             long total = 0;
             foreach (var (type, amount) in entry.DamageHundredths)
@@ -208,7 +208,7 @@ public sealed partial class WarStrategicSnapshotSystem
             foreach (var cargo in entry.Cargo)
             {
                 if (cargo == null || string.IsNullOrWhiteSpace(cargo.SlotId) || !cargoSlots.Add(cargo.SlotId) ||
-                    cargo.SlotId == driver.ContainerId || !slots.Slots.Any(pair => pair.Key == cargo.SlotId) ||
+                    cargo.SlotId == driver.ContainerId || !Enumerable.Range(1, 10).Any(i => cargo.SlotId == $"cargo{i:00}") ||
                     (cargo.Stack == null) == (cargo.Crate == null))
                     throw new InvalidDataException("Invalid vehicle cargo slot or claim.");
                 if (cargo.Stack is { } stack)
@@ -257,7 +257,7 @@ public sealed partial class WarStrategicSnapshotSystem
                 throw new InvalidDataException("Restored vehicle changed during native callbacks.");
             foreach (var expected in cargo)
             {
-                if (Comp<ItemSlotsComponent>(staged[i]).Slots[expected.SlotId].Item != claims[index++])
+                if (!Comp<FrontlineVehicleCargoComponent>(staged[i]).CargoIds.TryGetValue(claims[index++], out var id) || id != expected.SlotId)
                     throw new InvalidDataException("Restored vehicle cargo entity changed.");
             }
         }
@@ -297,7 +297,9 @@ public sealed partial class WarStrategicSnapshotSystem
                     _factories.RestoreCrate(item, cargo.Crate!);
                 validateOtherSlices();
                 ValidateStagedVehicles(mapId, entries, fresh, staged, claims.Take(claims.Count - 1).ToList(), partial: true);
-                if (ReadVehicleCargo(cargo.SlotId, item) != cargo || !_vehicleSlots.TryInsert(uid, cargo.SlotId, item, null))
+                Comp<FrontlineVehicleCargoComponent>(uid).CargoIds.Add(item, cargo.SlotId);
+                if (ReadVehicleCargo(cargo.SlotId, item) != cargo ||
+                    !_vehicleStorage.Insert(uid, item, out _, stackAutomatically: false))
                     throw new InvalidDataException("Vehicle did not retain its exact cargo.");
                 Check();
             }

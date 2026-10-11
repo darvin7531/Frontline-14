@@ -31,6 +31,17 @@ public sealed partial class StorageWindow : BaseWindow
     private readonly GridContainer _pieceGrid;
     private readonly GridContainer _backgroundGrid;
     private readonly GridContainer _sidebar;
+    private HashSet<NetEntity>? _visibleItems;
+
+    public void SetVisibleItems(NetEntity[] items)
+    {
+        _visibleItems = items.ToHashSet();
+        FlagDirty();
+    }
+
+    private bool VisibleItem(EntityUid item) =>
+        !_entity.TryGetComponent<Content.Shared.War.FrontlineProductionStorageComponent>(StorageEntity, out var link) ||
+        !link.Output || _visibleItems?.Contains(_entity.GetNetEntity(item)) == true;
 
     private Control _titleContainer;
     private Label _titleLabel;
@@ -73,7 +84,7 @@ public sealed partial class StorageWindow : BaseWindow
     private readonly string _sidebarFatTexturePath = "Storage/sidebar_fat";
     private Texture? _sidebarFatTexture;
 
-    public StorageWindow()
+    public StorageWindow(EntityUid? owner = null)
     {
         IoCManager.InjectDependencies(this);
         Resizable = false;
@@ -130,29 +141,25 @@ public sealed partial class StorageWindow : BaseWindow
             }
         };
 
+        Control grid = new BoxContainer
+        {
+            Orientation = BoxContainer.LayoutOrientation.Horizontal,
+            Children = { _sidebar, new Control { Children = { _backgroundGrid, _pieceGrid } } }
+        };
+        if (owner is { } uid && (_entity.HasComponent<Content.Shared.War.FrontlineProductionStorageComponent>(uid) ||
+                                _entity.HasComponent<Content.Shared.War.FrontlineStockpileComponent>(uid)))
+            grid = new ScrollContainer
+            {
+                HScrollEnabled = true,
+                VScrollEnabled = true,
+                MaxWidth = 172,
+                MaxHeight = 220,
+                Children = { grid }
+            };
         var container = new BoxContainer
         {
             Orientation = BoxContainer.LayoutOrientation.Vertical,
-            Children =
-            {
-                _titleContainer,
-                new BoxContainer
-                {
-                    Orientation = BoxContainer.LayoutOrientation.Horizontal,
-                    Children =
-                    {
-                        _sidebar,
-                        new Control
-                        {
-                            Children =
-                            {
-                                _backgroundGrid,
-                                _pieceGrid
-                            }
-                        }
-                    }
-                }
-            }
+            Children = { _titleContainer, grid }
         };
 
         AddChild(container);
@@ -442,7 +449,7 @@ public sealed partial class StorageWindow : BaseWindow
         // Remove entities no longer relevant / Update existing ones
         foreach (var (ent, data) in _pieces)
         {
-            if (storageComp.StoredItems.TryGetValue(ent, out var updated))
+            if (VisibleItem(ent) && storageComp.StoredItems.TryGetValue(ent, out var updated))
             {
                 data.Control.Marked = IsMarked(ent);
 
@@ -473,6 +480,7 @@ public sealed partial class StorageWindow : BaseWindow
         // Add new ones
         foreach (var (ent, loc) in storageComp.StoredItems)
         {
+            if (!VisibleItem(ent)) continue;
             if (_pieces.TryGetValue(ent, out var existing))
             {
                 DebugTools.Assert(existing.Loc == loc);

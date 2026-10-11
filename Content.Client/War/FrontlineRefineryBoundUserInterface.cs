@@ -27,9 +27,8 @@ public sealed partial class FrontlineRefineryBoundUserInterface : BoundUserInter
     {
         base.Open();
         _window = this.CreateWindowCenteredRight<FrontlineRefineryWindow>();
+        _window.SetMachine(Owner);
         _window.Submit += (recipe, batches, all) => SendMessage(new FrontlineRefinerySubmitMessage(recipe, batches, all, _window.Personal));
-        _window.Eject += () => SendMessage(new FrontlineRefineryEjectMessage());
-        _window.TakeOutput += () => SendMessage(new FrontlineRefineryTakeOutputMessage(_window.Personal));
         _window.ModeChanged += personal => SendMessage(new FrontlineRefineryModeMessage(personal));
         _window.Cancel += id => SendMessage(new FrontlineRefineryCancelMessage(id, _window.Personal));
     }
@@ -66,18 +65,14 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
     [Dependency] private IPrototypeManager _prototypes = default!;
     [Dependency] private IInputManager _input = default!;
     public event Action<ProtoId<FrontlineRefineryRecipePrototype>, int, bool>? Submit;
-    public event Action? Eject;
-    public event Action? TakeOutput;
-    private readonly FrontlineItemGrid _inputs;
+    private readonly FrontlineNativeStoragePanel _inputs;
     private readonly FrontlineItemGrid _recipes;
-    private readonly FrontlineItemGrid _outputs;
+    private readonly FrontlineNativeStoragePanel _outputs;
     private readonly FrontlineJobList _jobs = new() { Name = "Queue" };
     private readonly RichTextLabel _details = new() { HorizontalExpand = true };
     private readonly SpinBox _batches = new() { Name = "Batches", HorizontalExpand = true };
     private int _maximumBatches = 1;
     private readonly Button _produce = new() { Name = "Produce", Disabled = true };
-    private readonly Button _eject = new() { Name = "Eject" };
-    private readonly Button _take = new() { Name = "TakeOutput" };
     private readonly Button _public = new() { Name = "Public", ToggleMode = true, Pressed = true, Text = "Public" };
     private readonly Button _personal = new() { Name = "Personal", ToggleMode = true, Text = "Personal" };
     public bool Personal => _personal.Pressed;
@@ -98,11 +93,8 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         var hint = new RichTextLabel();
         hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));
         left.AddChild(hint);
-        _inputs = new FrontlineItemGrid(Loc.GetString("frontline-refinery-input-empty"), mode: FrontlineItemGridMode.Slots) { Name = "Inputs" };
+        _inputs = new FrontlineNativeStoragePanel(null, false) { Name = "Inputs" };
         left.AddChild(_inputs);
-        _eject.Text = Loc.GetString("frontline-refinery-eject-all");
-        _eject.OnPressed += _ => Eject?.Invoke();
-        left.AddChild(_eject);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { left } });
         var center = FrontlineItemGrid.Column(Loc.GetString("frontline-refinery-recipes-heading"));
         _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty"), mode: FrontlineItemGridMode.Recipes) { Name = "Recipes" };
@@ -134,11 +126,8 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         center.AddChild(_produce);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, SizeFlagsStretchRatio = 1.4f, Children = { center } });
         var right = FrontlineItemGrid.Column(Loc.GetString("frontline-refinery-output-heading"));
-        _outputs = new FrontlineItemGrid(Loc.GetString("frontline-refinery-output-empty"), mode: FrontlineItemGridMode.Slots) { Name = "Outputs" };
+        _outputs = new FrontlineNativeStoragePanel(null, true) { Name = "Outputs" };
         right.AddChild(_outputs);
-        _take.Text = Loc.GetString("frontline-refinery-take-output");
-        _take.OnPressed += _ => TakeOutput?.Invoke();
-        right.AddChild(_take);
         right.AddChild(new PanelContainer { StyleClasses = { "LowDivider" } });
         right.AddChild(new Label { Text = Loc.GetString("frontline-refinery-queue-heading"), StyleClasses = { "LabelHeading" } });
         right.AddChild(FrontlineItemGrid.CreateScroll(_jobs));
@@ -156,6 +145,12 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         UpdateSelection();
     }
 
+    public void SetMachine(EntityUid machine)
+    {
+        _inputs.Machine = machine;
+        _outputs.Machine = machine;
+    }
+
     public void SetState(FrontlineRefineryUiState state,
         Func<ProtoId<StackPrototype>, string> stackName,
         Func<ProtoId<FrontlineRefineryRecipePrototype>, string> recipeName)
@@ -163,10 +158,6 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         _state = state;
         _stackName = stackName;
         _recipeName = recipeName;
-        _inputs.SetItems(state.Inputs.Select(input => new FrontlineItemView(input.Stack.Id,
-            _inputs.StackIcon(input.Stack), input.Amount, $"{stackName(input.Stack)} ×{input.Amount}", Name: stackName(input.Stack))));
-        _outputs.SetItems(state.Outputs.Select(output => new FrontlineItemView(output.Stack.Id,
-            _outputs.StackIcon(output.Stack), output.Amount, $"{stackName(output.Stack)} ×{output.Amount}", Name: stackName(output.Stack))));
         _recipes.SetItems(state.Recipes.Select(recipe => new FrontlineItemView(recipe.Id.Id,
             _recipes.StackIcon(recipe.Output.Stack), recipe.Output.Amount, Details(recipe),
             Available: recipe.CanSubmit, Caption: Loc.GetString("frontline-ui-duration", ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds))), Name: recipeName(recipe.Id))));
@@ -177,8 +168,6 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
                 recipe == null ? null : _recipes.StackIcon(recipe.Output.Stack),
                 recipe?.Duration ?? TimeSpan.Zero, job.Remaining, job.Processing, job.Batches, job.Id, job.CanCancel);
         }));
-        _eject.Disabled = state.Inputs.Length == 0;
-        _take.Disabled = state.OutputStackCount == 0;
         UpdateSelection();
     }
 

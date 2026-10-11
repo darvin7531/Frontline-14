@@ -23,12 +23,25 @@
   - type: Transform
     anchored: true
   - type: FrontlineStockpile
+  - type: Storage
+    grid:
+    - 0,0,19,19
+    maxItemSize: Huge
+    clickInsert: false
+    openOnActivate: false
+    storageInsertSound: null
+    storageOpenSound: null
+  - type: ContainerContainer
+    containers:
+      storagebase: !type:Container
   - type: ActivatableUI
     key: enum.FrontlineStockpileUiKey.Key
   - type: UserInterface
     interfaces:
       enum.FrontlineStockpileUiKey.Key:
         type: FrontlineStockpileBoundUserInterface
+      enum.StorageComponent.StorageUiKey.Key:
+        type: StorageBoundUserInterface
   - type: TownHall
     territory: Unassigned
     faction: FrontlineFactionOne

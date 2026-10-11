@@ -129,6 +129,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
 
         var mob = _stationSpawning.SpawnPlayerMob(RobustRandom.Pick(spawns), null, profile, null);
         EnsureComp<FrontlinePlayerComponent>(mob);
+        _stationSpawning.EquipStartingGear(mob, new ProtoId<Content.Shared.Roles.StartingGearPrototype>("FrontlinePlayerGear"));
         _mind.TransferTo(mind, mob, ghostCheckOverride: true);
         return true;
     }
@@ -194,6 +195,7 @@ public sealed partial class PersistentWarRuleSystem : GameRuleSystem<PersistentW
                 if (!StillInOldBody() || !ReplacementValid(replacement.Value))
                     return false;
                 _stationSpawning.SpawnPlayerMob(coordinates, null, profile, null, entity: replacement);
+                _stationSpawning.EquipStartingGear(replacement.Value, new ProtoId<Content.Shared.Roles.StartingGearPrototype>("FrontlinePlayerGear"));
                 if (!StillInOldBody() || !ReplacementValid(replacement.Value))
                     return false;
 

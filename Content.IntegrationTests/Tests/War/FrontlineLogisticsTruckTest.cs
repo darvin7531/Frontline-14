@@ -4,7 +4,8 @@ using System.Numerics;
 using Content.IntegrationTests.Tests.Interaction;
 using Content.Server.Destructible;
 using Content.Shared.CCVar;
-using Content.Shared.Containers.ItemSlots;
+using Content.Shared.Storage;
+using Content.Shared.Storage.EntitySystems;
 using Content.Shared.Damage;
 using Content.Shared.Damage.Components;
 using Content.Shared.Damage.Prototypes;
@@ -115,7 +116,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         await AddGravity();
         await SpawnTarget("FrontlineLogisticsTruck");
         var truck = STarget!.Value;
-        var slots = Server.System<ItemSlotsSystem>();
+        var slots = Server.System<SharedStorageSystem>();
         var vehicles = Server.System<VehicleSystem>();
         var cargoNet = await PlaceInHands("FrontlineFactoryWeaponCrate");
         var cargo = ToServer(cargoNet);
@@ -125,10 +126,11 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
 
         await Server.WaitPost(() =>
         {
-            var component = SEntMan.GetComponent<ItemSlotsComponent>(truck);
-            Assert.That(component.Slots.Count, Is.EqualTo(10));
-            Assert.That(component.Slots.Values.All(slot => !slot.HasItem && !slot.Swap), Is.True);
-            slotId = component.Slots.OrderBy(pair => pair.Value.Priority).First().Key;
+            var component = SEntMan.GetComponent<StorageComponent>(truck);
+            Assert.That(component.Container.ContainedEntities, Is.Empty);
+            Assert.That(component.Container.ContainedEntities.Count == 0, Is.True);
+            slotId = "cargo01";
+            slots.OpenStorageUI(truck, SPlayer);
             var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo);
             product = crate.Product.Id;
             amount = crate.Amount;
@@ -140,12 +142,13 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         // Unlike the trusted API test below, both cargo actions originate on the connected client.
         // Native Use reaches ItemSlots' InteractUsing handler before AfterInteract; the
         // InteractionTest.InteractUsing helper calls server UserInteraction directly, so do not use it here.
-        await PressKey(EngineKeyFunctions.Use, cursorEntity: Target);
+        await Client.WaitPost(() => CEntMan.RaisePredictiveEvent(new StorageInsertItemIntoLocationEvent(
+            cargoNet, Target!.Value, new ItemStorageLocation(Angle.Zero, Vector2i.Zero))));
         await RunTicks(3);
         await Server.WaitAssertion(() =>
         {
-            Assert.That(slots.GetItemOrNull(truck, slotId), Is.EqualTo(cargo));
-            Assert.That(SEntMan.GetComponent<ItemSlotsComponent>(truck).Slots.Values.Count(slot => slot.HasItem), Is.EqualTo(1));
+            Assert.That(SEntMan.GetComponent<FrontlineVehicleCargoComponent>(truck).CargoIds.SingleOrDefault(pair => pair.Value == slotId).Key, Is.EqualTo(cargo));
+            Assert.That(SEntMan.GetComponent<StorageComponent>(truck).Container.ContainedEntities.Count, Is.EqualTo(1));
             Assert.That(SEntMan.GetComponent<TransformComponent>(cargo).ParentUid, Is.EqualTo(truck));
             Assert.That(HandSys.GetActiveItem((SPlayer, Hands)), Is.Null);
             AssertCargoMetadata();
@@ -153,27 +156,12 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         });
         await Pair.RunUntilSynced();
 
-        await Client.WaitPost(() =>
-        {
-            var slot = CEntMan.GetComponent<ItemSlotsComponent>(CTarget!.Value).Slots[slotId];
-            Assert.That(CEntMan.GetNetEntity(slot.Item), Is.EqualTo(cargoNet));
-            // With no slot text override, ItemSlots uses the contained entity's localized name.
-            var text = slot.EjectVerbText != null ? Loc.GetString(slot.EjectVerbText)
-                : slot.Name != string.Empty ? Loc.GetString(slot.Name)
-                : CEntMan.GetComponent<MetaDataComponent>(ToClient(cargoNet)).EntityName;
-            var verbs = Client.System<Content.Client.Verbs.VerbSystem>();
-            var eject = verbs.GetLocalVerbs(CTarget.Value, CPlayer, typeof(AlternativeVerb))
-                .Single(verb => verb.Text == text && verb.IconEntity == cargoNet && verb.Priority == slot.Priority
-                    && verb.Category?.Text == VerbCategory.Eject.Text);
-            Assert.That(eject.ClientExclusive, Is.False);
-            Assert.That(eject.Disabled, Is.False);
-            verbs.ExecuteVerb(CTarget.Value, eject);
-        });
+        await Client.WaitPost(() => CEntMan.RaisePredictiveEvent(new StorageInteractWithItemEvent(cargoNet, Target!.Value)));
         await RunTicks(3);
         await Server.WaitAssertion(() =>
         {
-            Assert.That(SEntMan.GetComponent<ItemSlotsComponent>(truck).Slots.Values.All(slot => !slot.HasItem), Is.True);
-            Assert.That(slots.GetItemOrNull(truck, slotId), Is.Null);
+            Assert.That(SEntMan.GetComponent<StorageComponent>(truck).Container.ContainedEntities.Count == 0, Is.True);
+            Assert.That(SEntMan.GetComponent<FrontlineVehicleCargoComponent>(truck).CargoIds, Is.Empty);
             Assert.That(SEntMan.EntityExists(cargo), Is.True);
             // TryEjectToHands uses PickupOrDrop: this unseated player has an empty active hand.
             Assert.That(HandSys.GetActiveItem((SPlayer, Hands)), Is.EqualTo(cargo));
@@ -208,7 +196,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         await AddGravity();
         await SpawnTarget("FrontlineLogisticsTruck");
         var truck = STarget!.Value;
-        var slots = Server.System<ItemSlotsSystem>();
+        var slots = Server.System<SharedStorageSystem>();
         var vehicles = Server.System<VehicleSystem>();
         var cargo = new EntityUid[10];
         var products = new string[9];
@@ -227,10 +215,10 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         // Trusted server ItemSlots APIs characterize physical cargo, not client load/unload requests.
         await Server.WaitPost(() =>
         {
-            var component = SEntMan.GetComponent<ItemSlotsComponent>(truck);
-            slotIds = component.Slots.Keys.OrderBy(id => id).ToArray();
+            var component = SEntMan.GetComponent<StorageComponent>(truck);
+            slotIds = Enumerable.Range(1, 10).Select(i => $"cargo{i:00}").ToArray();
             Assert.That(slotIds.Length, Is.EqualTo(10));
-            Assert.That(component.Slots.Values.All(slot => !slot.HasItem && !slot.Swap), Is.True);
+            Assert.That(component.Container.ContainedEntities.Count == 0, Is.True);
             var movement = SEntMan.GetComponent<MovementSpeedModifierComponent>(truck);
             Assert.That(movement.BaseWalkSpeed, Is.EqualTo(3));
             Assert.That(movement.BaseSprintSpeed, Is.EqualTo(4.5f));
@@ -252,14 +240,14 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
                     Stack.SetCount((cargo[i], null), 17);
 
                 Assert.That(HandSys.TryPickupAnyHand(SPlayer, cargo[i]), Is.True);
-                Assert.That(slots.TryInsertFromHand(truck, component.Slots[slotIds[i]], (SPlayer, Hands)), Is.True);
+                Assert.That(slots.Insert(truck, cargo[i], out _, stackAutomatically: false), Is.True);
                 Assert.That(HandSys.IsHolding(SPlayer, cargo[i]), Is.False);
-                Assert.That(slots.GetItemOrNull(truck, slotIds[i]), Is.EqualTo(cargo[i]));
+                Assert.That(SEntMan.GetComponent<FrontlineVehicleCargoComponent>(truck).CargoIds.Single(pair => pair.Value == slotIds[i]).Key, Is.EqualTo(cargo[i]));
             }
 
             overflow = SEntMan.SpawnEntity("FrontlineSupplyCrate", ToServer(PlayerCoords));
             Assert.That(HandSys.TryPickupAnyHand(SPlayer, overflow), Is.True);
-            Assert.That(slots.TryInsertEmpty(truck, overflow, SPlayer), Is.False);
+            Assert.That(slots.Insert(truck, overflow, out _, stackAutomatically: false), Is.False);
             Assert.That(HandSys.IsHolding(SPlayer, overflow), Is.True, "Full cargo must not consume the held crate.");
             Assert.That(HandSys.TryDrop(SPlayer, overflow), Is.True);
             Assert.That(vehicles.TryGetOperatorContainer(truck, out var seat), Is.True);
@@ -316,15 +304,13 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
             Assert.That(vehicles.TryExit(truck), Is.True);
             for (var i = 0; i < cargo.Length; i++)
             {
-                Assert.That(slots.TryEject(truck, slotIds[i], null, out var unloaded), Is.True);
-                Assert.That(unloaded, Is.EqualTo(cargo[i]));
-                Assert.That(slots.TryEject(truck, slotIds[i], null, out _), Is.False);
+                Assert.That(Server.System<SharedContainerSystem>().Remove(cargo[i], SEntMan.GetComponent<StorageComponent>(truck).Container), Is.True);
             }
         });
         await RunTicks(3);
         await Server.WaitAssertion(() =>
         {
-            Assert.That(SEntMan.GetComponent<ItemSlotsComponent>(truck).Slots.Values.All(slot => !slot.HasItem), Is.True);
+            Assert.That(SEntMan.GetComponent<StorageComponent>(truck).Container.ContainedEntities.Count == 0, Is.True);
             Assert.That(SEntMan.GetComponent<VehicleComponent>(truck).Operator, Is.Null);
             Assert.That(SEntMan.EntityExists(SPlayer), Is.True);
             Assert.That(SEntMan.EntityExists(overflow), Is.True);
@@ -340,7 +326,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         {
             for (var i = 0; i < cargo.Length; i++)
             {
-                Assert.That(slots.GetItemOrNull(truck, slotIds[i]), Is.EqualTo(cargo[i]));
+                Assert.That(SEntMan.GetComponent<FrontlineVehicleCargoComponent>(truck).CargoIds.Single(pair => pair.Value == slotIds[i]).Key, Is.EqualTo(cargo[i]));
                 Assert.That(SEntMan.GetComponent<TransformComponent>(cargo[i]).ParentUid, Is.EqualTo(truck));
             }
             AssertMetadata();
@@ -382,7 +368,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         await AddGravity();
         await SpawnTarget("FrontlineLogisticsTruck");
         var truck = STarget!.Value;
-        var slots = Server.System<ItemSlotsSystem>();
+        var slots = Server.System<SharedStorageSystem>();
         var vehicles = Server.System<VehicleSystem>();
         EntityUid cargo = default;
         string slotId = default!;
@@ -390,14 +376,14 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         int amount = default;
         await Server.WaitPost(() =>
         {
-            var component = SEntMan.GetComponent<ItemSlotsComponent>(truck);
-            slotId = component.Slots.Keys.OrderBy(id => id).First();
+            var component = SEntMan.GetComponent<StorageComponent>(truck);
+            slotId = "cargo01";
             cargo = SEntMan.SpawnEntity("FrontlineFactoryWeaponCrate", ToServer(PlayerCoords));
             var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo);
             product = crate.Product.Id;
             amount = crate.Amount;
             Assert.That(HandSys.TryPickupAnyHand(SPlayer, cargo), Is.True);
-            Assert.That(slots.TryInsertFromHand(truck, component.Slots[slotId], (SPlayer, Hands)), Is.True);
+            Assert.That(slots.Insert(truck, cargo, out _, stackAutomatically: false), Is.True);
         });
         await Pair.RunUntilSynced();
         await Client.WaitPost(() =>
@@ -508,7 +494,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
             Assert.That(vehicles.TryGetOperatorContainer(truck, out var seat), Is.True);
             Assert.That(seat!.ContainedEntities, Is.EqualTo(new[] { SPlayer }));
             Assert.That(SEntMan.GetComponent<MobStateComponent>(SPlayer).CurrentState, Is.EqualTo(MobState.Alive));
-            Assert.That(slots.GetItemOrNull(truck, slotId), Is.EqualTo(cargo));
+            Assert.That(SEntMan.GetComponent<FrontlineVehicleCargoComponent>(truck).CargoIds.SingleOrDefault(pair => pair.Value == slotId).Key, Is.EqualTo(cargo));
             Assert.That(SEntMan.GetComponent<TransformComponent>(cargo).ParentUid, Is.EqualTo(truck));
             var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo);
             Assert.That(crate.Product.Id, Is.EqualTo(product));
@@ -525,7 +511,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         await SpawnTarget("FrontlineLogisticsTruck");
         var truck = STarget!.Value;
         var driver = SPlayer;
-        var slots = Server.System<ItemSlotsSystem>();
+        var slots = Server.System<SharedStorageSystem>();
         var vehicles = Server.System<VehicleSystem>();
         var containers = Server.System<SharedContainerSystem>();
         var damageable = Server.System<DamageableSystem>();
@@ -555,10 +541,10 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
         // Reuse the trusted cargo setup; driver entry below still originates on the real client.
         await Server.WaitPost(() =>
         {
-            var component = SEntMan.GetComponent<ItemSlotsComponent>(truck);
-            slotIds = component.Slots.Keys.OrderBy(id => id).ToArray();
+            var component = SEntMan.GetComponent<StorageComponent>(truck);
+            slotIds = Enumerable.Range(1, 10).Select(i => $"cargo{i:00}").ToArray();
             Assert.That(slotIds.Length, Is.EqualTo(cargo.Length));
-            Assert.That(component.Slots.Values.All(slot => !slot.HasItem && !slot.Swap && slot.EjectOnBreak), Is.True);
+            Assert.That(component.Container.ContainedEntities.Count == 0, Is.True);
             for (var i = 0; i < cargo.Length; i++)
             {
                 cargo[i] = SEntMan.SpawnEntity(i < products.Length ? crateIds[i % crateIds.Length] : "BasicMaterials1",
@@ -573,7 +559,7 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
                     Stack.SetCount((cargo[i], null), 17);
 
                 Assert.That(HandSys.TryPickupAnyHand(driver, cargo[i]), Is.True);
-                Assert.That(slots.TryInsertFromHand(truck, component.Slots[slotIds[i]], (driver, Hands)), Is.True);
+                Assert.That(slots.Insert(truck, cargo[i], out _, stackAutomatically: false), Is.True);
                 Assert.That(HandSys.IsHolding(driver, cargo[i]), Is.False);
             }
         });
@@ -644,11 +630,15 @@ public sealed class FrontlineLogisticsTruckTest : InteractionTest
                 Assert.That(SEntMan.IsQueuedForDeletion(cargo[i]), Is.False);
                 Assert.That(SEntMan.GetComponent<MetaDataComponent>(cargo[i]).EntityPrototype?.ID,
                     Is.EqualTo(i < products.Length ? crateIds[i % crateIds.Length] : "BasicMaterials1"));
-                Assert.That(SEntMan.GetComponent<TransformComponent>(cargo[i]).ParentUid, Is.EqualTo(loaded ? truck : MapData.Grid.Owner));
+                if (loaded) Assert.That(SEntMan.GetComponent<TransformComponent>(cargo[i]).ParentUid, Is.EqualTo(truck));
                 if (loaded)
-                    Assert.That(slots.GetItemOrNull(truck, slotIds[i]), Is.EqualTo(cargo[i]));
+                    Assert.That(SEntMan.GetComponent<FrontlineVehicleCargoComponent>(truck).CargoIds.Single(pair => pair.Value == slotIds[i]).Key, Is.EqualTo(cargo[i]));
                 else
-                    Assert.That(containers.TryGetContainingContainer(cargo[i], out _), Is.False, "Cargo must be ejected onto the floor.");
+                {
+                    Assert.That(containers.TryGetContainingContainer(cargo[i], out var retained), Is.True);
+                    Assert.That(SEntMan.GetComponent<MetaDataComponent>(retained!.Owner).EntityPrototype?.ID, Is.EqualTo("FrontlineVehicleLootBag"));
+                    Assert.That(SEntMan.HasComponent<ItemComponent>(retained.Owner), Is.False);
+                }
                 if (i < products.Length)
                 {
                     var crate = SEntMan.GetComponent<FrontlineSupplyCrateComponent>(cargo[i]);

@@ -44,6 +44,7 @@ public sealed partial class FrontlineProductionSystem : EntitySystem
     public override void Initialize()
     {
         base.Initialize();
+        InitializeStorage();
         EntityManager.BeforeEntityFlush += OnBeforeFlush;
         EntityManager.AfterEntityFlush += OnAfterFlush;
     }
@@ -56,7 +57,12 @@ public sealed partial class FrontlineProductionSystem : EntitySystem
     }
 
     private void OnBeforeFlush() => Flushing = true;
-    private void OnAfterFlush() => Flushing = false;
+    private void OnAfterFlush()
+    {
+        Flushing = false;
+        _nativeTransfers.Clear();
+        _storageViews.Clear();
+    }
 
     public bool CanAccess(EntityUid output, string? owner, DateTimeOffset? now = null)
     {
