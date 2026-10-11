@@ -1,6 +1,6 @@
 - type: entity
   id: FrontlineProductionStorage
-  categories: [HideSpawnMenu]
+  categories: [HideSpawnMenu, Frontline]
   components:
   - type: Storage
     grid:

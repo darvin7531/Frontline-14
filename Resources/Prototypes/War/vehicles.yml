@@ -127,6 +127,7 @@
 # No Item component: native hands cannot pick up the entire cargo bag.
 - type: entity
   id: FrontlineVehicleLootBag
+  categories: [ Frontline ]
   name: vehicle cargo
   description: Salvaged vehicle cargo. Open it to recover individual items.
   components:

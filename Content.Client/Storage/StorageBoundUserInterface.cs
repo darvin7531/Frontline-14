@@ -22,6 +22,9 @@ public sealed class StorageBoundUserInterface : BoundUserInterface
 
     protected override void Open()
     {
+        if (IsOpened)
+            return;
+
         base.Open();
 
         _window = IoCManager.Resolve<IUserInterfaceManager>()
