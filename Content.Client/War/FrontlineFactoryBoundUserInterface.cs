@@ -92,9 +92,9 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
     {
         IoCManager.InjectDependencies(this);
         Title = Loc.GetString("frontline-factory-title");
-        MinSize = new Vector2(600, 400);
+        MinSize = new Vector2(700, 400);
         SetSize = new Vector2(740, 480);
-        var columns = new FrontlineProductionColumns();
+        var columns = new TabContainer { HorizontalExpand = true, VerticalExpand = true };
         var left = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-input-heading"));
         var hint = new RichTextLabel();
         hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));
@@ -102,13 +102,14 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         _inputs = new FrontlineNativeStoragePanel(null, false) { Name = "Inputs" };
         left.AddChild(_inputs);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { left } });
+        columns.SetTabTitle(0, Loc.GetString("frontline-factory-input-heading"));
         var center = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-recipes-heading"));
         _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty"), true, mode: FrontlineItemGridMode.Recipes) { Name = "Recipes" };
         _recipes.SelectionChanged += UpdateSelection;
         center.AddChild(_recipes);
         var detailsScroll = FrontlineItemGrid.CreateScroll(_details);
-        detailsScroll.MinHeight = 120;
-        detailsScroll.MaxHeight = 160;
+        detailsScroll.MinHeight = 64;
+        detailsScroll.MaxHeight = 120;
         detailsScroll.VerticalExpand = false;
         center.AddChild(detailsScroll);
         _produce.Text = Loc.GetString("frontline-ui-produce");
@@ -119,6 +120,7 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         };
         center.AddChild(_produce);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, SizeFlagsStretchRatio = 1.4f, Children = { center } });
+        columns.SetTabTitle(1, Loc.GetString("frontline-factory-recipes-heading"));
         var right = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-output-heading"));
         _outputs = new FrontlineNativeStoragePanel(null, true) { Name = "Outputs" };
         right.AddChild(_outputs);
@@ -126,6 +128,7 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         right.AddChild(new Label { Text = Loc.GetString("frontline-factory-queue-heading"), StyleClasses = { "LabelHeading" } });
         right.AddChild(FrontlineItemGrid.CreateScroll(_jobs));
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { right } });
+        columns.SetTabTitle(2, Loc.GetString("frontline-factory-output-heading"));
         var mode = new BoxContainer();
         mode.AddChild(_public);
         mode.AddChild(_personal);
