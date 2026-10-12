@@ -26,6 +26,15 @@ public sealed class FrontlineStockpileBuiTest : InteractionTest
             SComp<TownHallRuinComponent>(STarget.Value).TerritoryId = "stockpile-repair";
             SComp<TownHallRuinComponent>(STarget.Value).RequiredBasicMaterials = 1;
         });
+        await Server.WaitPost(() =>
+        {
+            Robust.Shared.Prototypes.ProtoId<Content.Shared.Damage.Prototypes.DamageTypePrototype> blunt = "Blunt";
+            Server.System<Content.Shared.Damage.Systems.DamageableSystem>().TryChangeDamage(STarget!.Value,
+                new Content.Shared.Damage.DamageSpecifier(Server.ResolveDependency<Robust.Shared.Prototypes.IPrototypeManager>().Index(blunt), 10100),
+                ignoreResistances: true, ignoreGlobalModifiers: true);
+        });
+        await RunTicks(3);
+        await Server.WaitAssertion(() => Assert.That(SEntMan.EntityExists(STarget!.Value), Is.True));
         await InteractUsing("BasicMaterials1");
         await Pair.RunSeconds(2.5f);
         await Server.WaitPost(() =>

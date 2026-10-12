@@ -105,7 +105,6 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
     private void OnBeforeUiOpen(Entity<FrontlineFactoryComponent> factory, ref BeforeActivatableUIOpenEvent args)
     {
         UpdateUi(factory);
-        _production.OpenStorage(factory, args.User);
     }
 
     private void OnModeMessage(Entity<FrontlineFactoryComponent> factory, ref FrontlineFactoryModeMessage args)

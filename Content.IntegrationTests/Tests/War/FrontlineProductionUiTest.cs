@@ -234,6 +234,105 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         Assert.That(Pair.ClientLogHandler.FailingLogs, Is.Empty);
     }
 
+    [TestCase("FrontlineFactory", "FrontlineFactorySupplyCrate", "BasicMaterials", 10)]
+    [TestCase("FrontlineRefinery", "FrontlineSteel", "FrontlineRawIron", 5)]
+    public async Task NativeUiOpenLoadsHeldInputProducesAndReopensRealGrids(string prototype, string recipe, string material, int amount)
+    {
+        await SpawnTarget(prototype);
+        var machine = STarget!.Value;
+        var key = prototype == "FrontlineFactory" ? (Enum) FrontlineFactoryUiKey.Key : FrontlineRefineryUiKey.Key;
+        await Server.WaitPost(() => Assert.That(SUiSys.TryOpenUi(machine, key, SPlayer), Is.True));
+        await Pair.RunUntilSynced();
+        BaseWindow window = default!;
+        await Client.WaitAssertion(() =>
+        {
+            window = prototype == "FrontlineFactory" ? GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>();
+            foreach (var name in new[] { "Inputs", "Outputs" })
+            {
+                var panel = GetControlFromChildren<FrontlineNativeStoragePanel>(p => p.Name == name, window);
+                var native = Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().SingleOrDefault();
+                Assert.That(native, Is.Not.Null, "Every native parent BUI opening must open its real storage children.");
+                Assert.That(native!.VisibleInTree, Is.True);
+                Assert.That(native.Size.X, Is.GreaterThan(0));
+                Assert.That(native.Size.X, Is.LessThanOrEqualTo(panel.Size.X + 1));
+            }
+        });
+        if (prototype == "FrontlineRefinery")
+        {
+            var machineNet = Target!.Value;
+            await Server.WaitPost(() =>
+            {
+                SEntMan.AddComponent<FrontlinePlayerComponent>(SPlayer);
+                HandSys.AddHand(SPlayer, "hand_left", Content.Shared.Hands.Components.HandLocation.Left);
+                Target = SEntMan.GetNetEntity(SEntMan.SpawnEntity("FrontlineIronResourceNode", MapData.GridCoords.Offset(new Vector2(0.5f, 0.5f))));
+            });
+            await Pair.RunUntilSynced();
+            await InteractUsing("Pickaxe");
+            await SwapHands();
+            await Server.WaitAssertion(() =>
+            {
+                var ore = HandSys.GetActiveItem(SPlayer)!.Value;
+                Assert.That(SComp<Content.Shared.Stacks.StackComponent>(ore).StackTypeId.Id, Is.EqualTo("FrontlineRawIron"));
+                Assert.That(SComp<Content.Shared.Stacks.StackComponent>(ore).Count, Is.EqualTo(amount));
+                Assert.That(SComp<FrontlineResourceNodeComponent>(STarget!.Value).RemainingYield, Is.EqualTo(15));
+            });
+            Target = machineNet;
+            await Interact();
+        }
+        else
+            await InteractUsing(material + "1", quantity: amount);
+        await Pair.RunUntilSynced();
+        await Client.WaitAssertion(() =>
+        {
+            var panel = GetControlFromChildren<FrontlineNativeStoragePanel>(p => p.Name == "Inputs", window);
+            var piece = Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().Single();
+            Assert.That(piece.VisibleInTree, Is.True);
+            Assert.That(CEntMan.GetComponent<Content.Shared.Stacks.StackComponent>(piece.Entity).Count, Is.EqualTo(amount));
+        });
+        await ClickControl(GetControlFromChildren<Button>(b => b.Name == "Personal", window));
+        await ClickControl(GetControlFromChildren<ContainerButton>(b => b.Name == recipe, window));
+        await ClickControl(GetControlFromChildren<Button>(b => b.Name == "Produce", window));
+        await Pair.RunSeconds(11);
+        await Pair.RunUntilSynced();
+        Robust.Shared.GameObjects.NetEntity output = default;
+        await Client.WaitAssertion(() =>
+        {
+            var panel = GetControlFromChildren<FrontlineNativeStoragePanel>(p => p.Name == "Outputs", window);
+            var piece = Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().Single();
+            Assert.That(piece.VisibleInTree, Is.True);
+            Assert.That(piece.Size.X, Is.GreaterThan(0));
+            if (prototype == "FrontlineRefinery")
+            {
+                var stack = CEntMan.GetComponent<Content.Shared.Stacks.StackComponent>(piece.Entity);
+                Assert.That(stack.StackTypeId.Id, Is.EqualTo("BasicMaterials"));
+                Assert.That(stack.Count, Is.EqualTo(5));
+            }
+            output = CEntMan.GetNetEntity(piece.Entity);
+        });
+        await ClickControl(GetControlFromChildren<Button>(b => b.Name == "Public", window));
+        await Pair.RunUntilSynced();
+        await Client.WaitAssertion(() => Assert.That(Descendants(GetControlFromChildren<FrontlineNativeStoragePanel>(p => p.Name == "Outputs", window))
+            .OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>(), Is.Empty));
+        await CloseBui(key);
+        await Server.WaitPost(() => Assert.That(SUiSys.TryOpenUi(machine, key, SPlayer), Is.True));
+        await Pair.RunUntilSynced();
+        await Client.WaitPost(() => window = prototype == "FrontlineFactory" ? GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>());
+        await ClickControl(GetControlFromChildren<Button>(b => b.Name == "Personal", window));
+        await Pair.RunUntilSynced();
+        Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece ready = default!;
+        await Client.WaitAssertion(() =>
+        {
+            ready = Descendants(GetControlFromChildren<FrontlineNativeStoragePanel>(p => p.Name == "Outputs", window))
+                .OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().Single();
+            Assert.That(CEntMan.GetNetEntity(ready.Entity), Is.EqualTo(output));
+            Assert.That(ready.VisibleInTree, Is.True);
+        });
+        await ClickControl(ready, Content.Shared.Input.ContentKeyFunctions.MoveStoredItem);
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() => Assert.That(SEntMan.GetNetEntity(HandSys.GetActiveItem(SPlayer)!.Value), Is.EqualTo(output)));
+        await CloseBui(key);
+    }
+
     [TestCase("FrontlineFactory")]
     [TestCase("FrontlineRefinery")]
     public async Task ProductionWindowExposesLocalPublicPersonalMode(string prototype)

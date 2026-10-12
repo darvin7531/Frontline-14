@@ -62,6 +62,8 @@ public sealed partial class FrontlineProductionSystem
         SubscribeLocalEvent<FrontlineProductionStorageComponent, BoundUIOpenedEvent>(OnStorageOpened);
         SubscribeLocalEvent<FrontlineProductionStorageComponent, BoundUIClosedEvent>(OnStorageViewClosed);
         SubscribeLocalEvent<FrontlineProductionStorageComponent, FrontlineProductionStorageViewRequestMessage>(OnStorageViewRequest);
+        SubscribeLocalEvent<FrontlineFactoryComponent, BoundUIOpenedEvent>(OnFactoryStorageOpened);
+        SubscribeLocalEvent<FrontlineRefineryComponent, BoundUIOpenedEvent>(OnRefineryStorageOpened);
         SubscribeLocalEvent<FrontlineFactoryComponent, BoundUIClosedEvent>(OnFactoryStorageClosed);
         SubscribeLocalEvent<FrontlineRefineryComponent, BoundUIClosedEvent>(OnRefineryStorageClosed);
         SubscribeLocalEvent<FrontlineProductionStorageComponent, StorageInteractAttemptEvent>(OnStorageAccess);
@@ -70,6 +72,16 @@ public sealed partial class FrontlineProductionSystem
         SubscribeLocalEvent<FrontlineProductionStorageComponent, StoragePlayerTransferredEvent>(OnStorageTransferred);
         SubscribeLocalEvent<FrontlineProductionStorageComponent, EntInsertedIntoContainerMessage>(OnStorageInserted);
         SubscribeLocalEvent<FrontlineProductionStorageComponent, EntRemovedFromContainerMessage>(OnStorageRemoved);
+    }
+
+    private void OnFactoryStorageOpened(Entity<FrontlineFactoryComponent> ent, ref BoundUIOpenedEvent args)
+    {
+        if (args.UiKey is FrontlineFactoryUiKey) OpenStorage(ent, args.Actor);
+    }
+
+    private void OnRefineryStorageOpened(Entity<FrontlineRefineryComponent> ent, ref BoundUIOpenedEvent args)
+    {
+        if (args.UiKey is FrontlineRefineryUiKey) OpenStorage(ent, args.Actor);
     }
 
     private void OnFactoryStorageClosed(Entity<FrontlineFactoryComponent> ent, ref BoundUIClosedEvent args)
