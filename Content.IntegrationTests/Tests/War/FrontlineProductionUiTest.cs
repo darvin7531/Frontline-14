@@ -222,6 +222,8 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             debug.Append(string.Join("; ", Descendants(window).OfType<FrontlineNativeStoragePanel>().Select(panel => $"{panel.Name}:machine={panel.Machine},size={panel.Size},visible={panel.VisibleInTree}")));
             Assert.That(Descendants(window).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Count(),
                 Is.EqualTo(prototype == "TownHallCoreFactionOne" ? 1 : 2), debug.ToString());
+            foreach (var native in Descendants(window).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>())
+                AssertNativeGridRenderable(native);
             Assert.That(Descendants(window).OfType<Button>().Any(button => button.Name is "Deposit" or "Withdraw" or "Eject" or "TakeOutput"), Is.False);
         });
         await CloseBui(prototype switch
@@ -253,6 +255,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                 var native = Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().SingleOrDefault();
                 Assert.That(native, Is.Not.Null, "Every native parent BUI opening must open its real storage children.");
                 Assert.That(native!.VisibleInTree, Is.True);
+                AssertNativeGridRenderable(native);
                 Assert.That(native.Size.X, Is.GreaterThan(0));
                 Assert.That(native.Size.X, Is.LessThanOrEqualTo(panel.Size.X + 1));
             }
@@ -288,6 +291,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             var piece = Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().Single();
             Assert.That(piece.VisibleInTree, Is.True);
             Assert.That(CEntMan.GetComponent<Content.Shared.Stacks.StackComponent>(piece.Entity).Count, Is.EqualTo(amount));
+            AssertNativeGridRenderable(Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Single());
         });
         await ClickControl(GetControlFromChildren<Button>(b => b.Name == "Personal", window));
         await ClickControl(GetControlFromChildren<ContainerButton>(b => b.Name == recipe, window));
@@ -308,6 +312,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                 Assert.That(stack.Count, Is.EqualTo(5));
             }
             output = CEntMan.GetNetEntity(piece.Entity);
+            AssertNativeGridRenderable(Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Single());
         });
         await ClickControl(GetControlFromChildren<Button>(b => b.Name == "Public", window));
         await Pair.RunUntilSynced();
@@ -326,11 +331,38 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                 .OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().Single();
             Assert.That(CEntMan.GetNetEntity(ready.Entity), Is.EqualTo(output));
             Assert.That(ready.VisibleInTree, Is.True);
+            AssertNativeGridRenderable(Descendants(GetControlFromChildren<FrontlineNativeStoragePanel>(p => p.Name == "Outputs", window))
+                .OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Single());
         });
         await ClickControl(ready, Content.Shared.Input.ContentKeyFunctions.MoveStoredItem);
         await Pair.RunUntilSynced();
         await Server.WaitAssertion(() => Assert.That(SEntMan.GetNetEntity(HandSys.GetActiveItem(SPlayer)!.Value), Is.EqualTo(output)));
         await CloseBui(key);
+    }
+
+    internal static void AssertNativeGridRenderable(Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow native)
+    {
+        var scroll = Descendants(native).OfType<ScrollContainer>().Single();
+        var background = Descendants(native).OfType<GridContainer>().Single(g => g.Name == "BackgroundGrid");
+        var cell = background.Children.First();
+        Assert.That(cell.VisibleInTree, Is.True);
+        Assert.That(cell.Size.X, Is.GreaterThan(0));
+        Assert.That(cell.Size.Y, Is.GreaterThan(0));
+        // A sized item behind a zero-height clipping viewport is still invisible.
+        Assert.That(scroll.Size.X, Is.GreaterThanOrEqualTo(cell.Size.X));
+        Assert.That(scroll.Size.Y, Is.GreaterThanOrEqualTo(cell.Size.Y));
+        Assert.That(cell.GlobalPosition.X, Is.GreaterThanOrEqualTo(scroll.GlobalPosition.X));
+        Assert.That(cell.GlobalPosition.Y, Is.GreaterThanOrEqualTo(scroll.GlobalPosition.Y));
+        Assert.That(cell.GlobalPosition.X + cell.Size.X, Is.LessThanOrEqualTo(scroll.GlobalPosition.X + scroll.Size.X));
+        Assert.That(cell.GlobalPosition.Y + cell.Size.Y, Is.LessThanOrEqualTo(scroll.GlobalPosition.Y + scroll.Size.Y));
+        for (var parent = scroll.Parent; parent != null; parent = parent.Parent)
+        {
+            if (!parent.RectClipContent) continue;
+            Assert.That(cell.GlobalPosition.X, Is.GreaterThanOrEqualTo(parent.GlobalPosition.X));
+            Assert.That(cell.GlobalPosition.Y, Is.GreaterThanOrEqualTo(parent.GlobalPosition.Y));
+            Assert.That(cell.GlobalPosition.X + cell.Size.X, Is.LessThanOrEqualTo(parent.GlobalPosition.X + parent.Size.X));
+            Assert.That(cell.GlobalPosition.Y + cell.Size.Y, Is.LessThanOrEqualTo(parent.GlobalPosition.Y + parent.Size.Y));
+        }
     }
 
     [TestCase("FrontlineFactory")]
