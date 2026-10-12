@@ -57,12 +57,14 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
     private void OnStartup(Entity<FrontlineFactoryComponent> factory, ref ComponentStartup args)
     {
-        factory.Comp.InputContainer = _production.CreateStorage(factory, FrontlineFactoryComponent.InputContainerId, false);
-        factory.Comp.OutputContainer = _production.CreateStorage(factory, FrontlineFactoryComponent.OutputContainerId, true);
+        factory.Comp.InputContainer = _containers.EnsureContainer<Container>(factory, FrontlineFactoryComponent.InputContainerId);
+        factory.Comp.OutputContainer = _containers.EnsureContainer<Container>(factory, FrontlineFactoryComponent.OutputContainerId);
     }
 
     private void OnMapInit(Entity<FrontlineFactoryComponent> factory, ref MapInitEvent args)
     {
+        factory.Comp.InputContainer = _production.CreateStorage(factory, FrontlineFactoryComponent.InputContainerId, false);
+        factory.Comp.OutputContainer = _production.CreateStorage(factory, FrontlineFactoryComponent.OutputContainerId, true);
         if (factory.Comp.Jobs.Count > 0)
             _active.Add(factory);
     }

@@ -57,12 +57,14 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
 
     private void OnStartup(Entity<FrontlineRefineryComponent> refinery, ref ComponentStartup args)
     {
-        refinery.Comp.InputContainer = _production.CreateStorage(refinery, FrontlineRefineryComponent.InputContainerId, false);
-        refinery.Comp.OutputContainer = _production.CreateStorage(refinery, FrontlineRefineryComponent.OutputContainerId, true);
+        refinery.Comp.InputContainer = _containers.EnsureContainer<Container>(refinery, FrontlineRefineryComponent.InputContainerId);
+        refinery.Comp.OutputContainer = _containers.EnsureContainer<Container>(refinery, FrontlineRefineryComponent.OutputContainerId);
     }
 
     private void OnMapInit(Entity<FrontlineRefineryComponent> refinery, ref MapInitEvent args)
     {
+        refinery.Comp.InputContainer = _production.CreateStorage(refinery, FrontlineRefineryComponent.InputContainerId, false);
+        refinery.Comp.OutputContainer = _production.CreateStorage(refinery, FrontlineRefineryComponent.OutputContainerId, true);
         if (refinery.Comp.Jobs.Count > 0)
             _active.Add(refinery);
     }
