@@ -40,8 +40,8 @@ public sealed partial class FrontlineStockpileWindow : DefaultWindow
     {
         IoCManager.InjectDependencies(this);
         Title = Loc.GetString("frontline-stockpile-title");
-        MinSize = new Vector2(360, 320);
-        SetSize = new Vector2(480, 480);
+        MinSize = new Vector2(700, 320);
+        SetSize = new Vector2(740, 480);
         var contents = new BoxContainer { Orientation = BoxContainer.LayoutOrientation.Vertical, HorizontalExpand = true, VerticalExpand = true, SeparationOverride = 6 };
         contents.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, Children = { _virtual } });
         contents.AddChild(new Label { Text = Loc.GetString("frontline-ui-stockpile-heading"), StyleClasses = { "LabelHeading" } });

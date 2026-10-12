@@ -7,6 +7,7 @@ using Content.Client.War;
 using Content.Server.War;
 using Content.IntegrationTests.Tests.Interaction;
 using Content.Shared.War;
+using Content.Shared.Storage;
 using Robust.Client.UserInterface;
 using Robust.Client.UserInterface.Controls;
 using Robust.Client.UserInterface.CustomControls;
@@ -155,13 +156,21 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             await SpawnTarget(prototype);
             await Interact();
             await Pair.RunUntilSynced();
+            await SelectProductionTab(1);
+            await Client.WaitPost(() =>
+            {
+                BaseWindow window = prototype == "FrontlineFactory" ? GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>();
+                foreach (var name in Descendants(window).OfType<RichTextLabel>().Where(l => l.Name == "ItemName"))
+                    name.SetMessage("Синтез технологического сплава из необработанного технологического материала");
+            });
+            await RunTicks(3);
             await Client.WaitAssertion(() =>
             {
                 BaseWindow window = prototype == "FrontlineFactory" ? GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>();
                 // Exercise CreateWindowCenteredRight and its first state, not a generously resized test window.
                 var panels = Descendants(window).OfType<PanelContainer>().Where(p => p.HasStyleClass("BackgroundDark")).ToArray();
                 Assert.That(panels, Has.Length.EqualTo(3));
-                foreach (var panel in panels)
+                foreach (var panel in panels.Where(p => p.VisibleInTree))
                 {
                     Assert.That(panel.GlobalPosition.X, Is.GreaterThanOrEqualTo(window.GlobalPosition.X));
                     Assert.That(panel.GlobalPosition.X + panel.Size.X, Is.LessThanOrEqualTo(window.GlobalPosition.X + window.Size.X + 1),
@@ -171,12 +180,21 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                             Is.LessThanOrEqualTo(panel.GlobalPosition.X + panel.Size.X + 1),
                             "A clipped panel is not a layout fix: its actual column must fit too.");
                 }
-                for (var i = 1; i < panels.Length; i++)
-                    Assert.That(panels[i].GlobalPosition.X, Is.GreaterThanOrEqualTo(panels[i - 1].GlobalPosition.X + panels[i - 1].Size.X),
-                        "Recipe and output sections must not overlap.");
+                Assert.That(panels.Count(p => p.VisibleInTree), Is.EqualTo(1),
+                    "Native tabs give each full-capacity section the window width without overlapping inventories.");
                 var recipes = GetControlFromChildren<FrontlineItemGrid>(g => g.Name == "Recipes", window);
+                Assert.That(recipes.Scroll.Size.Y, Is.GreaterThanOrEqualTo(64), "The actual first-open recipe list must retain a usable viewport.");
+                var produce = GetControlFromChildren<Button>(b => b.Name == "Produce", window);
+                Assert.That(produce.GlobalPosition.Y + produce.Size.Y, Is.LessThanOrEqualTo(window.GlobalPosition.Y + window.Size.Y));
+                foreach (var name in Descendants(recipes).OfType<RichTextLabel>().Where(l => l.Name == "ItemName"))
+                    Assert.That(name.Size.Y, Is.GreaterThanOrEqualTo(name.DesiredSize.Y - 1), "Complete long names wrap, not clip.");
+                foreach (var hint in Descendants(window).OfType<RichTextLabel>().Where(l => l.VisibleInTree && l.Text?.Contains("Shift") == true))
+                {
+                    Assert.That(hint.Size.Y, Is.GreaterThanOrEqualTo(hint.DesiredSize.Y - 1));
+                    Assert.That(hint.GlobalPosition.Y + hint.Size.Y, Is.LessThanOrEqualTo(produce.GlobalPosition.Y));
+                }
                 var recipe = recipes.Cells.Children.OfType<ContainerButton>().First();
-                var caption = Descendants(recipe).OfType<Label>().Single(l => l.Visible && l.Name != "ItemName");
+                var caption = Descendants(recipe).OfType<RichTextLabel>().Single(l => l.Visible && l.Name != "ItemName");
                 Assert.That(caption.Text!.Contains("Production time:") || caption.Text.Contains("Время производства:"), Is.True,
                     "A bare '5 s' is not an identified production duration.");
                 Assert.That(caption.Text.Contains("Ready") || caption.Text.Contains("Готово"), Is.False,
@@ -194,6 +212,82 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         }
     }
 
+    [TestCase("FrontlineFactory", 1f)]
+    [TestCase("FrontlineFactory", 1.5f)]
+    [TestCase("FrontlineRefinery", 1f)]
+    [TestCase("FrontlineRefinery", 1.5f)]
+    [TestCase("TownHallCoreFactionOne", 1f)]
+    [TestCase("TownHallCoreFactionOne", 1.5f)]
+    public async Task EmbeddedNativeStorageUsesPanelWidthWithoutStandaloneChrome(string prototype, float scale)
+    {
+        var previousScale = Client.CfgMan.GetCVar(CVars.DisplayUIScale);
+        var previousAutoScale = Client.CfgMan.GetCVar(CVars.ResAutoScaleEnabled);
+        var key = prototype switch
+        {
+            "FrontlineFactory" => (Enum) FrontlineFactoryUiKey.Key,
+            "FrontlineRefinery" => FrontlineRefineryUiKey.Key,
+            _ => FrontlineStockpileUiKey.Key
+        };
+        try
+        {
+            await Client.WaitPost(() =>
+            {
+                Client.CfgMan.SetCVar(CVars.ResAutoScaleEnabled, false);
+                Client.CfgMan.SetCVar(CVars.DisplayUIScale, scale);
+            });
+            await SpawnTarget(prototype);
+            for (var opening = 0; opening < (prototype == "TownHallCoreFactionOne" ? 1 : 2); opening++)
+            {
+                if (opening == 0)
+                    await Interact();
+                else
+                    await Server.WaitAssertion(() => Assert.That(SUiSys.TryOpenUi(STarget!.Value, key, SPlayer), Is.True));
+                await Pair.RunUntilSynced();
+                await RunTicks(3);
+                foreach (var section in prototype == "TownHallCoreFactionOne" ? new[] { 0 } : new[] { 0, 2 })
+                {
+                    if (prototype != "TownHallCoreFactionOne") await SelectProductionTab(section);
+                    await Client.WaitAssertion(() =>
+                    {
+                        BaseWindow window = prototype switch
+                        {
+                            "FrontlineFactory" => GetWindow<FrontlineFactoryWindow>(),
+                            "FrontlineRefinery" => GetWindow<FrontlineRefineryWindow>(),
+                            _ => GetWindow<FrontlineStockpileWindow>()
+                        };
+                        Assert.That(window.GlobalPosition.X + window.Size.X, Is.LessThanOrEqualTo(window.Parent!.Size.X + 1));
+                        Assert.That(window.GlobalPosition.Y + window.Size.Y, Is.LessThanOrEqualTo(window.Parent.Size.Y + 1));
+                        foreach (var panel in Descendants(window).OfType<FrontlineNativeStoragePanel>().Where(p => p.VisibleInTree))
+                        {
+                            var native = Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Single();
+                            var scroll = Descendants(native).OfType<ScrollContainer>().Single();
+                            var background = Descendants(native).OfType<GridContainer>().Single(g => g.Name == "BackgroundGrid");
+                            TestContext.Out.WriteLine($"{prototype}/{panel.Name}: panel={panel.Size}, window={native.Size}, viewport={scroll.Size}, grid={background.Size}, cell={background.Children.First().Size}, scale={native.UIScale}");
+                            Assert.That(background.Size.X, Is.LessThanOrEqualTo(scroll.Size.X - 12),
+                                "All native columns must fit with room for the vertical scrollbar; hiding horizontal overflow loses capacity.");
+                            Assert.That(Descendants(native).Single(c => c.Name == "SideBar").VisibleInTree, Is.False,
+                                "Only the owning machine window closes embedded input/output storage.");
+                            Assert.That(Descendants(native).Single(c => c.Name == "StorageLabel").VisibleInTree, Is.False);
+                            Assert.That(scroll.Size.X, Is.EqualTo(panel.Size.X).Within(1),
+                                "Embedded storage uses its allocated panel, not a fixed 172-pixel viewport.");
+                            AssertNativeGridRenderable(native);
+                        }
+                    });
+                }
+                await CloseBui(key);
+                await RunTicks(3);
+            }
+        }
+        finally
+        {
+            await Client.WaitPost(() =>
+            {
+                Client.CfgMan.SetCVar(CVars.DisplayUIScale, previousScale);
+                Client.CfgMan.SetCVar(CVars.ResAutoScaleEnabled, previousAutoScale);
+            });
+        }
+    }
+
     [TestCase("FrontlineFactory")]
     [TestCase("FrontlineRefinery")]
     [TestCase("TownHallCoreFactionOne")]
@@ -202,6 +296,8 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         await SpawnTarget(prototype);
         await Interact();
         await Pair.RunUntilSynced();
+        await SelectProductionTab(2);
+        await SelectProductionTab(0);
         Assert.That(Pair.ClientLogHandler.FailingLogs, Is.Empty);
         await Client.WaitAssertion(() =>
         {
@@ -222,7 +318,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             debug.Append(string.Join("; ", Descendants(window).OfType<FrontlineNativeStoragePanel>().Select(panel => $"{panel.Name}:machine={panel.Machine},size={panel.Size},visible={panel.VisibleInTree}")));
             Assert.That(Descendants(window).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Count(),
                 Is.EqualTo(prototype == "TownHallCoreFactionOne" ? 1 : 2), debug.ToString());
-            foreach (var native in Descendants(window).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>())
+            foreach (var native in Descendants(window).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Where(n => n.VisibleInTree))
                 AssertNativeGridRenderable(native);
             Assert.That(Descendants(window).OfType<Button>().Any(button => button.Name is "Deposit" or "Withdraw" or "Eject" or "TakeOutput"), Is.False);
         });
@@ -245,6 +341,8 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         var key = prototype == "FrontlineFactory" ? (Enum) FrontlineFactoryUiKey.Key : FrontlineRefineryUiKey.Key;
         await Server.WaitPost(() => Assert.That(SUiSys.TryOpenUi(machine, key, SPlayer), Is.True));
         await Pair.RunUntilSynced();
+        await SelectProductionTab(2);
+        await SelectProductionTab(0);
         BaseWindow window = default!;
         await Client.WaitAssertion(() =>
         {
@@ -254,10 +352,13 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                 var panel = GetControlFromChildren<FrontlineNativeStoragePanel>(p => p.Name == name, window);
                 var native = Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().SingleOrDefault();
                 Assert.That(native, Is.Not.Null, "Every native parent BUI opening must open its real storage children.");
-                Assert.That(native!.VisibleInTree, Is.True);
-                AssertNativeGridRenderable(native);
-                Assert.That(native.Size.X, Is.GreaterThan(0));
-                Assert.That(native.Size.X, Is.LessThanOrEqualTo(panel.Size.X + 1));
+                if (panel.VisibleInTree)
+                {
+                    Assert.That(native!.VisibleInTree, Is.True);
+                    AssertNativeGridRenderable(native);
+                    Assert.That(native.Size.X, Is.GreaterThan(0));
+                    Assert.That(native.Size.X, Is.LessThanOrEqualTo(panel.Size.X + 1));
+                }
             }
         });
         if (prototype == "FrontlineRefinery")
@@ -298,6 +399,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         await ClickControl(GetControlFromChildren<Button>(b => b.Name == "Produce", window));
         await Pair.RunSeconds(11);
         await Pair.RunUntilSynced();
+        await SelectProductionTab(2);
         Robust.Shared.GameObjects.NetEntity output = default;
         await Client.WaitAssertion(() =>
         {
@@ -305,6 +407,12 @@ public sealed class FrontlineProductionUiTest : InteractionTest
             var piece = Descendants(panel).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().Single();
             Assert.That(piece.VisibleInTree, Is.True);
             Assert.That(piece.Size.X, Is.GreaterThan(0));
+            if (prototype == "FrontlineFactory")
+            {
+                var shape = CEntMan.System<Content.Client.Items.Systems.ItemSystem>().GetAdjustedItemShape((piece.Entity, null), piece.Location);
+                Assert.That(shape.GetBoundingBox().Size + Robust.Shared.Maths.Vector2i.One, Is.EqualTo(new Robust.Shared.Maths.Vector2i(4, 4)),
+                    "The actual Huge output keeps its native 4x4 footprint, not a fabricated thumbnail.");
+            }
             if (prototype == "FrontlineRefinery")
             {
                 var stack = CEntMan.GetComponent<Content.Shared.Stacks.StackComponent>(piece.Entity);
@@ -324,6 +432,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         await Client.WaitPost(() => window = prototype == "FrontlineFactory" ? GetWindow<FrontlineFactoryWindow>() : GetWindow<FrontlineRefineryWindow>());
         await ClickControl(GetControlFromChildren<Button>(b => b.Name == "Personal", window));
         await Pair.RunUntilSynced();
+        await SelectProductionTab(2);
         Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece ready = default!;
         await Client.WaitAssertion(() =>
         {
@@ -450,9 +559,8 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                 Assert.That(GetControlFromChildren<RichTextLabel>(label => label.Name == "ItemName", cell).GetMessage(), Is.Not.Empty);
             else
             {
-                var name = GetControlFromChildren<Label>(label => label.Name == "ItemName", cell);
+                var name = GetControlFromChildren<RichTextLabel>(label => label.Name == "ItemName", cell);
                 Assert.That(name.Text, Is.Not.Empty);
-                Assert.That(name.ClipText, Is.True, "Recipe names never wrap inside words.");
                 Assert.That(cell.MinHeight, Is.LessThanOrEqualTo(64));
                 Assert.That(grid.Cells.Columns, Is.EqualTo(1), "Recipes use the full column width.");
             }
@@ -462,7 +570,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                 Assert.That(grid.Cells.ChildCount, Is.EqualTo(1), "Zero products and virtual supplies are not physical cells.");
                 Assert.That(GetControlFromChildren<Label>(label => label.Text == "5", cell), Is.Not.Null);
             }
-            scroll = GetControlFromChildren<ScrollContainer>(window, true);
+            scroll = grid.Scroll;
             action = GetControlFromChildren<Button>(button => button.Name == "Produce", window);
             action.CanKeyboardFocus = true;
             action.GrabKeyboardFocus();
@@ -506,7 +614,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         await Pair.RunUntilSynced();
         await Client.WaitAssertion(() =>
         {
-            Assert.That(GetControlFromChildren<ScrollContainer>(window, true), Is.SameAs(scroll),
+            Assert.That(GetControlFromChildren<FrontlineItemGrid>(g => g.Name == "Recipes", window).Scroll, Is.SameAs(scroll),
                 "A state refresh must not replace the scroll container.");
             Assert.That(action.Parent, Is.Not.Null, "A state refresh must not remove the focused action.");
             Assert.That(UiMan.KeyboardFocused, Is.SameAs(action));
@@ -524,7 +632,7 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         try
         {
             foreach (var scale in new[] { 1f, 1.5f })
-            foreach (var size in new[] { window.MinSize, new Vector2(640, 480), new Vector2(1000, 700) })
+            foreach (var size in new[] { window.MinSize, new Vector2(740, 480), new Vector2(1000, 700) })
                 await Client.WaitAssertion(() =>
                 {
                     Client.CfgMan.SetCVar(CVars.ResAutoScaleEnabled, false);
@@ -560,12 +668,13 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                             }
                             else
                             {
-                                var name = GetControlFromChildren<Label>(label => label.Name == "ItemName", item);
+                                var name = GetControlFromChildren<RichTextLabel>(label => label.Name == "ItemName", item);
                                 name.Text = "Синтез технологического сплава из необработанного технологического материала";
                                 item.Measure(item.Size);
                                 item.Arrange(UIBox2.FromDimensions(item.Position, item.Size));
-                                Assert.That(name.ClipText, Is.True);
-                                Assert.That(item.Size.Y, Is.LessThanOrEqualTo(64), "Long Russian names do not grow multi-line cards.");
+                                Assert.That(name.Size.Y, Is.GreaterThan(0));
+                                Assert.That(name.GlobalPosition.Y + name.Size.Y, Is.LessThanOrEqualTo(item.GlobalPosition.Y + item.Size.Y + 1),
+                                    "Long Russian names wrap inside the native recipe row instead of being clipped.");
                             }
                             foreach (var icon in Descendants(item).OfType<TextureRect>())
                                 Assert.That(icon.Size.X, Is.GreaterThanOrEqualTo(32), "Item art is not shrunk into micro icons.");
@@ -613,6 +722,8 @@ public sealed class FrontlineProductionUiTest : InteractionTest
         await Interact();
         await RunTicks(5);
         await Pair.RunUntilSynced();
+        await SelectProductionTab(2);
+        await SelectProductionTab(0);
         BaseWindow window = default!;
         await Client.WaitAssertion(() =>
         {
@@ -815,6 +926,46 @@ public sealed class FrontlineProductionUiTest : InteractionTest
                 Assert.That(rows[i].Position.Y, Is.GreaterThanOrEqualTo(rows[i - 1].Position.Y + rows[i - 1].Size.Y));
         });
         await CloseBui(FrontlineRefineryUiKey.Key);
+    }
+
+    private async Task SelectProductionTab(int index)
+    {
+        await Client.WaitPost(() =>
+        {
+            var window = Client.ResolveDependency<IUserInterfaceManager>().WindowRoot.Children
+                .OfType<BaseWindow>().FirstOrDefault(w => w is FrontlineFactoryWindow or FrontlineRefineryWindow);
+            if (window != null) Descendants(window).OfType<TabContainer>().Single().CurrentTab = index;
+        });
+        await RunTicks(3);
+    }
+
+    private new async Task ClickControl(Control control, Robust.Shared.Input.BoundKeyFunction? function = null)
+    {
+        for (var child = control; child.Parent != null; child = child.Parent)
+        {
+            if (child.Parent is not TabContainer tabs) continue;
+            var index = child.GetPositionInParent();
+            await Client.WaitPost(() => tabs.CurrentTab = index);
+            await RunTicks(3);
+            break;
+        }
+        for (var parent = control.Parent; parent != null; parent = parent.Parent)
+        {
+            if (parent is not ScrollContainer scroll) continue;
+            await Client.WaitPost(() => scroll.VScroll += control.GlobalPosition.Y - scroll.GlobalPosition.Y);
+            await RunTicks(3);
+        }
+        await Client.WaitAssertion(() =>
+        {
+            Assert.That(control.VisibleInTree, Is.True);
+            for (var parent = control.Parent; parent != null; parent = parent.Parent)
+            {
+                if (!parent.RectClipContent) continue;
+                Assert.That(control.GlobalPosition.Y, Is.GreaterThanOrEqualTo(parent.GlobalPosition.Y - 1));
+                Assert.That(control.GlobalPosition.Y + control.Size.Y, Is.LessThanOrEqualTo(parent.GlobalPosition.Y + parent.Size.Y + 1));
+            }
+        });
+        await base.ClickControl(control, function);
     }
 
     private static System.Collections.Generic.IEnumerable<Control> Descendants(Control control)

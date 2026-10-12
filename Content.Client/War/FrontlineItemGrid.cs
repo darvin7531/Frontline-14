@@ -131,8 +131,8 @@ public sealed partial class FrontlineItemGrid : BoxContainer
                     header.AddChild(fallback);
                     if (_mode == FrontlineItemGridMode.Recipes)
                     {
-                        name = new Label { Name = "ItemName", ClipText = true, HorizontalExpand = true, MouseFilter = MouseFilterMode.Ignore };
-                        caption = new Label { ClipText = true, MouseFilter = MouseFilterMode.Ignore };
+                        name = new RichTextLabel { Name = "ItemName", HorizontalExpand = true, MouseFilter = MouseFilterMode.Ignore };
+                        caption = new RichTextLabel { MouseFilter = MouseFilterMode.Ignore };
                         header.AddChild(name);
                     }
                     else
@@ -231,28 +231,6 @@ public sealed partial class FrontlineItemGrid : BoxContainer
     }
 }
 
-public sealed class FrontlineProductionColumns : BoxContainer
-{
-    public FrontlineProductionColumns()
-    {
-        HorizontalExpand = VerticalExpand = true;
-        SeparationOverride = 8;
-    }
-
-    protected override Vector2 MeasureOverride(Vector2 availableSize)
-    {
-        // BoxContainer measures sequentially; the first paragraph otherwise consumes the entire window width.
-        var children = Children.Where(child => child.Visible).ToArray();
-        if (children.Length == 0)
-            return Vector2.Zero;
-        var gaps = 8 * (children.Length - 1);
-        var width = Math.Max(0, availableSize.X - gaps) / children.Length;
-        foreach (var child in children)
-            child.Measure(new Vector2(width, availableSize.Y));
-        return new Vector2(children.Sum(child => child.DesiredSize.X) + gaps,
-            children.Max(child => child.DesiredSize.Y));
-    }
-}
 
 public readonly record struct FrontlineJobView(
     string Id, string Name, Texture? Icon, TimeSpan Duration, TimeSpan Remaining, bool Processing,

@@ -1,3 +1,4 @@
+#nullable enable
 using System.Collections.Generic;
 using System.Linq;
 using Robust.Client.UserInterface;
@@ -72,6 +73,7 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
             Assert.That(ui.IsUiOpen(outputOwner, StorageComponent.StorageUiKey.Key, SPlayer), Is.True, "Output native storage is open.");
         });
         var outputViewNet = SEntMan.GetNetEntity(outputOwner);
+        await SelectProductionTab(2);
         await Client.WaitAssertion(() =>
         {
             Assert.That(CEntMan.System<SharedUserInterfaceSystem>().TryGetOpenUi<Content.Client.Storage.StorageBoundUserInterface>(
@@ -89,6 +91,7 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
             inputNet, inputOwnerNet, new ItemStorageLocation(Angle.Zero, Vector2i.Zero))));
         await RunTicks(5);
         await Pair.RunUntilSynced();
+        await SelectProductionTab(0);
         await Server.WaitAssertion(() =>
         {
             Assert.That(SEntMan.GetComponent<StorageComponent>(inputOwner).Container.Contains(input), Is.True);
@@ -126,6 +129,7 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
             await SendBui(Content.Shared.War.FrontlineRefineryUiKey.Key, new Content.Shared.War.FrontlineRefineryModeMessage(true));
         await RunTicks(5);
         await Pair.RunUntilSynced();
+        await SelectProductionTab(2);
         await Client.WaitAssertion(() =>
         {
             Assert.That(CEntMan.System<SharedUserInterfaceSystem>().TryGetOpenUi<Content.Client.Storage.StorageBoundUserInterface>(
@@ -148,6 +152,17 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
             Assert.That(SEntMan.HasComponent<Content.Shared.War.FrontlineProductionClaimComponent>(output), Is.False,
                 "Remove the private claim only after the exact native transfer commits.");
         });
+    }
+
+    private async Task SelectProductionTab(int index)
+    {
+        await Client.WaitPost(() =>
+        {
+            var window = Client.ResolveDependency<IUserInterfaceManager>().WindowRoot.Children
+                .First(w => w is Content.Client.War.FrontlineFactoryWindow or Content.Client.War.FrontlineRefineryWindow);
+            Descendants(window).OfType<Robust.Client.UserInterface.Controls.TabContainer>().Single().CurrentTab = index;
+        });
+        await RunTicks(3);
     }
 
     [Test]
@@ -255,6 +270,162 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
             Assert.That(SEntMan.EntityExists(bag), Is.False);
             Assert.That(SEntMan.EntityExists(contents), Is.True);
         });
+    }
+
+    [TestCase("FrontlineFactory", 1f)]
+    [TestCase("FrontlineFactory", 1.5f)]
+    [TestCase("FrontlineRefinery", 1f)]
+    [TestCase("FrontlineRefinery", 1.5f)]
+    [TestCase("TownHallCoreFactionOne", 1f)]
+    [TestCase("TownHallCoreFactionOne", 1.5f)]
+    public async Task HumanDragsToFarEdgeAndBackWithoutLosingNativeCapacity(string prototype, float scale)
+    {
+        var oldScale = Client.CfgMan.GetCVar(Robust.Shared.CVars.DisplayUIScale);
+        var oldAuto = Client.CfgMan.GetCVar(Robust.Shared.CVars.ResAutoScaleEnabled);
+        var oldStatic = Client.CfgMan.GetCVar(Content.Shared.CCVar.CCVars.StaticStorageUI);
+        var mouse = (HeadlessPointer) (object) System.Reflection.DispatchProxy.Create<Robust.Client.Input.IInputManager, HeadlessPointer>();
+        var replaced = new List<(object Owner, System.Reflection.FieldInfo Field, object? Value)>();
+        try
+        {
+            await Client.WaitPost(() =>
+            {
+                Client.CfgMan.SetCVar(Robust.Shared.CVars.ResAutoScaleEnabled, false);
+                Client.CfgMan.SetCVar(Robust.Shared.CVars.DisplayUIScale, scale);
+                Client.CfgMan.SetCVar(Content.Shared.CCVar.CCVars.StaticStorageUI, false);
+                var ui = Client.ResolveDependency<IUserInterfaceManager>();
+                mouse.Inner = Client.ResolveDependency<Robust.Client.Input.IInputManager>();
+                var controller = ui.GetUIController<Content.Client.UserInterface.Systems.Storage.StorageUIController>();
+                // ClydeHeadless fixes its pointer at zero. Supply only pointer input; keep the real layout, drag controller and protocol.
+                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                var helper = controller.GetType().GetField("_menuDragHelper", flags)!.GetValue(controller)!;
+                foreach (var owner in new[] { (object) ui, helper })
+                {
+                    var field = owner.GetType().GetField("_inputManager", flags)!;
+                    replaced.Add((owner, field, field.GetValue(owner)));
+                    field.SetValue(owner, mouse);
+                }
+            });
+            await SpawnTarget(prototype);
+            EntityUid bag = default, material = default, storage = default;
+            await Server.WaitAssertion(() =>
+            {
+                Server.ResolveDependency<Content.Server.Administration.Managers.IAdminManager>().DeAdmin(ServerSession!);
+                SEntMan.AddComponent<Content.Shared.War.FrontlinePlayerComponent>(SPlayer);
+                bag = SEntMan.SpawnEntity("ClothingBackpack", ToServer(PlayerCoords));
+                Assert.That(Server.System<Content.Shared.Inventory.InventorySystem>().TryEquip(SPlayer, bag, "back", force: true), Is.True);
+                material = SEntMan.SpawnEntity(prototype == "FrontlineRefinery" ? "FrontlineRawIron1" : "BasicMaterials1", ToServer(PlayerCoords));
+                Assert.That(Server.System<SharedStorageSystem>().Insert(bag, material, out _), Is.True);
+                Server.System<SharedStorageSystem>().OpenStorageUI(bag, SPlayer);
+                storage = prototype switch
+                {
+                    "FrontlineFactory" => SEntMan.GetComponent<Content.Shared.War.FrontlineFactoryComponent>(STarget!.Value).InputContainer.Owner,
+                    "FrontlineRefinery" => SEntMan.GetComponent<Content.Shared.War.FrontlineRefineryComponent>(STarget!.Value).InputContainer.Owner,
+                    _ => STarget!.Value
+                };
+            });
+            await Interact();
+            await Pair.RunUntilSynced();
+            await RunTicks(3);
+            Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow native = default!, backpack = default!;
+            Robust.Client.UserInterface.Controls.ScrollContainer scroll = default!;
+            Control edge = default!, drop = default!;
+            await Client.WaitAssertion(() =>
+            {
+                var ui = CEntMan.System<SharedUserInterfaceSystem>();
+                Assert.That(ui.TryGetOpenUi<Content.Client.Storage.StorageBoundUserInterface>(CEntMan.GetEntity(SEntMan.GetNetEntity(storage)), StorageComponent.StorageUiKey.Key, out var machineBui), Is.True);
+                Assert.That(ui.TryGetOpenUi<Content.Client.Storage.StorageBoundUserInterface>(CEntMan.GetEntity(SEntMan.GetNetEntity(bag)), StorageComponent.StorageUiKey.Key, out var bagBui), Is.True);
+                native = machineBui!.Window!;
+                backpack = bagBui!.Window!;
+                Assert.That(Descendants(backpack).Any(c => c.Name == "SideBar" && c.VisibleInTree), Is.True, "Ordinary backpack chrome is unchanged.");
+                Assert.That(Descendants(backpack).OfType<Robust.Client.UserInterface.Controls.ScrollContainer>(), Is.Empty);
+                Robust.Client.UserInterface.Controls.LayoutContainer.SetPosition(backpack, System.Numerics.Vector2.Zero);
+                scroll = Descendants(native).OfType<Robust.Client.UserInterface.Controls.ScrollContainer>().Single();
+                var grid = Descendants(native).OfType<Robust.Client.UserInterface.Controls.GridContainer>().Single(g => g.Name == "BackgroundGrid");
+                Assert.That(grid.ChildCount, Is.EqualTo(400));
+                Assert.That(grid.Columns, Is.EqualTo(20));
+                Assert.That(grid.Size.X, Is.EqualTo(640));
+                Assert.That(grid.GlobalPosition.X + grid.Size.X, Is.LessThanOrEqualTo(scroll.GlobalPosition.X + scroll.Size.X - 12));
+                Assert.That(Descendants(native).OfType<Robust.Client.UserInterface.Controls.HScrollBar>().Any(b => b.VisibleInTree), Is.False);
+                Assert.That(native.TryGetBackgroundCell(19, 19, out var edgeCell), Is.True);
+                Assert.That(native.TryGetBackgroundCell(18, 18, out var dropCell), Is.True);
+                edge = edgeCell!;
+                drop = dropCell!;
+                scroll.VScroll = 10000;
+            });
+            await RunTicks(3);
+            await Client.WaitAssertion(() =>
+            {
+                Assert.That(edge.GlobalPosition.Y, Is.GreaterThanOrEqualTo(scroll.GlobalPosition.Y));
+                Assert.That(edge.GlobalPosition.Y + edge.Size.Y, Is.LessThanOrEqualTo(scroll.GlobalPosition.Y + scroll.Size.Y + 1));
+                mouse.Position = new Robust.Shared.Map.ScreenCoordinates((drop.GlobalPosition + drop.Size / 2) * scale, native.Window!.Id);
+                var item = CEntMan.GetEntity(SEntMan.GetNetEntity(material));
+                foreach (var rotation in new[] { Angle.Zero, Angle.FromDegrees(90), Angle.FromDegrees(180), Angle.FromDegrees(270) })
+                    Assert.That(native.GetMouseGridPieceLocation(item, new ItemStorageLocation(rotation, Vector2i.Zero)), Is.EqualTo(new Vector2i(18, 18)));
+                var hit = Client.ResolveDependency<IUserInterfaceManager>().MouseGetControl(mouse.Position);
+                Assert.That(Ancestors(hit).Contains(native), Is.True, "The actual far-edge drop point resolves to the native storage, not a sibling panel.");
+            });
+            var source = Descendants(backpack).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().Single();
+            await Drag(source, drop);
+            await Server.WaitAssertion(() => Assert.That(SEntMan.GetComponent<StorageComponent>(bag).Container.ContainedEntities, Is.Empty));
+            var stored = Descendants(native).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().Single();
+            // Town hall may materialize its authoritative ledger view at a new native location.
+            await Client.WaitPost(() => scroll.VScroll = stored.Location.Position.Y * 32);
+            await RunTicks(3);
+            Assert.That(backpack.TryGetBackgroundCell(0, 0, out var destination), Is.True);
+            await Drag(stored, destination!);
+            await Server.WaitAssertion(() =>
+            {
+                var returned = SEntMan.GetComponent<StorageComponent>(bag).Container.ContainedEntities.Single();
+                Assert.That(SEntMan.GetComponent<Content.Shared.Stacks.StackComponent>(returned).Count, Is.EqualTo(1));
+                if (prototype != "TownHallCoreFactionOne") Assert.That(returned, Is.EqualTo(material));
+                Assert.That(Server.System<SharedHandsSystem>().GetActiveItem(SPlayer), Is.Null);
+            });
+
+            async Task Drag(Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece piece, Control destination)
+            {
+                Robust.Client.UserInterface.GUIBoundKeyEventArgs Event(Robust.Shared.Input.BoundKeyState state) => new(
+                    Content.Shared.Input.ContentKeyFunctions.MoveStoredItem, state, mouse.Position, default,
+                    mouse.Position.Position / scale - piece.GlobalPosition, mouse.Position.Position - piece.GlobalPixelPosition);
+                await Client.WaitPost(() => mouse.Position = new Robust.Shared.Map.ScreenCoordinates(piece.GlobalPixelPosition + new System.Numerics.Vector2(16) * scale, piece.Window!.Id));
+                await Client.DoGuiEvent(piece, Event(Robust.Shared.Input.BoundKeyState.Down));
+                await Client.WaitPost(() => mouse.Position = new Robust.Shared.Map.ScreenCoordinates(destination.GlobalPixelPosition + destination.PixelSize / 2, destination.Window!.Id));
+                await RunTicks(3);
+                await Client.WaitAssertion(() =>
+                {
+                    var ui = Client.ResolveDependency<IUserInterfaceManager>();
+                    Assert.That(ui.GetUIController<Content.Client.UserInterface.Systems.Storage.StorageUIController>().IsDragging, Is.True);
+                    var target = Ancestors(destination).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Single();
+                    Assert.That(Ancestors(ui.MouseGetControl(mouse.Position)).Contains(target), Is.True, "Drop coordinates must hit the actual target inventory.");
+                });
+                await Client.DoGuiEvent(piece, Event(Robust.Shared.Input.BoundKeyState.Up));
+                await RunTicks(5);
+                await Pair.RunUntilSynced();
+            }
+        }
+        finally
+        {
+            await Client.WaitPost(() =>
+            {
+                foreach (var (owner, field, value) in replaced) field.SetValue(owner, value);
+                Client.CfgMan.SetCVar(Robust.Shared.CVars.DisplayUIScale, oldScale);
+                Client.CfgMan.SetCVar(Robust.Shared.CVars.ResAutoScaleEnabled, oldAuto);
+                Client.CfgMan.SetCVar(Content.Shared.CCVar.CCVars.StaticStorageUI, oldStatic);
+            });
+        }
+    }
+
+    private static IEnumerable<Control> Ancestors(Control? control)
+    {
+        for (; control != null; control = control.Parent) yield return control;
+    }
+
+    [Robust.Shared.Analyzers.Virtual]
+    public class HeadlessPointer : System.Reflection.DispatchProxy
+    {
+        public Robust.Shared.Map.ScreenCoordinates Position;
+        public Robust.Client.Input.IInputManager Inner = default!;
+        protected override object? Invoke(System.Reflection.MethodInfo? method, object?[]? args) =>
+            method!.Name == "get_MouseScreenPosition" ? Position : method.Invoke(Inner, args);
     }
 
     [Test]

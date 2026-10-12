@@ -31,6 +31,7 @@ public sealed partial class StorageWindow : BaseWindow
     private readonly GridContainer _pieceGrid;
     private readonly GridContainer _backgroundGrid;
     private readonly GridContainer _sidebar;
+    private readonly bool _embedded;
     private HashSet<NetEntity>? _visibleItems;
 
     public void SetVisibleItems(NetEntity[] items)
@@ -88,6 +89,11 @@ public sealed partial class StorageWindow : BaseWindow
     {
         IoCManager.InjectDependencies(this);
         Resizable = false;
+        _embedded = owner is { } uid &&
+                    (_entity.HasComponent<Content.Shared.War.FrontlineProductionStorageComponent>(uid) ||
+                     _entity.HasComponent<Content.Shared.War.FrontlineStockpileComponent>(uid));
+        if (_embedded)
+            HorizontalExpand = VerticalExpand = true;
 
         _storageController = UserInterfaceManager.GetUIController<StorageUIController>();
 
@@ -98,6 +104,7 @@ public sealed partial class StorageWindow : BaseWindow
         _sidebar = new GridContainer
         {
             Name = "SideBar",
+            Visible = !_embedded,
             HSeparationOverride = 0,
             VSeparationOverride = 0,
             Columns = 1
@@ -146,15 +153,14 @@ public sealed partial class StorageWindow : BaseWindow
             Orientation = BoxContainer.LayoutOrientation.Horizontal,
             Children = { _sidebar, new Control { Children = { _backgroundGrid, _pieceGrid } } }
         };
-        if (owner is { } uid && (_entity.HasComponent<Content.Shared.War.FrontlineProductionStorageComponent>(uid) ||
-                                _entity.HasComponent<Content.Shared.War.FrontlineStockpileComponent>(uid)))
+        if (_embedded)
             grid = new ScrollContainer
             {
-                HScrollEnabled = true,
+                HScrollEnabled = false,
                 VScrollEnabled = true,
-                ReturnMeasure = true,
-                MaxWidth = 172,
-                MaxHeight = 220,
+                HorizontalExpand = true,
+                VerticalExpand = true,
+                MinHeight = 64,
                 Children = { grid }
             };
         var container = new BoxContainer
@@ -189,7 +195,7 @@ public sealed partial class StorageWindow : BaseWindow
         if (entity == null)
             return;
 
-        if (UserInterfaceManager.GetUIController<StorageUIController>().WindowTitle)
+        if (!_embedded && UserInterfaceManager.GetUIController<StorageUIController>().WindowTitle)
         {
             _titleLabel.Text = Identity.Name(entity.Value, _entity);
             _titleContainer.Visible = true;

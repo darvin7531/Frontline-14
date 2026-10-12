@@ -86,9 +86,9 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
     {
         IoCManager.InjectDependencies(this);
         Title = Loc.GetString("frontline-refinery-title");
-        MinSize = new Vector2(600, 400);
+        MinSize = new Vector2(700, 400);
         SetSize = new Vector2(740, 480);
-        var columns = new FrontlineProductionColumns();
+        var columns = new TabContainer { HorizontalExpand = true, VerticalExpand = true };
         var left = FrontlineItemGrid.Column(Loc.GetString("frontline-refinery-input-heading"));
         var hint = new RichTextLabel();
         hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));
@@ -96,13 +96,14 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         _inputs = new FrontlineNativeStoragePanel(null, false) { Name = "Inputs" };
         left.AddChild(_inputs);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { left } });
+        columns.SetTabTitle(0, Loc.GetString("frontline-refinery-input-heading"));
         var center = FrontlineItemGrid.Column(Loc.GetString("frontline-refinery-recipes-heading"));
         _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty"), mode: FrontlineItemGridMode.Recipes) { Name = "Recipes" };
         _recipes.SelectionChanged += UpdateSelection;
         center.AddChild(_recipes);
         var detailsScroll = FrontlineItemGrid.CreateScroll(_details);
-        detailsScroll.MinHeight = 120;
-        detailsScroll.MaxHeight = 160;
+        detailsScroll.MinHeight = 64;
+        detailsScroll.MaxHeight = 120;
         detailsScroll.VerticalExpand = false;
         center.AddChild(detailsScroll);
         center.AddChild(new Label { Text = Loc.GetString("frontline-refinery-batches") });
@@ -112,11 +113,7 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         center.AddChild(_batches);
         var batchHint = new RichTextLabel();
         batchHint.SetMessage(Loc.GetString("frontline-refinery-batch-hint"));
-        var hintScroll = FrontlineItemGrid.CreateScroll(batchHint);
-        hintScroll.MinHeight = 40;
-        hintScroll.MaxHeight = 60;
-        hintScroll.VerticalExpand = false;
-        center.AddChild(hintScroll);
+        center.AddChild(batchHint);
         _produce.Text = Loc.GetString("frontline-ui-produce");
         _produce.OnPressed += _ =>
         {
@@ -125,6 +122,7 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         };
         center.AddChild(_produce);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, SizeFlagsStretchRatio = 1.4f, Children = { center } });
+        columns.SetTabTitle(1, Loc.GetString("frontline-refinery-recipes-heading"));
         var right = FrontlineItemGrid.Column(Loc.GetString("frontline-refinery-output-heading"));
         _outputs = new FrontlineNativeStoragePanel(null, true) { Name = "Outputs" };
         right.AddChild(_outputs);
@@ -132,6 +130,7 @@ public sealed partial class FrontlineRefineryWindow : DefaultWindow
         right.AddChild(new Label { Text = Loc.GetString("frontline-refinery-queue-heading"), StyleClasses = { "LabelHeading" } });
         right.AddChild(FrontlineItemGrid.CreateScroll(_jobs));
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { right } });
+        columns.SetTabTitle(2, Loc.GetString("frontline-refinery-output-heading"));
         var mode = new BoxContainer();
         mode.AddChild(_public);
         mode.AddChild(_personal);

@@ -107,9 +107,10 @@ public sealed partial class StorageUIController : UIController, IOnSystemChanged
             OnPieceUnpressed(args, window, piece);
         };
 
-        if (EntityManager.HasComponent<Content.Shared.War.FrontlineProductionStorageComponent>(sBui.Owner))
+        if (EntityManager.HasComponent<Content.Shared.War.FrontlineProductionStorageComponent>(sBui.Owner) ||
+            EntityManager.HasComponent<Content.Shared.War.FrontlineStockpileComponent>(sBui.Owner))
         {
-            // Mounted by the machine window; do not put sibling input/output windows in the hotbar.
+            // Mounted by its Frontline owner, never open a floating window that must be orphaned during a UI frame.
             _ui.RegisterControl(sBui, window);
             return window;
         }
