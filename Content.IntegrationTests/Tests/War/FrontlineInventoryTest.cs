@@ -103,6 +103,89 @@ public sealed class FrontlineInventoryTest : GameTest
     }
 
     [Test]
+    public async Task BackpackIsBoundUntilDeathAndEmptyGroundLootDisappears()
+    {
+        var map = await Pair.CreateTestMap();
+        EntityUid human = default, bag = default, nested = default;
+        await Server.WaitPost(() =>
+        {
+            var inventory = Server.System<InventorySystem>();
+            human = SEntMan.SpawnEntity("MobHuman", map.GridCoords);
+            SEntMan.AddComponent<FrontlinePlayerComponent>(human);
+            bag = SEntMan.SpawnEntity("ClothingBackpack", map.GridCoords);
+            nested = SEntMan.SpawnEntity("Crowbar", map.GridCoords);
+            Assert.That(inventory.TryEquip(human, bag, "back", force: true), Is.True);
+            Assert.That(Server.System<Content.Shared.Storage.EntitySystems.SharedStorageSystem>().Insert(bag, nested, out _), Is.True);
+            Assert.That(inventory.TryUnequip(human, "back", silent: true), Is.False,
+                "Players cannot remove or replace their bound backpack.");
+            var looter = SEntMan.SpawnEntity("MobHuman", map.GridCoords);
+            Assert.That(inventory.TryUnequip(looter, human, "back", silent: true), Is.False);
+            Assert.That(Server.System<SharedContainerSystem>().Remove(nested, SEntMan.GetComponent<StorageComponent>(bag).Container), Is.True);
+        });
+        await Pair.RunTicksSync(2);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.EntityExists(bag), Is.True, "An empty equipped bag is never ground-loot cleanup.");
+            Assert.That(Server.System<InventorySystem>().TryGetSlotEntity(human, "back", out var equipped), Is.True);
+            Assert.That(equipped, Is.EqualTo(bag));
+        });
+        await Server.WaitPost(() =>
+        {
+            Assert.That(Server.System<SharedContainerSystem>().Insert(nested, SEntMan.GetComponent<StorageComponent>(bag).Container), Is.True);
+            Server.System<Content.Shared.Mobs.Systems.MobStateSystem>().ChangeMobState(human, Content.Shared.Mobs.MobState.Dead);
+        });
+        await Pair.RunTicksSync(2);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(Server.System<InventorySystem>().TryGetSlotEntity(human, "back", out _), Is.False);
+            Assert.That(Server.System<SharedContainerSystem>().TryGetContainingContainer(bag, out _), Is.False);
+            Assert.That(SEntMan.HasComponent<Content.Shared.Item.ItemComponent>(bag), Is.False,
+                "Ground loot opens normally but cannot be picked up or equipped.");
+            Assert.That(SEntMan.GetComponent<StorageComponent>(bag).Container.ContainedEntities, Is.EqualTo(new[] { nested }));
+        });
+        await Server.WaitPost(() =>
+        {
+            var container = SEntMan.GetComponent<StorageComponent>(bag).Container;
+            var containers = Server.System<SharedContainerSystem>();
+            Assert.That(containers.Remove(nested, container), Is.True);
+            Assert.That(containers.Insert(nested, container), Is.True,
+                "A transfer rollback must not delete a temporarily empty bag.");
+        });
+        await Pair.RunTicksSync(2);
+        await Server.WaitAssertion(() => Assert.That(SEntMan.EntityExists(bag), Is.True));
+        await Server.WaitPost(() => Assert.That(Server.System<SharedContainerSystem>().Remove(nested,
+            SEntMan.GetComponent<StorageComponent>(bag).Container), Is.True));
+        await Pair.RunTicksSync(2);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.EntityExists(bag), Is.False);
+            Assert.That(SEntMan.EntityExists(nested), Is.True);
+        });
+    }
+
+    [TestCase("TownHallRuin")]
+    [TestCase("FrontlineFactory")]
+    [TestCase("FrontlineRefinery")]
+    [TestCase("FrontlineResourceField")]
+    [TestCase("FrontlineResourceSpawnPoint")]
+    public async Task StrategicRepairAndResourceAnchorsSurviveOverwhelmingDamage(string prototype)
+    {
+        var map = await Pair.CreateTestMap();
+        EntityUid anchor = default;
+        await Server.WaitPost(() =>
+        {
+            anchor = SEntMan.SpawnEntity(prototype, map.GridCoords);
+            Robust.Shared.Prototypes.ProtoId<Content.Shared.Damage.Prototypes.DamageTypePrototype> blunt = "Blunt";
+            Server.System<Content.Shared.Damage.Systems.DamageableSystem>().TryChangeDamage(anchor,
+                new Content.Shared.Damage.DamageSpecifier(Server.ResolveDependency<Robust.Shared.Prototypes.IPrototypeManager>().Index(blunt), 10100),
+                ignoreResistances: true, ignoreGlobalModifiers: true);
+        });
+        await Pair.RunTicksSync(3);
+        await Server.WaitAssertion(() => Assert.That(SEntMan.EntityExists(anchor), Is.True,
+            "Strategic targets must remain available for repair, capture and resource replacement."));
+    }
+
+    [Test]
     public async Task FrontlineTemplatePreservesClothingHandsBackpackAndRemovedSlotContents()
     {
         var map = await Pair.CreateTestMap();

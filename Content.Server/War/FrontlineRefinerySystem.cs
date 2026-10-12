@@ -113,7 +113,6 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
     private void OnBeforeUiOpen(Entity<FrontlineRefineryComponent> refinery, ref BeforeActivatableUIOpenEvent args)
     {
         UpdateUi(refinery);
-        _production.OpenStorage(refinery, args.User);
     }
 
     private void OnModeMessage(Entity<FrontlineRefineryComponent> refinery, ref FrontlineRefineryModeMessage args)

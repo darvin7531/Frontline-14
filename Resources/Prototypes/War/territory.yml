@@ -78,10 +78,14 @@
 
 - type: entity
   id: TownHallRuin
-  parent: [BaseStructure, StructureHealthFurniture]
+  parent: [BaseStructure, BaseStructureHealth]
   name: destroyed town hall
   categories: [ Frontline ]
   components:
+  # Damage must never delete the territory's only capture/repair target.
+  - type: Destructible
+    generateOverkillThreshold: false
+    thresholds: []
   - type: Anchorable
   - type: Transform
     anchored: true
