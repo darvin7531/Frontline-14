@@ -37,6 +37,7 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
         EntityUid output = default;
         await Server.WaitPost(() =>
         {
+            Server.ResolveDependency<Content.Server.Administration.Managers.IAdminManager>().DeAdmin(ServerSession!);
             SEntMan.AddComponent<Content.Shared.War.FrontlinePlayerComponent>(SPlayer);
             bag = SEntMan.SpawnEntity("ClothingBackpack", ToServer(PlayerCoords));
             Assert.That(Server.System<Content.Shared.Inventory.InventorySystem>().TryEquip(SPlayer, bag, "back", force: true), Is.True);
@@ -78,6 +79,7 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
             var native = bui!.Window!;
             Assert.That(Descendants(native).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>(), Is.Empty,
                 "Public native view must not display another account's private goods.");
+            FrontlineProductionUiTest.AssertNativeGridRenderable(native);
         });
         var inputNet = SEntMan.GetNetEntity(input);
         var outputNet = SEntMan.GetNetEntity(output);
@@ -103,6 +105,7 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
             Assert.That(Descendants(native).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>()
                 .Select(piece => CEntMan.GetNetEntity(piece.Entity)), Does.Contain(inputNet),
                 "Transferred ore must appear in the real connected input grid.");
+            FrontlineProductionUiTest.AssertNativeGridRenderable(native);
         });
         await Client.WaitPost(() => CEntMan.RaisePredictiveEvent(new StorageTransferItemEvent(
             outputNet, bagNet, new ItemStorageLocation(Angle.Zero, Vector2i.Zero))));
@@ -132,6 +135,7 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
             Assert.That(Descendants(native).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>()
                 .Select(piece => CEntMan.GetNetEntity(piece.Entity)), Does.Contain(outputNet),
                 "The owner's completed material must appear in the real connected output grid.");
+            FrontlineProductionUiTest.AssertNativeGridRenderable(native);
         });
         await Client.WaitPost(() => CEntMan.RaisePredictiveEvent(new StorageTransferItemEvent(
             outputNet, bagNet, new ItemStorageLocation(Angle.Zero, Vector2i.Zero))));
@@ -143,6 +147,74 @@ public sealed class FrontlineNativeTransferTest : InteractionTest
             Assert.That(SEntMan.GetComponent<StorageComponent>(bag).Container.ContainedEntities, Is.EqualTo(new[] { output }));
             Assert.That(SEntMan.HasComponent<Content.Shared.War.FrontlineProductionClaimComponent>(output), Is.False,
                 "Remove the private claim only after the exact native transfer commits.");
+        });
+    }
+
+    [Test]
+    public async Task ConnectedHumanDepositsAndWithdrawsTownHallMaterialsThroughNativeStorage()
+    {
+        await SpawnTarget("TownHallCoreFactionOne");
+        var core = STarget!.Value;
+        EntityUid bag = default, materials = default;
+        await Server.WaitPost(() =>
+        {
+            Server.ResolveDependency<Content.Server.Administration.Managers.IAdminManager>().DeAdmin(ServerSession!);
+            SEntMan.AddComponent<Content.Shared.War.FrontlinePlayerComponent>(SPlayer);
+            bag = SEntMan.SpawnEntity("ClothingBackpack", ToServer(PlayerCoords));
+            Assert.That(Server.System<Content.Shared.Inventory.InventorySystem>().TryEquip(SPlayer, bag, "back", force: true), Is.True);
+            materials = SEntMan.SpawnEntity("BasicMaterials1", ToServer(PlayerCoords));
+            Server.System<Content.Server.Stack.StackSystem>().SetCount((materials, null), 10);
+            Assert.That(Server.System<SharedStorageSystem>().Insert(bag, materials, out _), Is.True);
+            Server.System<SharedStorageSystem>().OpenStorageUI(bag, SPlayer);
+        });
+        await Interact();
+        await Pair.RunUntilSynced();
+        await AssertGrid();
+        var coreNet = Target!.Value;
+        var bagNet = SEntMan.GetNetEntity(bag);
+        await Client.WaitPost(() => CEntMan.RaisePredictiveEvent(new StorageTransferItemEvent(
+            SEntMan.GetNetEntity(materials), coreNet, new ItemStorageLocation(Angle.Zero, Vector2i.Zero))));
+        await RunTicks(5);
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.GetComponent<StorageComponent>(bag).Container.ContainedEntities, Is.Empty);
+            Assert.That(Server.System<Content.Server.War.FrontlineStockpileSystem>().ReadCounts(core)["BasicMaterials"], Is.EqualTo(10));
+            Assert.That(Server.System<SharedHandsSystem>().GetActiveItem(SPlayer), Is.Null);
+        });
+        await CloseBui(Content.Shared.War.FrontlineStockpileUiKey.Key);
+        await Interact();
+        await Pair.RunUntilSynced();
+        await AssertGrid();
+        NetEntity output = default;
+        await Client.WaitAssertion(() =>
+        {
+            var window = GetWindow<Content.Client.War.FrontlineStockpileWindow>();
+            var piece = Descendants(window).OfType<Content.Client.UserInterface.Systems.Storage.Controls.ItemGridPiece>().Single();
+            Assert.That(CEntMan.GetComponent<Content.Shared.Stacks.StackComponent>(piece.Entity).Count, Is.EqualTo(10));
+            output = CEntMan.GetNetEntity(piece.Entity);
+        });
+        await Client.WaitPost(() => CEntMan.RaisePredictiveEvent(new StorageTransferItemEvent(
+            output, bagNet, new ItemStorageLocation(Angle.Zero, Vector2i.Zero))));
+        await RunTicks(5);
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            var item = SEntMan.GetComponent<StorageComponent>(bag).Container.ContainedEntities.Single();
+            Assert.That(SEntMan.GetNetEntity(item), Is.EqualTo(output));
+            Assert.That(SEntMan.GetComponent<Content.Shared.Stacks.StackComponent>(item).Count, Is.EqualTo(10));
+            Assert.That(Server.System<Content.Server.War.FrontlineStockpileSystem>().ReadCounts(core).GetValueOrDefault("BasicMaterials"), Is.Zero);
+            Assert.That(Server.System<SharedHandsSystem>().GetActiveItem(SPlayer), Is.Null);
+        });
+        await AssertGrid();
+        await CloseBui(Content.Shared.War.FrontlineStockpileUiKey.Key);
+
+        async Task AssertGrid() => await Client.WaitAssertion(() =>
+        {
+            var window = GetWindow<Content.Client.War.FrontlineStockpileWindow>();
+            var native = Descendants(window).OfType<Content.Client.UserInterface.Systems.Storage.Controls.StorageWindow>().Single();
+            Assert.That(native.VisibleInTree, Is.True);
+            FrontlineProductionUiTest.AssertNativeGridRenderable(native);
         });
     }
 

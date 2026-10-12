@@ -152,6 +152,7 @@ public sealed partial class StorageWindow : BaseWindow
             {
                 HScrollEnabled = true,
                 VScrollEnabled = true,
+                ReturnMeasure = true,
                 MaxWidth = 172,
                 MaxHeight = 220,
                 Children = { grid }
