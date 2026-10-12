@@ -421,7 +421,7 @@ public abstract partial class SharedStorageSystem : EntitySystem
         {
             // If you need something more sophisticated for multi-UI you'll need to code some smarter
             // interactions.
-            if (_openStorageLimit == 1 && !_tag.HasTag(actor, BypassOpenStorageLimitTag))
+            if (_openStorageLimit == 1 && !FrontlineStorage(uid) && !HasComp<Content.Shared.War.FrontlinePlayerComponent>(actor) && !_tag.HasTag(actor, BypassOpenStorageLimitTag))
                 UI.CloseUserUis<StorageComponent.StorageUiKey>(actor);
 
             OpenStorageUIInternal(uid, actor, storageComp, silent: silent);
@@ -740,6 +740,16 @@ public abstract partial class SharedStorageSystem : EntitySystem
             {
                 Audio.PlayPredicted(storage.Comp.StorageRemoveSound, storage, player, _audioParams);
             }
+            if (_sharedHandsSystem.IsHolding(player.AsNullable(), item, out _) && !storage.Comp.Container.Contains(item))
+            {
+                if (CanInteract(player, storage, item: item))
+                {
+                    var transferred = new StoragePlayerTransferredEvent(player, item, null);
+                    RaiseLocalEvent(storage, ref transferred);
+                }
+                else
+                    Insert(storage, item, out _, playSound: false, stackAutomatically: false);
+            }
 
             return;
         }
@@ -802,7 +812,12 @@ public abstract partial class SharedStorageSystem : EntitySystem
         _nestedCheck = false;
     }
 
-    private void OnStorageTransfer(StorageTransferItemEvent msg, EntitySessionEventArgs args)
+    private bool FrontlineStorage(EntityUid uid) =>
+        HasComp<Content.Shared.War.FrontlineProductionStorageComponent>(uid) ||
+        HasComp<Content.Shared.War.FrontlineStockpileComponent>(uid) ||
+        HasComp<Content.Shared.War.FrontlineVehicleCargoComponent>(uid);
+
+    private void OnLegacyStorageTransfer(StorageTransferItemEvent msg, EntitySessionEventArgs args)
     {
         if (!TryGetEntity(msg.ItemEnt, out var itemUid) || !TryComp(itemUid, out ItemComponent? itemComp))
             return;
@@ -831,6 +846,88 @@ public abstract partial class SharedStorageSystem : EntitySystem
         InsertAt(storage!, item!, msg.Location, out _, player, stackAutomatically: false);
     }
 
+    private readonly HashSet<EntityUid> _transferringItems = new();
+
+    private void OnStorageTransfer(StorageTransferItemEvent msg, EntitySessionEventArgs args)
+    {
+        if (args.SenderSession.AttachedEntity is { } actor && !HasComp<Content.Shared.War.FrontlinePlayerComponent>(actor) &&
+            (!TryGetEntity(msg.StorageEnt, out var targetUid) || !FrontlineStorage(targetUid.Value)) &&
+            (!TryGetEntity(msg.ItemEnt, out var candidate) || !ContainerSystem.TryGetContainingContainer(candidate.Value, out var owner) ||
+                !FrontlineStorage(owner.Owner)))
+        {
+            OnLegacyStorageTransfer(msg, args);
+            return;
+        }
+        if (!TryGetEntity(msg.ItemEnt, out var itemUid) ||
+            !TryComp(itemUid, out ItemComponent? itemComp) || !_transferringItems.Add(itemUid.Value))
+            return;
+
+        var item = new Entity<ItemComponent?>(itemUid.Value, itemComp);
+        try
+        {
+            if (!TryGetStorageLocation(item, out var source, out var sourceComp, out var oldLocation) ||
+                !ValidateInput(args, GetNetEntity(source.Owner), msg.ItemEnt, out var player, out _, out _) ||
+                !ValidateInput(args, msg.StorageEnt, out _, out var target) || source.Owner == target.Owner ||
+                !CanInteract(player, target, item: item, inserting: true) ||
+                !CanInsert(target, item, out _, target.Comp, itemComp, ignoreStacks: true) ||
+                !ItemFitsInGridLocation(item, target.AsNullable(), msg.Location))
+                return;
+
+            // Removal callbacks release cargo identities; keep the original for rollback.
+            var cargoId = TryComp<Content.Shared.War.FrontlineVehicleCargoComponent>(source.Owner, out var cargo)
+                ? cargo.CargoIds.GetValueOrDefault(item)
+                : null;
+            // Preflight both endpoints before native pickup can remove anything from the source.
+            var committed = false;
+            var sourceLocked = false;
+            var targetLocked = false;
+            try
+            {
+                var start = new StoragePlayerTransferAttemptEvent(player, item);
+                RaiseLocalEvent(source.Owner, ref start);
+                if (start.Cancelled) return;
+                sourceLocked = true;
+                start = new StoragePlayerTransferAttemptEvent(player, item);
+                RaiseLocalEvent(target.Owner, ref start);
+                if (start.Cancelled) return;
+                targetLocked = true;
+                if (!ValidateInput(args, GetNetEntity(source.Owner), msg.ItemEnt, out _, out _, out _) ||
+                    !ValidateInput(args, msg.StorageEnt, out _, out _) ||
+                    !_sharedHandsSystem.TryPickup(player, item, handsComp: player.Comp, animate: false))
+                    return;
+                if (!ValidateInput(args, msg.StorageEnt, msg.ItemEnt, out _, out _, out _, held: true))
+                    return;
+
+                InsertAt(target.AsNullable(), item, msg.Location, out _, player, stackAutomatically: false);
+                committed = !TerminatingOrDeleted(item) && !EntityManager.IsQueuedForDeletion(item) &&
+                    target.Comp.Container.Contains(item) && !source.Contains(item) &&
+                    ValidateInput(args, msg.StorageEnt, out _, out _) &&
+                    CanInteract(player, (source.Owner, sourceComp), item: item);
+                if (committed)
+                {
+                    var transferred = new StoragePlayerTransferredEvent(player, item, target);
+                    RaiseLocalEvent(source.Owner, ref transferred);
+                    RaiseLocalEvent(target.Owner, ref transferred);
+                }
+            }
+            finally
+            {
+                if (!committed && !TerminatingOrDeleted(item) && !EntityManager.IsQueuedForDeletion(item) &&
+                    !TerminatingOrDeleted(source.Owner) && !source.Contains(item))
+                {
+                    // Roll back the same entity and grid position, never spawn a replacement.
+                    if (!InsertAt((source.Owner, sourceComp), item, oldLocation, out _, playSound: false, stackAutomatically: false))
+                        throw new InvalidOperationException("Native transfer could not restore its original source.");
+                    if (cargoId != null && cargo != null) cargo.CargoIds[item] = cargoId;
+                }
+                var end = new StoragePlayerTransferAttemptEvent(player, item, End: true);
+                if (targetLocked) RaiseLocalEvent(target.Owner, ref end);
+                if (sourceLocked) RaiseLocalEvent(source.Owner, ref end);
+            }
+        }
+        finally { _transferringItems.Remove(item); }
+    }
+
     private void OnInsertItemIntoLocation(StorageInsertItemIntoLocationEvent msg, EntitySessionEventArgs args)
     {
         if (!ValidateInput(args, msg.StorageEnt, msg.ItemEnt, out var player, out var storage, out var item, held: true))
@@ -841,6 +938,11 @@ public abstract partial class SharedStorageSystem : EntitySystem
             LogImpact.Low,
             $"{ToPrettyString(player):player} is inserting {ToPrettyString(item):item} into {ToPrettyString(storage):storage}");
         InsertAt(storage!, item!, msg.Location, out _, player, stackAutomatically: false);
+        if (storage.Comp.Container.Contains(item) && !_sharedHandsSystem.IsHolding(player.AsNullable(), item, out _))
+        {
+            var transferred = new StoragePlayerTransferredEvent(player, item, storage);
+            RaiseLocalEvent(storage.Owner, ref transferred);
+        }
     }
 
     private void OnSaveItemLocation(StorageSaveItemLocationEvent msg, EntitySessionEventArgs args)
@@ -860,6 +962,8 @@ public abstract partial class SharedStorageSystem : EntitySystem
     {
         if (args.UiKey is not StorageComponent.StorageUiKey.Key ||
             _openStorageLimit == -1 ||
+            FrontlineStorage(ent.Owner) ||
+            HasComp<Content.Shared.War.FrontlinePlayerComponent>(args.Actor) ||
             _tag.HasTag(args.Actor, BypassOpenStorageLimitTag) ||
             _nestedCheck ||
             args.Message is not OpenBoundInterfaceMessage)
@@ -1902,15 +2006,30 @@ public abstract partial class SharedStorageSystem : EntitySystem
 #endif
     }
 
-    private bool CanInteract(EntityUid user, Entity<StorageComponent> storage, bool canInteract = true, bool silent = true)
+    public bool CanPlayerAccessStoredItem(EntityUid actor, EntityUid item)
+    {
+        if (!ContainerSystem.TryGetContainingContainer(item, out var source) ||
+            !TryComp<StorageComponent>(source.Owner, out var storage) || source != storage.Container ||
+            !HasComp<Content.Shared.War.FrontlineProductionStorageComponent>(source.Owner))
+            return true;
+        return storage.StoredItems.ContainsKey(item) &&
+            UI.IsUiOpen(source.Owner, StorageComponent.StorageUiKey.Key, actor) &&
+            ActionBlocker.CanInteract(actor, item) && CanInteract(actor, (source.Owner, storage), item: item);
+    }
+
+    private bool CanInteract(EntityUid user, Entity<StorageComponent> storage, bool canInteract = true, bool silent = true, EntityUid? item = null, bool inserting = false)
     {
         if (HasComp<BypassInteractionChecksComponent>(user))
             return true;
 
-        if (!canInteract)
+        if (!canInteract ||
+            (HasComp<Content.Shared.War.FrontlineProductionStorageComponent>(storage.Owner) ||
+             HasComp<Content.Shared.War.FrontlineStockpileComponent>(storage.Owner) ||
+             HasComp<Content.Shared.War.FrontlineVehicleCargoComponent>(storage.Owner)) &&
+            !_interactionSystem.InRangeAndAccessible(user, storage.Owner))
             return false;
 
-        var ev = new StorageInteractAttemptEvent(silent);
+        var ev = new StorageInteractAttemptEvent(silent, User: user, Item: item, Inserting: inserting);
         RaiseLocalEvent(storage, ref ev);
 
         return !ev.Cancelled;
@@ -1949,7 +2068,8 @@ public abstract partial class SharedStorageSystem : EntitySystem
         if (!UI.IsUiOpen(storageUid.Value, StorageComponent.StorageUiKey.Key, playerUid))
             return false;
 
-        if (!ActionBlocker.CanInteract(playerUid, storageUid))
+        if (!ActionBlocker.CanInteract(playerUid, storageUid) ||
+            FrontlineStorage(storageUid.Value) && !CanInteract(playerUid, (storageUid.Value, storageComp)))
             return false;
 
         player = new(playerUid, hands);
@@ -1991,6 +2111,8 @@ public abstract partial class SharedStorageSystem : EntitySystem
         if (!ActionBlocker.CanInteract(player, itemUid))
             return false;
 
+        if (FrontlineStorage(storage.Owner) && !CanInteract(player, storage, item: itemUid, inserting: held))
+            return false;
         item = new(itemUid.Value, itemComp);
         return true;
     }

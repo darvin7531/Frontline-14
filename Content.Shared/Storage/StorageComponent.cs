@@ -287,7 +287,14 @@ namespace Content.Shared.Storage
     }
 
     [ByRefEvent]
-    public record struct StorageInteractAttemptEvent(bool Silent, bool Cancelled = false);
+    public record struct StoragePlayerTransferAttemptEvent(EntityUid User, EntityUid Item, bool End = false, bool Cancelled = false);
+
+    [ByRefEvent]
+    public record struct StoragePlayerTransferredEvent(EntityUid User, EntityUid Item, EntityUid? Target);
+
+    [ByRefEvent]
+    public record struct StorageInteractAttemptEvent(bool Silent, bool Cancelled = false,
+        EntityUid? User = null, EntityUid? Item = null, bool Inserting = false);
 
     [ByRefEvent]
     public record struct StorageInteractUsingAttemptEvent(bool Cancelled = false);

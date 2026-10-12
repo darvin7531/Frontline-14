@@ -682,7 +682,7 @@ public sealed class PersistentWarRuleTest : GameTest
         var war = Server.System<WarStateSystem>();
         var maps = Server.System<SharedMapSystem>();
         var transforms = Server.System<SharedTransformSystem>();
-        var slots = Server.System<ItemSlotsSystem>();
+        var slots = Server.System<Content.Shared.Storage.EntitySystems.SharedStorageSystem>();
         var vehicles = Server.System<VehicleSystem>();
         var damage = Server.System<DamageableSystem>();
         var stacks = Server.System<StackSystem>();
@@ -718,8 +718,7 @@ public sealed class PersistentWarRuleTest : GameTest
 
         void AssertCargo(EntityUid truck)
         {
-            var cargo = SComp<ItemSlotsComponent>(truck).Slots.Values
-                .Where(slot => slot.HasItem).Select(slot => slot.Item!.Value).ToArray();
+            var cargo = SComp<Content.Shared.Storage.StorageComponent>(truck).Container.ContainedEntities.ToArray();
             Assert.That(cargo, Has.Length.EqualTo(cargoPrototypes.Length));
             Assert.That(cargo.Distinct().Count(), Is.EqualTo(cargo.Length));
             Assert.That(MapEntities(cargoPrototypes), Is.EquivalentTo(cargo),
@@ -780,7 +779,7 @@ public sealed class PersistentWarRuleTest : GameTest
                         SComp<FrontlineSupplyCrateComponent>(oldCargo[i]).Amount = amounts[i];
                     else
                         stacks.SetCount((oldCargo[i], null), 17);
-                    Assert.That(slots.TryInsertEmpty(oldTruck, oldCargo[i], null), Is.True);
+                    Assert.That(slots.Insert(oldTruck, oldCargo[i], out _, stackAutomatically: false), Is.True);
                 }
                 AssertCargo(oldTruck);
 #pragma warning disable CS0618 // Compare exact damage, not a player-facing health measurement.
@@ -1410,7 +1409,7 @@ public sealed class PersistentWarRuleTest : GameTest
 
         void AssertContainer(EntityUid owner, string id, string type, int amount)
         {
-            Assert.That(containers.TryGetContainer(owner, id, out var container), Is.True);
+            Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(owner, id, out var container), Is.True);
             Assert.That(container.ContainedEntities.All(uid => SEntMan.EntityExists(uid) &&
                 !SEntMan.IsQueuedForDeletion(uid) && SComp<MetaDataComponent>(uid).EntityLifeStage < EntityLifeStage.Terminating), Is.True);
             var goods = container.ContainedEntities.Select(uid => SComp<StackComponent>(uid)).ToArray();
@@ -1699,7 +1698,7 @@ public sealed class PersistentWarRuleTest : GameTest
 
         void AssertGoods(int crateCount)
         {
-            Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.InputContainerId, out var inputs), Is.True);
+            Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(factory, FrontlineFactoryComponent.InputContainerId, out var inputs), Is.True);
             Assert.That(inputs.ContainedEntities, Has.Count.EqualTo(1));
             var retainedInput = inputs.ContainedEntities.Single();
             Assert.That(SEntMan.EntityExists(retainedInput) && !SEntMan.IsQueuedForDeletion(retainedInput), Is.True);
@@ -1708,7 +1707,7 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(stack.StackTypeId, Is.EqualTo(new ProtoId<StackPrototype>("BasicMaterials")));
             Assert.That(stack.Unlimited, Is.False);
             Assert.That(stack.Count, Is.EqualTo(inputAmount));
-            Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId, out var outputs), Is.True);
+            Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId, out var outputs), Is.True);
             Assert.That(outputs.ContainedEntities, Has.Count.EqualTo(crateCount));
             foreach (var uid in outputs.ContainedEntities)
             {
@@ -1724,9 +1723,9 @@ public sealed class PersistentWarRuleTest : GameTest
                 Is.EqualTo(retainedAmount + (crateCount - 1) * 2));
             var other = FindFactory(new Vector2(45.5f, -19.5f));
             Assert.That(factories.GetJobs(other), Is.Empty, "Do not restore the paid claim into both factories.");
-            Assert.That(containers.TryGetContainer(other, FrontlineFactoryComponent.InputContainerId, out var otherInputs), Is.True);
+            Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(other, FrontlineFactoryComponent.InputContainerId, out var otherInputs), Is.True);
             Assert.That(otherInputs.ContainedEntities, Is.Empty);
-            Assert.That(containers.TryGetContainer(other, FrontlineFactoryComponent.OutputContainerId, out var otherOutputs), Is.True);
+            Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(other, FrontlineFactoryComponent.OutputContainerId, out var otherOutputs), Is.True);
             Assert.That(otherOutputs.ContainedEntities, Is.Empty);
             Assert.That(SEntMan.EntityQuery<FrontlineSupplyCrateComponent>().Where(crate =>
                     SComp<TransformComponent>(crate.Owner).MapID == ticker.DefaultMap).Select(crate => crate.Owner),
@@ -1786,7 +1785,7 @@ public sealed class PersistentWarRuleTest : GameTest
             await Server.WaitAssertion(() =>
             {
                 Assert.That(factories.GetJobs(factory), Is.Empty);
-                Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId, out var outputs), Is.True);
+                Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId, out var outputs), Is.True);
                 Assert.That(outputs.ContainedEntities, Has.Count.EqualTo(1));
                 var crate = outputs.ContainedEntities.Single();
                 Assert.That(SComp<MetaDataComponent>(crate).EntityPrototype?.ID, Is.EqualTo("FrontlineFactoryMedicalCrate"));
@@ -1830,7 +1829,7 @@ public sealed class PersistentWarRuleTest : GameTest
                             entry.Inputs.Count == 0 && entry.Outputs.Count == 0), Is.True);
                         var liveJobs = factories.GetJobs(factory).ToArray();
                         var liveMap = maps.GetMapOrInvalid(ticker.DefaultMap);
-                        Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId,
+                        Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId,
                             out var outputs), Is.True);
                         var liveOutputs = outputs.ContainedEntities.ToArray();
                         data.Delete(WarStrategicSnapshotSystem.TemporaryPath);
@@ -1845,10 +1844,10 @@ public sealed class PersistentWarRuleTest : GameTest
                             SEntMan.EntityExists(input), Is.True);
                         Assert.That(maps.GetMapOrInvalid(ticker.DefaultMap), Is.EqualTo(liveMap));
                         Assert.That(FindFactory(new Vector2(5.5f, -19.5f)), Is.EqualTo(factory));
-                        Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.InputContainerId,
+                        Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(factory, FrontlineFactoryComponent.InputContainerId,
                             out var inputs), Is.True);
                         Assert.That(inputs.ContainedEntities, Is.EqualTo(new[] { input }));
-                        Assert.That(containers.TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId,
+                        Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(factory, FrontlineFactoryComponent.OutputContainerId,
                             out var retainedOutputs), Is.True);
                         Assert.That(retainedOutputs.ContainedEntities, Is.EqualTo(liveOutputs));
                         Assert.That(factories.GetJobs(factory).Select(job => (job.Recipe, job.Remaining.Ticks)),
@@ -2095,9 +2094,9 @@ public sealed class PersistentWarRuleTest : GameTest
             SComp<FrontlineSupplyCrateComponent>(crate).Product = product;
             SComp<FrontlineSupplyCrateComponent>(crate).Amount = amount;
             var material = stacks.SpawnAtPosition(count, "BasicMaterials", coordinates);
-            var slots = Server.System<ItemSlotsSystem>();
-            Assert.That(slots.TryInsertEmpty(truck, crate, null), Is.True);
-            Assert.That(slots.TryInsertEmpty(truck, material, null), Is.True);
+            var slots = Server.System<Content.Shared.Storage.EntitySystems.SharedStorageSystem>();
+            Assert.That(slots.Insert(truck, crate, out _, stackAutomatically: false), Is.True);
+            Assert.That(slots.Insert(truck, material, out _, stackAutomatically: false), Is.True);
             Assert.That(Server.System<DamageableSystem>().TryChangeDamage(truck, new DamageSpecifier
             {
                 DamageDict = new() { ["Blunt"] = FixedPoint2.New(7.25), ["Slash"] = FixedPoint2.New(3.5) },
@@ -2106,8 +2105,7 @@ public sealed class PersistentWarRuleTest : GameTest
         }
 
         EntityUid[] Cargo(EntityUid truck) => truck == EntityUid.Invalid ? Array.Empty<EntityUid>() :
-            SComp<ItemSlotsComponent>(truck).Slots.Values.Where(slot => slot.HasItem)
-                .Select(slot => slot.Item!.Value).ToArray();
+            SComp<Content.Shared.Storage.StorageComponent>(truck).Container.ContainedEntities.ToArray();
 
         Dictionary<string, EntityUid> Objectives(MapId mapId) =>
             Server.System<TerritorySystem>().GetTerritories(mapId).ToDictionary(id => id.Id,
@@ -4425,9 +4423,9 @@ public sealed class PersistentWarRuleTest : GameTest
             oldCrate = SEntMan.SpawnEntity("FrontlineSupplyCrate", truckCoordinates);
             SComp<FrontlineSupplyCrateComponent>(oldCrate).Amount = 13;
             oldMaterials = Server.System<StackSystem>().SpawnAtPosition(17, "BasicMaterials", truckCoordinates);
-            var slots = Server.System<ItemSlotsSystem>();
-            Assert.That(slots.TryInsertEmpty(oldTruck, oldCrate, null), Is.True);
-            Assert.That(slots.TryInsertEmpty(oldTruck, oldMaterials, null), Is.True);
+            var slots = Server.System<Content.Shared.Storage.EntitySystems.SharedStorageSystem>();
+            Assert.That(slots.Insert(oldTruck, oldCrate, out _, stackAutomatically: false), Is.True);
+            Assert.That(slots.Insert(oldTruck, oldMaterials, out _, stackAutomatically: false), Is.True);
             var captured = 0;
             foreach (var territory in territories.GetTerritories(ticker.DefaultMap))
             {

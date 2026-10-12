@@ -95,7 +95,7 @@ public sealed partial class StorageUIController : UIController, IOnSystemChanged
 
     public StorageWindow CreateStorageWindow(StorageBoundUserInterface sBui)
     {
-        var window = new StorageWindow();
+        var window = new StorageWindow(sBui.Owner);
         window.MouseFilter = Control.MouseFilterMode.Pass;
 
         window.OnPiecePressed += (args, piece) =>
@@ -107,6 +107,12 @@ public sealed partial class StorageUIController : UIController, IOnSystemChanged
             OnPieceUnpressed(args, window, piece);
         };
 
+        if (EntityManager.HasComponent<Content.Shared.War.FrontlineProductionStorageComponent>(sBui.Owner))
+        {
+            // Mounted by the machine window; do not put sibling input/output windows in the hotbar.
+            _ui.RegisterControl(sBui, window);
+            return window;
+        }
         if (StaticStorageUIEnabled)
         {
             var hotbar = UIManager.GetActiveUIWidgetOrNull<HotbarGui>();
@@ -303,6 +309,8 @@ public sealed partial class StorageUIController : UIController, IOnSystemChanged
         control.MouseFilter = Control.MouseFilterMode.Ignore;
         var targetControl = UIManager.MouseGetControl(args.PointerLocation);
         var targetStorage = targetControl as StorageWindow;
+        for (var parent = targetControl?.Parent; targetStorage == null && parent != null; parent = parent.Parent)
+            targetStorage = parent as StorageWindow;
         control.MouseFilter = Control.MouseFilterMode.Pass;
 
         var localPlayer = _player.LocalEntity;

@@ -26,9 +26,8 @@ public sealed partial class FrontlineFactoryBoundUserInterface : BoundUserInterf
     {
         base.Open();
         _window = this.CreateWindowCenteredRight<FrontlineFactoryWindow>();
+        _window.SetMachine(Owner);
         _window.Submit += recipe => SendMessage(new FrontlineFactorySubmitMessage(recipe, _window.Personal));
-        _window.Eject += () => SendMessage(new FrontlineFactoryEjectMessage());
-        _window.TakeOutput += () => SendMessage(new FrontlineFactoryTakeOutputMessage(_window.Personal));
         _window.ModeChanged += personal => SendMessage(new FrontlineFactoryModeMessage(personal));
         _window.Cancel += id => SendMessage(new FrontlineFactoryCancelMessage(id, _window.Personal));
     }
@@ -73,16 +72,12 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
 {
     [Dependency] private IPrototypeManager _prototypes = default!;
     public event Action<ProtoId<FrontlineFactoryRecipePrototype>>? Submit;
-    public event Action? Eject;
-    public event Action? TakeOutput;
-    private readonly FrontlineItemGrid _inputs;
+    private readonly FrontlineNativeStoragePanel _inputs;
     private readonly FrontlineItemGrid _recipes;
-    private readonly FrontlineItemGrid _outputs;
+    private readonly FrontlineNativeStoragePanel _outputs;
     private readonly FrontlineJobList _jobs = new() { Name = "Queue" };
     private readonly RichTextLabel _details = new() { HorizontalExpand = true };
     private readonly Button _produce = new() { Name = "Produce", Disabled = true };
-    private readonly Button _eject = new() { Name = "Eject" };
-    private readonly Button _take = new() { Name = "TakeOutput" };
     private readonly Button _public = new() { Name = "Public", ToggleMode = true, Pressed = true, Text = "Public" };
     private readonly Button _personal = new() { Name = "Personal", ToggleMode = true, Text = "Personal" };
     public bool Personal => _personal.Pressed;
@@ -99,16 +94,13 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         Title = Loc.GetString("frontline-factory-title");
         MinSize = new Vector2(600, 400);
         SetSize = new Vector2(740, 480);
-        var columns = new BoxContainer { HorizontalExpand = true, VerticalExpand = true, SeparationOverride = 8 };
+        var columns = new FrontlineProductionColumns();
         var left = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-input-heading"));
         var hint = new RichTextLabel();
         hint.SetMessage(Loc.GetString("frontline-ui-load-hint"));
         left.AddChild(hint);
-        _inputs = new FrontlineItemGrid(Loc.GetString("frontline-factory-input-empty"), mode: FrontlineItemGridMode.Slots) { Name = "Inputs" };
+        _inputs = new FrontlineNativeStoragePanel(null, false) { Name = "Inputs" };
         left.AddChild(_inputs);
-        _eject.Text = Loc.GetString("frontline-factory-eject-all");
-        _eject.OnPressed += _ => Eject?.Invoke();
-        left.AddChild(_eject);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, Children = { left } });
         var center = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-recipes-heading"));
         _recipes = new FrontlineItemGrid(Loc.GetString("frontline-ui-recipes-empty"), true, mode: FrontlineItemGridMode.Recipes) { Name = "Recipes" };
@@ -128,11 +120,8 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         center.AddChild(_produce);
         columns.AddChild(new PanelContainer { StyleClasses = { "BackgroundDark" }, HorizontalExpand = true, VerticalExpand = true, SizeFlagsStretchRatio = 1.4f, Children = { center } });
         var right = FrontlineItemGrid.Column(Loc.GetString("frontline-factory-output-heading"));
-        _outputs = new FrontlineItemGrid(Loc.GetString("frontline-factory-output-empty"), mode: FrontlineItemGridMode.Slots) { Name = "Outputs" };
+        _outputs = new FrontlineNativeStoragePanel(null, true) { Name = "Outputs" };
         right.AddChild(_outputs);
-        _take.Text = Loc.GetString("frontline-factory-take-output");
-        _take.OnPressed += _ => TakeOutput?.Invoke();
-        right.AddChild(_take);
         right.AddChild(new PanelContainer { StyleClasses = { "LowDivider" } });
         right.AddChild(new Label { Text = Loc.GetString("frontline-factory-queue-heading"), StyleClasses = { "LabelHeading" } });
         right.AddChild(FrontlineItemGrid.CreateScroll(_jobs));
@@ -150,6 +139,12 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         UpdateSelection();
     }
 
+    public void SetMachine(EntityUid machine)
+    {
+        _inputs.Machine = machine;
+        _outputs.Machine = machine;
+    }
+
     public void SetState(FrontlineFactoryUiState state,
         Func<ProtoId<StackPrototype>, string> stackName,
         Func<EntProtoId, string> entityName,
@@ -159,10 +154,6 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
         _stackName = stackName;
         _recipeName = recipeName;
         _entityName = entityName;
-        _inputs.SetItems(state.Inputs.Select(input => new FrontlineItemView(input.Stack.Id,
-            _inputs.StackIcon(input.Stack), input.Amount, $"{stackName(input.Stack)} ×{input.Amount}", Name: stackName(input.Stack))));
-        _outputs.SetItems(state.Outputs.Select(output => new FrontlineItemView(output.Prototype.Id,
-            _outputs.EntityIcon(output.Prototype), output.Count, $"{entityName(output.Prototype)} ×{output.Count}", Name: entityName(output.Prototype))));
         _recipes.SetItems(state.Recipes.Select(recipe => new FrontlineItemView(recipe.Id.Id,
             _recipes.EntityIcon(recipe.Output), recipe.OutputAmount, Details(recipe),
             _prototypes.Index(recipe.Id).Category, recipe.CanSubmit, Caption: Loc.GetString("frontline-ui-duration", ("seconds", Math.Ceiling(recipe.Duration.TotalSeconds))), Name: recipeName(recipe.Id))));
@@ -172,8 +163,6 @@ public sealed partial class FrontlineFactoryWindow : DefaultWindow
             return new FrontlineJobView(job.Recipe.Id, recipeName(job.Recipe), _recipes.EntityIcon(recipe?.Output),
                 recipe?.Duration ?? TimeSpan.Zero, job.Remaining, job.Processing, ClaimId: job.Id, CanCancel: job.CanCancel);
         }));
-        _eject.Disabled = state.Inputs.Length == 0;
-        _take.Disabled = state.Outputs.Length == 0;
         UpdateSelection();
     }
 

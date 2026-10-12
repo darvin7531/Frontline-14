@@ -13,6 +13,7 @@ namespace Content.Server.War;
 
 public sealed partial class FrontlineStockpileSystem : EntitySystem
 {
+    [Dependency] private FrontlineProductionSystem _production = default!;
     [Dependency] private SharedHandsSystem _hands = default!;
     [Dependency] private SharedInteractionSystem _interaction = default!;
     [Dependency] private IPrototypeManager _prototypes = default!;
@@ -70,6 +71,9 @@ public sealed partial class FrontlineStockpileSystem : EntitySystem
     public void RestoreCounts(EntityUid core, IReadOnlyDictionary<string, int> counts)
     {
         var stockpile = Comp<FrontlineStockpileComponent>(core);
+        if (_operating.Contains(core)) throw new InvalidOperationException("Stockpile operation is unsettled.");
+        if (TryComp<Content.Shared.Storage.StorageComponent>(core, out var storage))
+            foreach (var item in storage.Container.ContainedEntities.ToArray()) Del(item);
         stockpile.Counts.Clear();
         foreach (var (product, count) in counts)
             stockpile.Counts[product] = count;
@@ -77,12 +81,18 @@ public sealed partial class FrontlineStockpileSystem : EntitySystem
 
     public override void Initialize()
     {
+        InitializeStorage();
         SubscribeLocalEvent<FrontlineStockpileComponent, BeforeActivatableUIOpenEvent>(OnOpen);
         SubscribeLocalEvent<FrontlineStockpileComponent, FrontlineStockpileSubmitMessage>(OnSubmit);
         SubscribeLocalEvent<FrontlineStockpileComponent, FrontlineStockpileWithdrawMessage>(OnWithdraw);
     }
 
-    private void OnOpen(Entity<FrontlineStockpileComponent> core, ref BeforeActivatableUIOpenEvent args) => UpdateUi(core);
+    private void OnOpen(Entity<FrontlineStockpileComponent> core, ref BeforeActivatableUIOpenEvent args)
+    {
+        Materialize(core);
+        _storage.OpenStorageUI(core, args.User);
+        UpdateUi(core);
+    }
 
     private void OnSubmit(Entity<FrontlineStockpileComponent> core, ref FrontlineStockpileSubmitMessage args)
     {
@@ -106,12 +116,13 @@ public sealed partial class FrontlineStockpileSystem : EntitySystem
     {
         if (TerminatingOrDeleted(core) || !TryComp<FrontlineStockpileComponent>(core, out var stockpile))
             return new([]);
+        var counts = SumCounts(core);
         return new(_prototypes.EnumeratePrototypes<FrontlineSupplyProductPrototype>()
             .Where(product => TryProduct(product.ID, out _))
             .OrderBy(product => product.ID)
             .Select(product => new FrontlineStockpileProductState(product.ID,
-                stockpile.Counts.GetValueOrDefault(product.ID),
-                product.Entity != null && stockpile.Counts.GetValueOrDefault(product.ID) > 0))
+                counts.GetValueOrDefault(product.ID),
+                product.Entity != null && counts.GetValueOrDefault(product.ID) > 0))
             .ToArray());
     }
 
@@ -119,7 +130,7 @@ public sealed partial class FrontlineStockpileSystem : EntitySystem
     public bool TrySpendSoldierSupply(EntityUid core, Func<bool> operation)
     {
         if (TerminatingOrDeleted(core) || EntityManager.IsQueuedForDeletion(core) ||
-            !TryComp<FrontlineStockpileComponent>(core, out var stockpile) || !_operating.Add(core))
+            !TryComp<FrontlineStockpileComponent>(core, out var stockpile) || _production.NativeTransferActive(core) || !_operating.Add(core))
             return false;
 
         var committed = false;
@@ -153,7 +164,7 @@ public sealed partial class FrontlineStockpileSystem : EntitySystem
 
     public bool TrySubmitHeld(EntityUid core, EntityUid actor)
     {
-        if (!CanAccess(core, actor) || !_operating.Add(core))
+        if (!CanAccess(core, actor) || _production.NativeTransferActive(core) || !_operating.Add(core))
             return false;
 
         try
@@ -195,7 +206,7 @@ public sealed partial class FrontlineStockpileSystem : EntitySystem
         ProtoId<FrontlineSupplyProductPrototype> product)
     {
         if (!CanAccess(core, actor) || !TryProduct(product, out var definition) ||
-            definition.Entity == null || !_operating.Add(core))
+            definition.Entity == null || _production.NativeTransferActive(core) || !_operating.Add(core))
             return false;
 
         try

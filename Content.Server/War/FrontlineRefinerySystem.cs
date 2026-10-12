@@ -57,16 +57,14 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
 
     private void OnStartup(Entity<FrontlineRefineryComponent> refinery, ref ComponentStartup args)
     {
-        refinery.Comp.InputContainer = _containers.EnsureContainer<Container>(
-            refinery,
-            FrontlineRefineryComponent.InputContainerId);
-        refinery.Comp.OutputContainer = _containers.EnsureContainer<Container>(
-            refinery,
-            FrontlineRefineryComponent.OutputContainerId);
+        refinery.Comp.InputContainer = _containers.EnsureContainer<Container>(refinery, FrontlineRefineryComponent.InputContainerId);
+        refinery.Comp.OutputContainer = _containers.EnsureContainer<Container>(refinery, FrontlineRefineryComponent.OutputContainerId);
     }
 
     private void OnMapInit(Entity<FrontlineRefineryComponent> refinery, ref MapInitEvent args)
     {
+        refinery.Comp.InputContainer = _production.CreateStorage(refinery, FrontlineRefineryComponent.InputContainerId, false);
+        refinery.Comp.OutputContainer = _production.CreateStorage(refinery, FrontlineRefineryComponent.OutputContainerId, true);
         if (refinery.Comp.Jobs.Count > 0)
             _active.Add(refinery);
     }
@@ -115,6 +113,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
     private void OnBeforeUiOpen(Entity<FrontlineRefineryComponent> refinery, ref BeforeActivatableUIOpenEvent args)
     {
         UpdateUi(refinery);
+        _production.OpenStorage(refinery, args.User);
     }
 
     private void OnModeMessage(Entity<FrontlineRefineryComponent> refinery, ref FrontlineRefineryModeMessage args)
@@ -136,7 +135,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         if (!IsCompletionEntityAlive(uid) || !IsCompletionEntityAlive(actor) ||
             !TryComp<FrontlineRefineryComponent>(uid, out var component) ||
             !_players.TryGetSessionByEntity(actor, out var session) ||
-            _restoring.Contains(uid) || _submitting.Contains(uid) ||
+            (_production.NativeTransferActive(uid) || _restoring.Contains(uid)) || _submitting.Contains(uid) ||
             _completing.Contains(uid) || _taking.Contains(uid) || !_movingInputs.Add(uid)) return false;
         try
         {
@@ -187,7 +186,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
     public bool TryTakePlayerOutput(EntityUid refineryUid, EntityUid playerUid, bool personal = false)
     {
         if (!IsCompletionEntityAlive(refineryUid) || !IsCompletionEntityAlive(playerUid) ||
-            _completing.Contains(refineryUid) || _restoring.Contains(refineryUid) ||
+            _completing.Contains(refineryUid) || (_production.NativeTransferActive(refineryUid) || _restoring.Contains(refineryUid)) ||
             !TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
             !_taking.Add(refineryUid))
             return false;
@@ -281,37 +280,36 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
             !_completing.Contains(refineryUid) && _interaction.InRangeUnobstructed(playerUid, refineryUid) &&
             IsCompletionEntityAlive(refineryUid) && IsCompletionEntityAlive(playerUid) &&
             TryComp<FrontlineRefineryComponent>(refineryUid, out var current) && current == refinery &&
-            _containers.TryGetContainer(refineryUid, FrontlineRefineryComponent.OutputContainerId, out var retained) &&
+            _production.TryGetContainer(refineryUid, FrontlineRefineryComponent.OutputContainerId, out var retained) &&
             retained == container;
 
         // A queued machine still owns its outputs until termination; restore, never hand them out.
         bool CanRestoreOutput() => !TerminatingOrDeleted(refineryUid) &&
             TryComp<FrontlineRefineryComponent>(refineryUid, out var current) && current == refinery &&
-            _containers.TryGetContainer(refineryUid, FrontlineRefineryComponent.OutputContainerId, out var retained) &&
+            _production.TryGetContainer(refineryUid, FrontlineRefineryComponent.OutputContainerId, out var retained) &&
             retained == container;
     }
 
     private void OnOutputCountChanged(Entity<TransformComponent> stack, ref StackCountChangedEvent args)
     {
         if (_containers.TryGetContainingContainer(stack.Owner, out var container) &&
-            container.ID == FrontlineRefineryComponent.OutputContainerId &&
-            IsCompletionEntityAlive(container.Owner) &&
-            TryComp<FrontlineRefineryComponent>(container.Owner, out var refinery) &&
+            container.ID == Content.Shared.Storage.StorageComponent.ContainerId &&
+            TryComp<FrontlineProductionStorageComponent>(container.Owner, out var link) && link.Output &&
+            IsCompletionEntityAlive(link.Machine) &&
+            TryComp<FrontlineRefineryComponent>(link.Machine, out var refinery) &&
             refinery.OutputContainer == container)
-            UpdateUi((container.Owner, refinery));
+            UpdateUi((link.Machine, refinery));
     }
 
     private void OnContainerChanged(Entity<FrontlineRefineryComponent> refinery, ref EntInsertedIntoContainerMessage args)
     {
-        if (args.Container.ID == FrontlineRefineryComponent.InputContainerId ||
-            args.Container.ID == FrontlineRefineryComponent.OutputContainerId)
+        if (args.Container == refinery.Comp.InputContainer || args.Container == refinery.Comp.OutputContainer)
             UpdateUi(refinery);
     }
 
     private void OnContainerChanged(Entity<FrontlineRefineryComponent> refinery, ref EntRemovedFromContainerMessage args)
     {
-        if (args.Container.ID == FrontlineRefineryComponent.InputContainerId ||
-            args.Container.ID == FrontlineRefineryComponent.OutputContainerId)
+        if (args.Container == refinery.Comp.InputContainer || args.Container == refinery.Comp.OutputContainer)
             UpdateUi(refinery);
     }
 
@@ -397,6 +395,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         {
             if (!_players.TryGetSessionByEntity(actor, out var session)) continue;
             var personal = _modes.GetValueOrDefault((refinery.Owner, actor));
+            _production.UpdateStorageView(refinery.Owner, actor);
             _ui.ServerSendUiMessage(refinery.Owner, FrontlineRefineryUiKey.Key,
                 new FrontlineRefineryViewMessage(BuildUiState(refinery.Owner, personal ? session.UserId.ToString() : null), personal), actor);
         }
@@ -426,7 +425,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
     public bool TryInsertInput(EntityUid refineryUid, EntityUid inputUid)
     {
         if (!TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
-            _restoring.Contains(refineryUid) ||
+            (_production.NativeTransferActive(refineryUid) || _restoring.Contains(refineryUid)) ||
             TerminatingOrDeleted(refineryUid) ||
             TerminatingOrDeleted(inputUid) ||
             !CanAcceptInput(inputUid) || !_movingInputs.Add(refineryUid))
@@ -442,6 +441,25 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         }
     }
 
+    public void NativeTransferFinished(EntityUid uid)
+    {
+        if (!TryComp<FrontlineRefineryComponent>(uid, out var machine)) return;
+        UpdateUi((uid, machine));
+    }
+
+    public bool CanAccessNativeStorage(EntityUid uid, EntityUid actor, EntityUid? item, bool output, bool inserting)
+    {
+        if (!IsCompletionEntityAlive(uid) || !IsCompletionEntityAlive(actor) || (_production.NativeTransferActive(uid) && !_production.OwnNativeTransfer(uid, actor, item) || _restoring.Contains(uid)) ||
+            _submitting.Contains(uid) || _completing.Contains(uid) || _taking.Contains(uid) || _movingInputs.Contains(uid) ||
+            !_players.TryGetSessionByEntity(actor, out var session) || !_interaction.InRangeUnobstructed(actor, uid))
+            return false;
+        if (!output)
+            return !inserting || item is { } input && IsCompletionEntityAlive(input) && CanAcceptInput(input);
+        if (inserting) return false;
+        return item == null || IsCompletionEntityAlive(item.Value) &&
+            _production.CanAccess(item.Value, _modes.GetValueOrDefault((uid, actor)) ? session.UserId.ToString() : null);
+    }
+
     private bool CanAcceptInput(EntityUid inputUid)
     {
         return TryComp<StackComponent>(inputUid, out var stack) &&
@@ -451,7 +469,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
 
     public void EjectInputs(EntityUid refineryUid)
     {
-        if (_restoring.Contains(refineryUid) || !TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
+        if ((_production.NativeTransferActive(refineryUid) || _restoring.Contains(refineryUid)) || !TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
             !_movingInputs.Add(refineryUid))
             return;
 
@@ -512,7 +530,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         int batches = 1, bool allAvailable = false, Func<bool>? authorized = null, string? owner = null)
     {
         if (batches <= 0 || string.IsNullOrWhiteSpace(recipeId.Id) || !TryComp<FrontlineRefineryComponent>(refineryUid, out var refinery) ||
-            _restoring.Contains(refineryUid) ||
+            (_production.NativeTransferActive(refineryUid) || _restoring.Contains(refineryUid)) ||
             !IsCompletionEntityAlive(refineryUid) ||
             _movingInputs.Contains(refineryUid) || _completing.Contains(refineryUid) ||
             !_prototypes.TryIndex(recipeId, out var recipe) ||
@@ -654,7 +672,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
         try
         {
             if (!IsCompletionEntityAlive(uid) ||
-                !_containers.TryGetContainer(uid, FrontlineRefineryComponent.OutputContainerId, out var container) ||
+                !_production.TryGetContainer(uid, FrontlineRefineryComponent.OutputContainerId, out var container) ||
                 container != refinery.OutputContainer)
                 return false;
 
@@ -694,7 +712,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
             // Later callbacks can invalidate any earlier staged stack, not just the last one.
             if (!IsCompletionEntityAlive(uid) ||
                 !TryComp<FrontlineRefineryComponent>(uid, out var current) || current != refinery ||
-                !_containers.TryGetContainer(uid, FrontlineRefineryComponent.OutputContainerId, out var retained) ||
+                !_production.TryGetContainer(uid, FrontlineRefineryComponent.OutputContainerId, out var retained) ||
                 retained != container ||
                 outputs.Any(entry => !IsCompletionEntityAlive(entry.Key) ||
                     !retained.Contains(entry.Key) ||
@@ -760,9 +778,9 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
             if (!IsCompletionEntityAlive(uid) || string.IsNullOrWhiteSpace(refinery.RefineryId) ||
                 !result.TryAdd(refinery.RefineryId, (uid, refinery)) ||
                 _submitting.Contains(uid) || _completing.Contains(uid) || _taking.Contains(uid) || _movingInputs.Contains(uid) ||
-                !_containers.TryGetContainer(uid, FrontlineRefineryComponent.InputContainerId, out var input) ||
+                !_production.TryGetContainer(uid, FrontlineRefineryComponent.InputContainerId, out var input) ||
                 input != refinery.InputContainer ||
-                !_containers.TryGetContainer(uid, FrontlineRefineryComponent.OutputContainerId, out var output) ||
+                !_production.TryGetContainer(uid, FrontlineRefineryComponent.OutputContainerId, out var output) ||
                 output != refinery.OutputContainer)
                 throw new InvalidDataException("Refinery identity, containers or economic operation is unsettled.");
         }
@@ -1002,7 +1020,7 @@ public sealed partial class FrontlineRefinerySystem : EntitySystem
                 continue;
             }
 
-            if (MetaData(uid).EntityPaused || _completing.Contains(uid) || _restoring.Contains(uid) ||
+            if (MetaData(uid).EntityPaused || _completing.Contains(uid) || (_production.NativeTransferActive(uid) || _restoring.Contains(uid)) ||
                 _submitting.Contains(uid) || _movingInputs.Contains(uid) || _taking.Contains(uid))
                 continue;
 

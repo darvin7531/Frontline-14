@@ -19,15 +19,16 @@ frontline-production-cancel = Cancel and refund
 frontline-production-legacy-no-receipt = Original payment receipt is unavailable for this legacy job. It can complete but cannot be cancelled.
 frontline-refinery-batches = Recipe batches
 frontline-refinery-batch-hint = Quantity counts complete recipes, not raw material units. Shift + Produce uses all loaded material for the selected recipe.
-frontline-ui-ready = Ready
+frontline-ui-ready = Can produce
 frontline-ui-insufficient = Missing input
 frontline-ui-recipe-details = { $name }
     { $input }
     → { $output } ×{ $amount }
-    { $seconds } s: { $availability }
+    Production time: { $seconds } s
+    { $availability }
 frontline-ui-queue-empty = No queued jobs.
 frontline-ui-job = #{ $position } { $name }
 frontline-ui-job-status = { $status }: { $seconds } s
-frontline-ui-duration = { $seconds } s
+frontline-ui-duration = Production time: { $seconds } s
 frontline-ui-processing = Processing
 frontline-ui-waiting = Waiting

@@ -240,6 +240,8 @@ public abstract partial class SharedStackSystem : EntitySystem
     /// </remarks>
     public void UserSplit(Entity<StackComponent> stack, EntityUid user, int amount)
     {
+        if (!_storage.CanPlayerAccessStoredItem(user, stack.Owner))
+            return;
         if (amount <= 0)
         {
             _popup.PopupCursor(Loc.GetString("comp-stack-split-too-small"), user, PopupType.Medium);

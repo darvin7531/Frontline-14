@@ -398,7 +398,7 @@ public sealed class FrontlineFactoryTest : GameTest
         private void OnInserted(Entity<ContainerManagerComponent> factory, ref EntInsertedIntoContainerMessage args)
         {
             if (!Enabled || factory.Owner != FactoryUid || Rejected ||
-                args.Container.ID != FrontlineFactoryComponent.OutputContainerId)
+                args.Container != Comp<FrontlineFactoryComponent>(FactoryUid).OutputContainer)
                 return;
 
             if (First == default)
@@ -415,7 +415,7 @@ public sealed class FrontlineFactoryTest : GameTest
         private void OnRemoved(Entity<ContainerManagerComponent> factory, ref EntRemovedFromContainerMessage args)
         {
             if (!Enabled || factory.Owner != FactoryUid || !Rejected || RemovalObserved || args.Entity != First ||
-                args.Container.ID != FrontlineFactoryComponent.OutputContainerId)
+                args.Container != Comp<FrontlineFactoryComponent>(FactoryUid).OutputContainer)
                 return;
 
             RemovalObserved = true;
@@ -595,7 +595,7 @@ public sealed class FrontlineFactoryTest : GameTest
         await server.WaitAssertion(() =>
         {
             Assert.That(system.GetJobs(factory), Is.Empty);
-            Assert.That(containers.TryGetContainer(factory, "outputContainer", out var output), Is.True,
+            Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(factory, "outputContainer", out var output), Is.True,
                 "Completed supply crate must be retained in factory outputContainer.");
             Assert.That(output!.ContainedEntities, Has.Count.EqualTo(1));
             var crate = output.ContainedEntities.Single();
@@ -1174,7 +1174,7 @@ public sealed class FrontlineFactoryTest : GameTest
     public sealed class OutputBuiTest : InteractionTest
     {
         [Test]
-        public async Task ConnectedPlayerTakesCompletedSealedCrateThroughNativeButtonWithoutDuplication()
+        public async Task ConnectedPlayerTakesCompletedSealedCrateThroughNativeStorageWithoutDuplication()
         {
             await SpawnTarget("FrontlineFactory");
             var factory = STarget!.Value;
@@ -1192,7 +1192,7 @@ public sealed class FrontlineFactoryTest : GameTest
             await Server.WaitPost(() =>
             {
                 Assert.That(system.GetJobs(factory), Is.Empty);
-                Assert.That(containers.TryGetContainer(factory, "outputContainer", out output), Is.True);
+                Assert.That(Server.System<FrontlineProductionSystem>().TryGetContainer(factory, "outputContainer", out output), Is.True);
                 Assert.That(output.ContainedEntities, Has.Count.EqualTo(1));
                 crate = output.ContainedEntities.Single();
                 Assert.That(SComp<MetaDataComponent>(crate).EntityPrototype?.ID, Is.EqualTo("FrontlineSupplyCrate"));
@@ -1203,16 +1203,10 @@ public sealed class FrontlineFactoryTest : GameTest
             Assert.That(TryGetBui(FrontlineFactoryUiKey.Key, out _), Is.True);
             for (var click = 0; click < 2; click++)
             {
-                Button take = default!;
-                await Client.WaitAssertion(() =>
-                {
-                    var window = GetWindow<FrontlineFactoryWindow>();
-                    Assert.That(TryGetControlFromChildren<Button>(button => button.Name == "TakeOutput", window, out take),
-                        Is.True, "Factory production BUI must expose a button named TakeOutput.");
-                    if (click == 0)
-                        Assert.That(take.Disabled, Is.False);
-                });
-                await ClickControl(take);
+                var itemNet = SEntMan.GetNetEntity(crate);
+                var storageNet = SEntMan.GetNetEntity(output.Owner);
+                await Client.WaitPost(() => CEntMan.RaisePredictiveEvent(new Content.Shared.Storage.StorageInteractWithItemEvent(itemNet, storageNet)));
+                await RunTicks(3);
                 await Pair.RunUntilSynced();
                 await Server.WaitAssertion(() =>
                 {

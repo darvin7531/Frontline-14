@@ -13,6 +13,7 @@ public sealed class StorageBoundUserInterface : BoundUserInterface
 {
     private StorageWindow? _window;
 
+    public StorageWindow? Window => _window;
     public Vector2? Position => _window?.Position;
 
     public StorageBoundUserInterface(EntityUid owner, Enum uiKey) : base(owner, uiKey)
@@ -21,6 +22,9 @@ public sealed class StorageBoundUserInterface : BoundUserInterface
 
     protected override void Open()
     {
+        if (IsOpened)
+            return;
+
         base.Open();
 
         _window = IoCManager.Resolve<IUserInterfaceManager>()
@@ -34,6 +38,15 @@ public sealed class StorageBoundUserInterface : BoundUserInterface
 
         _window.OnClose += Close;
         _window.FlagDirty();
+        if (EntMan.HasComponent<Content.Shared.War.FrontlineProductionStorageComponent>(Owner))
+            SendMessage(new Content.Shared.War.FrontlineProductionStorageViewRequestMessage());
+    }
+
+    protected override void ReceiveMessage(BoundUserInterfaceMessage message)
+    {
+        base.ReceiveMessage(message);
+        if (message is Content.Shared.War.FrontlineProductionStorageViewMessage view)
+            _window?.SetVisibleItems(view.Items);
     }
 
     public void Refresh()

@@ -106,120 +106,46 @@
   - type: VehicleSurfaceSpeed
     roadTiles: [FloorConcrete, FrontlineFloorAsphalt, FrontlineFloorConcrete, FrontlineFloorAsphalt1, FrontlineFloorAsphalt2, FrontlineFloorAsphalt3, FrontlineFloorAsphalt4, FrontlineFloorAsphalt5, FrontlineFloorAsphalt6, FrontlineFloorAsphalt7, FrontlineFloorAsphalt8, FrontlineFloorAsphalt9, FrontlineFloorAsphalt10, FrontlineFloorAsphalt11, FrontlineFloorAsphalt12, FrontlineFloorAsphalt13, FrontlineFloorAsphalt14, FrontlineFloorAsphalt15, FrontlineFloorAsphalt16, FrontlineFloorAsphalt17, FrontlineFloorAsphaltSunbleached]
     offRoadModifier: 0.55
+  - type: FrontlineVehicleCargo
+  - type: Storage
+    grid:
+    - 0,0,19,7
+    maxItemSize: Huge
+    whitelist:
+      components: [FrontlineSupplyCrate, Stack]
+    storageInsertSound: null
+    storageOpenSound: null
+  - type: UserInterface
+    interfaces:
+      enum.StorageComponent.StorageUiKey.Key:
+        type: StorageBoundUserInterface
   - type: ContainerContainer
     containers:
       driver: !type:ContainerSlot
-      cargo01: !type:ContainerSlot
-      cargo02: !type:ContainerSlot
-      cargo03: !type:ContainerSlot
-      cargo04: !type:ContainerSlot
-      cargo05: !type:ContainerSlot
-      cargo06: !type:ContainerSlot
-      cargo07: !type:ContainerSlot
-      cargo08: !type:ContainerSlot
-      cargo09: !type:ContainerSlot
-      cargo10: !type:ContainerSlot
-  # ItemSlots ensures one ContainerSlot per entry; no grid-size limit on Huge crates.
-  # No swapping: loading a full truck must not replace an existing paid cargo entity.
-  - type: ItemSlots
-    slots:
-      cargo01:
-        priority: 1
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
-      cargo02:
-        priority: 2
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
-      cargo03:
-        priority: 3
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
-      cargo04:
-        priority: 4
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
-      cargo05:
-        priority: 5
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
-      cargo06:
-        priority: 6
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
-      cargo07:
-        priority: 7
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
-      cargo08:
-        priority: 8
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
-      cargo09:
-        priority: 9
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
-      cargo10:
-        priority: 10
-        swap: false
-        insertSound: null
-        ejectSound: null
-        ejectOnBreak: true
-        whitelist:
-          components:
-          - FrontlineSupplyCrate
-          - Stack
+      storagebase: !type:Container
+
+# No Item component: native hands cannot pick up the entire cargo bag.
+- type: entity
+  id: FrontlineVehicleLootBag
+  categories: [ Frontline ]
+  name: vehicle cargo
+  description: Salvaged vehicle cargo. Open it to recover individual items.
+  components:
+  - type: Sprite
+    sprite: Clothing/Back/Backpacks/backpack.rsi
+    state: icon
+  - type: Clickable
+  - type: InteractionOutline
+  - type: Storage
+    grid:
+    - 0,0,19,7
+    maxItemSize: Huge
+    storageInsertSound: null
+    storageOpenSound: null
+  - type: UserInterface
+    interfaces:
+      enum.StorageComponent.StorageUiKey.Key:
+        type: StorageBoundUserInterface
+  - type: ContainerContainer
+    containers:
+      storagebase: !type:Container

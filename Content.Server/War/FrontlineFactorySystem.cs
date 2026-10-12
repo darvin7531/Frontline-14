@@ -57,16 +57,14 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
     private void OnStartup(Entity<FrontlineFactoryComponent> factory, ref ComponentStartup args)
     {
-        factory.Comp.InputContainer = _containers.EnsureContainer<Container>(
-            factory,
-            FrontlineFactoryComponent.InputContainerId);
-        factory.Comp.OutputContainer = _containers.EnsureContainer<Container>(
-            factory,
-            FrontlineFactoryComponent.OutputContainerId);
+        factory.Comp.InputContainer = _containers.EnsureContainer<Container>(factory, FrontlineFactoryComponent.InputContainerId);
+        factory.Comp.OutputContainer = _containers.EnsureContainer<Container>(factory, FrontlineFactoryComponent.OutputContainerId);
     }
 
     private void OnMapInit(Entity<FrontlineFactoryComponent> factory, ref MapInitEvent args)
     {
+        factory.Comp.InputContainer = _production.CreateStorage(factory, FrontlineFactoryComponent.InputContainerId, false);
+        factory.Comp.OutputContainer = _production.CreateStorage(factory, FrontlineFactoryComponent.OutputContainerId, true);
         if (factory.Comp.Jobs.Count > 0)
             _active.Add(factory);
     }
@@ -107,6 +105,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
     private void OnBeforeUiOpen(Entity<FrontlineFactoryComponent> factory, ref BeforeActivatableUIOpenEvent args)
     {
         UpdateUi(factory);
+        _production.OpenStorage(factory, args.User);
     }
 
     private void OnModeMessage(Entity<FrontlineFactoryComponent> factory, ref FrontlineFactoryModeMessage args)
@@ -128,7 +127,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         if (!IsOutputEntityAlive(uid) || !IsOutputEntityAlive(actor) ||
             !TryComp<FrontlineFactoryComponent>(uid, out var component) ||
             !_players.TryGetSessionByEntity(actor, out var session) ||
-            _restoring.ContainsKey(uid) || _submitting.Contains(uid) ||
+            (_production.NativeTransferActive(uid) || _restoring.ContainsKey(uid)) || _submitting.Contains(uid) ||
             _completing.Contains(uid) || _takingOutput.Contains(uid) || !_movingInputs.Add(uid)) return false;
         try
         {
@@ -176,7 +175,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
     {
         if (!IsOutputEntityAlive(factoryUid) || !IsOutputEntityAlive(playerUid) ||
             !TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) ||
-            _restoring.ContainsKey(factoryUid) || _completing.Contains(factoryUid) || !_takingOutput.Add(factoryUid))
+            (_production.NativeTransferActive(factoryUid) || _restoring.ContainsKey(factoryUid)) || _completing.Contains(factoryUid) || !_takingOutput.Add(factoryUid))
             return false;
 
         if (!_players.TryGetSessionByEntity(playerUid, out var session))
@@ -192,7 +191,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         try
         {
             if (!_interaction.InRangeUnobstructed(playerUid, factoryUid) ||
-                !_containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var container) ||
+                !_production.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var container) ||
                 container != factory.OutputContainer || container.ContainedEntities.Count == 0)
                 return false;
 
@@ -213,7 +212,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 !IsOutputEntityAlive(output.Value) || !Authorized() || !_production.CanAccess(output.Value, owner) ||
                 !_interaction.InRangeUnobstructed(playerUid, factoryUid) ||
                 _hands.GetActiveHand(playerUid) != hand || !_hands.ActiveHandIsEmpty(playerUid) ||
-                !_containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var current) ||
+                !_production.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var current) ||
                 current != container || !container.Contains(output.Value))
                 return false;
 
@@ -224,7 +223,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                     _interaction.InRangeUnobstructed(playerUid, factoryUid) &&
                     _hands.GetActiveHand(playerUid) == hand &&
                     _hands.GetActiveItem(playerUid) == output.Value &&
-                    _containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out current) &&
+                    _production.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out current) &&
                     current == container && !container.Contains(output.Value);
             if (taken && output is { } withdrawn)
                 RemComp<FrontlineProductionClaimComponent>(withdrawn);
@@ -236,7 +235,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             {
                 if (!taken && output is { } retained && IsOutputEntityAlive(retained) &&
                     !TerminatingOrDeleted(factoryUid) &&
-                    _containers.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var container) &&
+                    _production.TryGetContainer(factoryUid, FrontlineFactoryComponent.OutputContainerId, out var container) &&
                     container == factory.OutputContainer && !container.Contains(retained))
                 {
                     // Roll back an eventful failed pickup, never eject the output to the floor.
@@ -257,13 +256,13 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
     private void OnContainerChanged(Entity<FrontlineFactoryComponent> factory, ref EntInsertedIntoContainerMessage args)
     {
-        if (args.Container.ID is FrontlineFactoryComponent.InputContainerId or FrontlineFactoryComponent.OutputContainerId)
+        if (args.Container == factory.Comp.InputContainer || args.Container == factory.Comp.OutputContainer)
             UpdateUi(factory);
     }
 
     private void OnContainerChanged(Entity<FrontlineFactoryComponent> factory, ref EntRemovedFromContainerMessage args)
     {
-        if (args.Container.ID is FrontlineFactoryComponent.InputContainerId or FrontlineFactoryComponent.OutputContainerId)
+        if (args.Container == factory.Comp.InputContainer || args.Container == factory.Comp.OutputContainer)
             UpdateUi(factory);
     }
 
@@ -343,6 +342,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         {
             if (!_players.TryGetSessionByEntity(actor, out var session)) continue;
             var personal = _modes.GetValueOrDefault((factory.Owner, actor));
+            _production.UpdateStorageView(factory.Owner, actor);
             _ui.ServerSendUiMessage(factory.Owner, FrontlineFactoryUiKey.Key,
                 new FrontlineFactoryViewMessage(BuildUiState(factory.Owner, personal ? session.UserId.ToString() : null), personal), actor);
         }
@@ -380,7 +380,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
     public bool TryInsertInput(EntityUid factoryUid, EntityUid inputUid)
     {
         if (!TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) ||
-            _restoring.ContainsKey(factoryUid) || !IsOutputEntityAlive(factoryUid) ||
+            (_production.NativeTransferActive(factoryUid) || _restoring.ContainsKey(factoryUid)) || !IsOutputEntityAlive(factoryUid) ||
             !IsOutputEntityAlive(inputUid) || !CanAcceptInput(inputUid) || !_movingInputs.Add(factoryUid))
             return false;
 
@@ -397,7 +397,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
     public bool TryInsertPlayerInput(EntityUid factoryUid, EntityUid playerUid, EntityUid inputUid)
     {
         if (!TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) ||
-            _restoring.ContainsKey(factoryUid) || !IsOutputEntityAlive(factoryUid) ||
+            (_production.NativeTransferActive(factoryUid) || _restoring.ContainsKey(factoryUid)) || !IsOutputEntityAlive(factoryUid) ||
             !IsOutputEntityAlive(playerUid) || !IsOutputEntityAlive(inputUid) ||
             !CanAcceptInput(inputUid) || !_movingInputs.Add(factoryUid))
             return false;
@@ -413,6 +413,25 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         }
     }
 
+    public void NativeTransferFinished(EntityUid uid)
+    {
+        if (!TryComp<FrontlineFactoryComponent>(uid, out var machine)) return;
+        UpdateUi((uid, machine));
+    }
+
+    public bool CanAccessNativeStorage(EntityUid uid, EntityUid actor, EntityUid? item, bool output, bool inserting)
+    {
+        if (!IsOutputEntityAlive(uid) || !IsOutputEntityAlive(actor) || (_production.NativeTransferActive(uid) && !_production.OwnNativeTransfer(uid, actor, item) || _restoring.ContainsKey(uid)) ||
+            _submitting.Contains(uid) || _completing.Contains(uid) || _takingOutput.Contains(uid) || _movingInputs.Contains(uid) ||
+            !_players.TryGetSessionByEntity(actor, out var session) || !_interaction.InRangeUnobstructed(actor, uid))
+            return false;
+        if (!output)
+            return !inserting || item is { } input && IsOutputEntityAlive(input) && CanAcceptInput(input);
+        if (inserting) return false;
+        return item == null || IsOutputEntityAlive(item.Value) &&
+            _production.CanAccess(item.Value, _modes.GetValueOrDefault((uid, actor)) ? session.UserId.ToString() : null);
+    }
+
     private bool CanAcceptInput(EntityUid inputUid)
     {
         return TryComp<StackComponent>(inputUid, out var stack) &&
@@ -422,7 +441,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
     public void EjectInputs(EntityUid factoryUid)
     {
-        if (_restoring.ContainsKey(factoryUid) || !IsOutputEntityAlive(factoryUid) ||
+        if ((_production.NativeTransferActive(factoryUid) || _restoring.ContainsKey(factoryUid)) || !IsOutputEntityAlive(factoryUid) ||
             !TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) || !_movingInputs.Add(factoryUid))
             return;
 
@@ -438,7 +457,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
 
     public bool TryEjectPlayerInputs(EntityUid factoryUid, EntityUid playerUid)
     {
-        if (_restoring.ContainsKey(factoryUid) || _movingInputs.Contains(factoryUid) ||
+        if ((_production.NativeTransferActive(factoryUid) || _restoring.ContainsKey(factoryUid)) || _movingInputs.Contains(factoryUid) ||
             !IsOutputEntityAlive(factoryUid) || !IsOutputEntityAlive(playerUid) ||
             !_interaction.InRangeUnobstructed(playerUid, factoryUid))
             return false;
@@ -486,7 +505,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         string? owner = null, Func<bool>? authorized = null)
     {
         if (!TryComp<FrontlineFactoryComponent>(factoryUid, out var factory) ||
-            !IsOutputEntityAlive(factoryUid) || _restoring.ContainsKey(factoryUid) ||
+            !IsOutputEntityAlive(factoryUid) || (_production.NativeTransferActive(factoryUid) || _restoring.ContainsKey(factoryUid)) ||
             _movingInputs.Contains(factoryUid) || _completing.Contains(factoryUid) || _takingOutput.Contains(factoryUid) ||
             string.IsNullOrWhiteSpace(recipeId.Id) || !_prototypes.TryIndex(recipeId, out var recipe) ||
             !IsValidRecipe(recipe) ||
@@ -604,7 +623,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
         FrontlineFactoryRecipePrototype recipe)
     {
         var outputs = new EntityUid?[recipe.OutputAmount];
-        if (_restoring.ContainsKey(uid) || _takingOutput.Contains(uid) || !_completing.Add(uid))
+        if ((_production.NativeTransferActive(uid) || _restoring.ContainsKey(uid)) || _takingOutput.Contains(uid) || !_completing.Add(uid))
             return false;
 
         var completed = false;
@@ -613,12 +632,12 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             for (var i = 0; i < outputs.Length; i++)
             {
                 if (!IsOutputEntityAlive(uid) ||
-                    !TrySpawnInContainer(recipe.Output, uid, FrontlineFactoryComponent.OutputContainerId, out outputs[i]))
+                    !TrySpawnInContainer(recipe.Output, factory.OutputContainer.Owner, factory.OutputContainer.ID, out outputs[i]))
                     return false;
             }
 
             if (!IsOutputEntityAlive(uid) ||
-                !_containers.TryGetContainer(uid, FrontlineFactoryComponent.OutputContainerId, out var container) ||
+                !_production.TryGetContainer(uid, FrontlineFactoryComponent.OutputContainerId, out var container) ||
                 container != factory.OutputContainer ||
                 outputs.Any(output => output == null || !IsOutputEntityAlive(output.Value) || !container.Contains(output.Value)))
                 return false;
@@ -679,9 +698,9 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
             if (!IsOutputEntityAlive(uid) || string.IsNullOrWhiteSpace(factory.FactoryId) ||
                 !result.TryAdd(factory.FactoryId, (uid, factory)) ||
                 _submitting.Contains(uid) || _completing.Contains(uid) || _takingOutput.Contains(uid) || _movingInputs.Contains(uid) ||
-                !_containers.TryGetContainer(uid, FrontlineFactoryComponent.InputContainerId, out var input) ||
+                !_production.TryGetContainer(uid, FrontlineFactoryComponent.InputContainerId, out var input) ||
                 input != factory.InputContainer ||
-                !_containers.TryGetContainer(uid, FrontlineFactoryComponent.OutputContainerId, out var output) ||
+                !_production.TryGetContainer(uid, FrontlineFactoryComponent.OutputContainerId, out var output) ||
                 output != factory.OutputContainer ||
                 (_restoring.TryGetValue(uid, out var original) &&
                  (original.Id != factory.FactoryId || original.Component != factory ||
@@ -1004,7 +1023,7 @@ public sealed partial class FrontlineFactorySystem : EntitySystem
                 continue;
             }
 
-            if (MetaData(uid).EntityPaused || _restoring.ContainsKey(uid) ||
+            if (MetaData(uid).EntityPaused || (_production.NativeTransferActive(uid) || _restoring.ContainsKey(uid)) ||
                 _submitting.Contains(uid) || _movingInputs.Contains(uid) ||
                 _completing.Contains(uid) || _takingOutput.Contains(uid))
                 continue;

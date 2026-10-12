@@ -161,8 +161,7 @@ public sealed partial class FrontlineItemGrid : BoxContainer
             cell.Icon.Texture = item.Icon;
             cell.Fallback.Visible = item.Icon == null;
             cell.Count.Text = item.Amount.ToString();
-            var status = string.IsNullOrEmpty(item.Caption) ? "" :
-                $"{item.Caption} · {Loc.GetString(item.Available ? "frontline-ui-ready" : "frontline-ui-insufficient")}";
+            var status = item.Caption;
             if (cell.Name is Label title)
                 title.Text = item.Name;
             else if (cell.Name is RichTextLabel richName)
@@ -215,7 +214,7 @@ public sealed partial class FrontlineItemGrid : BoxContainer
     public static BoxContainer Column(string heading)
     {
         var column = new BoxContainer { Orientation = LayoutOrientation.Vertical, HorizontalExpand = true, VerticalExpand = true, MinWidth = 156, Margin = new Thickness(6), SeparationOverride = 6 };
-        column.AddChild(new Label { Text = heading, StyleClasses = { "LabelHeading" } });
+        column.AddChild(new Label { Text = heading, ClipText = true, StyleClasses = { "LabelHeading" } });
         column.AddChild(new PanelContainer { StyleClasses = { "LowDivider" } });
         return column;
     }
@@ -229,6 +228,29 @@ public sealed partial class FrontlineItemGrid : BoxContainer
                 Columns = columns;
             return base.MeasureOverride(availableSize);
         }
+    }
+}
+
+public sealed class FrontlineProductionColumns : BoxContainer
+{
+    public FrontlineProductionColumns()
+    {
+        HorizontalExpand = VerticalExpand = true;
+        SeparationOverride = 8;
+    }
+
+    protected override Vector2 MeasureOverride(Vector2 availableSize)
+    {
+        // BoxContainer measures sequentially; the first paragraph otherwise consumes the entire window width.
+        var children = Children.Where(child => child.Visible).ToArray();
+        if (children.Length == 0)
+            return Vector2.Zero;
+        var gaps = 8 * (children.Length - 1);
+        var width = Math.Max(0, availableSize.X - gaps) / children.Length;
+        foreach (var child in children)
+            child.Measure(new Vector2(width, availableSize.Y));
+        return new Vector2(children.Sum(child => child.DesiredSize.X) + gaps,
+            children.Max(child => child.DesiredSize.Y));
     }
 }
 
