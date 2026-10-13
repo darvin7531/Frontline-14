@@ -6,6 +6,22 @@ namespace Content.Server.War;
 
 public sealed partial class TerritorySystem : EntitySystem
 {
+    public bool TryGetHomeFaction(TerritoryId territory, MapId mapId, out FactionId faction)
+    {
+        var markers = AllEntityQuery<TerritoryComponent, TransformComponent>();
+        while (markers.MoveNext(out var uid, out var marker, out var xform))
+        {
+            if (!TerminatingOrDeleted(uid) && xform.MapID == mapId &&
+                marker.TerritoryId == territory.Id && marker.HomeFaction is { } owner)
+            {
+                faction = new FactionId(owner);
+                return true;
+            }
+        }
+        faction = default;
+        return false;
+    }
+
     public int CountOwned(FactionId faction, MapId? mapId = null)
     {
         return GetTerritories(mapId).Count(territory => TryGetOwner(territory, out var owner, mapId) && owner == faction);

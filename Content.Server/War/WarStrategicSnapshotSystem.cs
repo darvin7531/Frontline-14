@@ -363,6 +363,25 @@ public sealed partial class WarStrategicSnapshotSystem : EntitySystem
             }
             var objectives = GetObjectives(mapId);
             Validate(snapshot, objectives); // All entries preflight before spawning or removing anything.
+            for (var i = 0; i < snapshot.Bases.Count; i++)
+            {
+                var entry = snapshot.Bases[i];
+                if (!_territories.TryGetHomeFaction(new TerritoryId(entry.TerritoryId), mapId, out var homeFaction))
+                    continue;
+                var homePrototype = _prototypes.Index<FrontlineFactionPrototype>(homeFaction.Id).TownHallPrototype.Id;
+                if (entry.ObjectiveKind == "hall" && entry.FactionId == homeFaction.Id &&
+                    entry.Prototype == homePrototype && entry.DamageHundredths.Values.All(amount => amount == 0))
+                    continue;
+                // Migrate only the map's original home: retain its ledger, never grant supplies or refunds.
+                snapshot.Bases[i] = entry with
+                {
+                    ObjectiveKind = "hall",
+                    Prototype = homePrototype,
+                    FactionId = homeFaction.Id,
+                    DamageHundredths = new(),
+                    RuinMaterialDeposited = 0,
+                };
+            }
             _resourceFields.ValidateSnapshot(mapId, snapshot.Resources);
             _refineries.ValidateSnapshot(mapId, snapshot.Refineries);
             _factories.ValidateSnapshot(mapId, snapshot.Factories);

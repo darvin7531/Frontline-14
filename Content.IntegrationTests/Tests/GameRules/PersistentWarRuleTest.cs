@@ -98,6 +98,346 @@ public sealed class PersistentWarRuleTest : GameTest
               maxAmount: 2147483647
         """;
 
+    [TestCase(true)]
+    [TestCase(false)]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task DeployWithoutUsableSpawnReportsReasonAndCanRetry(bool useButton)
+    {
+        var ticker = Server.System<GameTicker>();
+        var factions = Server.System<WarFactionSystem>();
+        var session = ServerSession!;
+        var faction = new FactionId("FrontlineFactionTwo");
+        var territory = new TerritoryId("frontline-five");
+        var ui = Client.ResolveDependency<IUserInterfaceManager>();
+        var chat = ui.GetUIController<Content.Client.UserInterface.Systems.Chat.ChatUIController>();
+        var states = Client.ResolveDependency<Robust.Client.State.IStateManager>();
+        var console = Client.ResolveDependency<Robust.Client.Console.IClientConsoleHost>();
+        string reason = default!;
+        int messages = 0;
+        EntityCoordinates spawnCoordinates = default;
+
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            Server.System<WarStateSystem>().StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.StartRound(true);
+            factions.TrySelectFaction(session.UserId, faction);
+            // A malformed/missing map spawn must still refuse deployment, not bypass ownership.
+            var point = FindMapEntity<FactionSpawnPointComponent>(ticker.DefaultMap,
+                point => point.TerritoryId == territory.Id);
+            spawnCoordinates = SComp<TransformComponent>(point).Coordinates;
+            SEntMan.DeleteEntity(point);
+        });
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(session.AttachedEntity, Is.Null);
+            Assert.That(Server.System<FactionSpawnSystem>().GetAvailableSpawns(faction, ticker.DefaultMap), Is.Empty);
+            Assert.That(FindMapEntity<TownHallComponent>(ticker.DefaultMap,
+                hall => hall.TerritoryId == territory.Id), Is.Not.EqualTo(EntityUid.Invalid));
+            Assert.That(Server.ResolveDependency<IConsoleHost>().AvailableCommands.ContainsKey("deploy"), Is.True);
+        });
+        await Server.WaitPost(() => reason = Server.ResolveDependency<ILocalizationManager>().GetString("frontline-deploy-no-spawns"));
+        await Client.WaitPost(() => messages = chat.History.Count);
+        await Deploy();
+        await Server.WaitAssertion(() => Assert.That(session.AttachedEntity, Is.Null));
+        await Client.WaitAssertion(() =>
+        {
+            Assert.That(states.CurrentState, Is.TypeOf<Content.Client.Lobby.LobbyState>());
+            Assert.That(chat.History.Skip(messages).Select(entry => entry.Msg.Message), Does.Contain(reason),
+                "Deployment refusal must reach the connected lobby player instead of silently doing nothing.");
+        });
+
+        await Server.WaitPost(() =>
+        {
+            var point = SEntMan.SpawnEntity("FactionSpawnPoint", spawnCoordinates);
+            SComp<FactionSpawnPointComponent>(point).TerritoryId = territory.Id;
+        });
+        await Pair.RunUntilSynced();
+        await Deploy();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(session.AttachedEntity, Is.Not.Null);
+            var body = session.AttachedEntity!.Value;
+            Assert.That(SComp<MobStateComponent>(body).CurrentState, Is.EqualTo(MobState.Alive));
+            Assert.That(SComp<ActorComponent>(body).PlayerSession, Is.SameAs(session));
+            Assert.That(Server.System<TerritorySystem>().Contains(territory, SComp<TransformComponent>(body).Coordinates), Is.True);
+            Assert.That(Server.System<MindSystem>().TryGetMind(session.UserId, out _, out var mind), Is.True);
+            Assert.That(mind!.OwnedEntity, Is.EqualTo(body));
+            var home = FindMapEntity<TownHallComponent>(ticker.DefaultMap, hall => hall.TerritoryId == territory.Id);
+            Assert.That(SComp<FrontlineStockpileComponent>(home).Counts.GetValueOrDefault("SoldierSupplies"), Is.EqualTo(20),
+                "Initial deployment remains free and must not spend or mint supplies.");
+        });
+        await Client.WaitAssertion(() => Assert.That(states.CurrentState, Is.TypeOf<Content.Client.Gameplay.GameplayState>()));
+
+        async Task Deploy()
+        {
+            if (!useButton)
+                await Client.WaitPost(() => console.ExecuteCommand("deploy"));
+            else
+            {
+                Button button = default!;
+                await Client.WaitAssertion(() =>
+                {
+                    button = ((Content.Client.Lobby.LobbyState) states.CurrentState).Lobby!.ReadyButton;
+                    Assert.That(button.Disabled, Is.False);
+                });
+                var screen = new ScreenCoordinates(button.GlobalPixelPosition + button.PixelSize / 2, button.Window?.Id ?? default);
+                foreach (var state in new[] { BoundKeyState.Down, BoundKeyState.Up })
+                {
+                    await Client.DoGuiEvent(button, new GUIBoundKeyEventArgs(EngineKeyFunctions.UIClick, state, screen,
+                        default, screen.Position / button.UIScale - button.GlobalPosition, screen.Position - button.GlobalPixelPosition));
+                    await Pair.RunTicksSync(1);
+                }
+            }
+            await Pair.RunUntilSynced();
+        }
+    }
+
+    [TestCase("FrontlineFactionOne", "frontline-one")]
+    [TestCase("FrontlineFactionTwo", "frontline-five")]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task HomeBaseRejectsDamageDestructionAndCapture(string factionId, string territoryId)
+    {
+        var ticker = Server.System<GameTicker>();
+        var halls = Server.System<TownHallSystem>();
+        var faction = new FactionId(factionId);
+        var territory = new TerritoryId(territoryId);
+        EntityUid home = default;
+        EntityUid ordinary = default;
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            Server.System<WarStateSystem>().StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.StartRound(true);
+            home = FindMapEntity<TownHallComponent>(ticker.DefaultMap, hall => hall.TerritoryId == territoryId);
+            halls.ForceCapture(new TerritoryId("frontline-two"), faction, ticker.DefaultMap);
+            ordinary = FindMapEntity<TownHallComponent>(ticker.DefaultMap, hall => hall.TerritoryId == "frontline-two");
+        });
+        await Server.WaitAssertion(() =>
+        {
+            var stockpile = SComp<FrontlineStockpileComponent>(home);
+            var counts = stockpile.Counts.ToDictionary(pair => pair.Key, pair => pair.Value);
+            foreach (var attacker in new[] { "FrontlineFactionOne", "FrontlineFactionTwo" })
+                Assert.That(halls.ForceCapture(territory, new FactionId(attacker), ticker.DefaultMap), Is.False);
+            Assert.That(SComp<FrontlineStockpileComponent>(home).Counts, Is.EquivalentTo(counts));
+            var overkill = new DamageSpecifier { DamageDict = new() { ["Blunt"] = FixedPoint2.New(10000), ["Heat"] = FixedPoint2.New(10000) } };
+            Assert.That(Server.System<DamageableSystem>().TryChangeDamage(home, overkill,
+                ignoreResistances: true, ignoreGlobalModifiers: true), Is.False);
+            Assert.That(Server.System<Content.Server.Destructible.DestructibleSystem>().DestroyEntity(home), Is.False);
+            var unanchor = new Content.Shared.Construction.Components.UnanchorAttemptEvent(home, home);
+            SEntMan.EventBus.RaiseLocalEvent(home, unanchor);
+            Assert.That(unanchor.Cancelled, Is.True, "A protected core must not be moved out of its home territory.");
+            Assert.That(Server.System<DamageableSystem>().TryChangeDamage(ordinary, overkill,
+                ignoreResistances: true, ignoreGlobalModifiers: true), Is.True);
+        });
+        await Pair.RunTicksSync(2);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.EntityExists(home) && !SEntMan.IsQueuedForDeletion(home), Is.True);
+            Assert.That(SComp<TownHallComponent>(home).FactionId, Is.EqualTo(factionId));
+            Assert.That(Server.System<DamageableSystem>().GetTotalDamage(home), Is.EqualTo(FixedPoint2.Zero));
+            Assert.That(Server.System<FactionSpawnSystem>().TryGetRespawnBase(faction, territory, ticker.DefaultMap,
+                out var core, out _, out _), Is.True);
+            Assert.That(core, Is.EqualTo(home));
+            Assert.That(SEntMan.EntityExists(ordinary), Is.False);
+            Assert.That(FindMapEntity<TownHallRuinComponent>(ticker.DefaultMap,
+                ruin => ruin.TerritoryId == "frontline-two"), Is.Not.EqualTo(EntityUid.Invalid));
+        });
+    }
+
+    public sealed class HomeProjectileListenerSystem : Content.IntegrationTests.Tests.Helpers.TestListenerSystem<Content.Shared.Projectiles.ProjectileHitEvent> { }
+
+    [TestCase("FrontlineFactionOne", "frontline-one")]
+    [TestCase("FrontlineFactionTwo", "frontline-five")]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task HomeBaseSurvivesNativeProjectileAndExplosion(string factionId, string territoryId)
+    {
+        var ticker = Server.System<GameTicker>();
+        EntityUid home = default;
+        EntityUid bullet = default;
+        EntityUid witness = default;
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            Server.System<WarStateSystem>().StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.StartRound(true);
+            home = FindMapEntity<TownHallComponent>(ticker.DefaultMap, hall => hall.TerritoryId == territoryId);
+            var coordinates = SComp<TransformComponent>(home).Coordinates;
+            bullet = SEntMan.SpawnEntity("BulletRifle", coordinates.Offset(new Vector2(-0.75f, 0)));
+            SEntMan.EnsureComponent<Content.IntegrationTests.Tests.Helpers.TestListenerComponent>(bullet);
+            var projectile = SComp<Content.Shared.Projectiles.ProjectileComponent>(bullet);
+            projectile.Damage = new DamageSpecifier { DamageDict = new() { ["Piercing"] = FixedPoint2.New(10000) } };
+            projectile.DeleteOnCollide = false;
+            projectile.OnlyCollideWhenShot = false;
+            var physics = Server.System<Robust.Shared.Physics.Systems.SharedPhysicsSystem>();
+            var fixtures = SComp<Robust.Shared.Physics.FixturesComponent>(bullet);
+            // Include machine layers so this synthetic overkill shot actually hits the native core fixture.
+            physics.SetCollisionMask(bullet, "projectile", fixtures.Fixtures["projectile"], (int) Content.Shared.Physics.CollisionGroup.MachineMask);
+            physics.SetLinearVelocity(bullet, new Vector2(5, 0));
+        });
+        await Pair.RunSeconds(0.5f);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(Server.System<HomeProjectileListenerSystem>().GetEvents(bullet).Select(hit => hit.Target), Does.Contain(home),
+                "Exercise the native collision/projectile handler, not just a direct damage call.");
+            Assert.That(SComp<Content.Shared.Projectiles.ProjectileComponent>(bullet).ProjectileSpent, Is.True);
+        });
+        await Server.WaitPost(() =>
+        {
+            SEntMan.DeleteEntity(bullet);
+            var coordinates = SComp<TransformComponent>(home).Coordinates;
+            witness = SEntMan.SpawnEntity("TownHallCoreFactionOne", coordinates.Offset(new Vector2(0.25f, 0)));
+            Server.System<Content.Server.Explosion.EntitySystems.ExplosionSystem>().QueueExplosion(
+                Server.System<SharedTransformSystem>().ToMapCoordinates(coordinates), "Default", 100, 5, 10, null,
+                maxTileBreak: 0, canCreateVacuum: false);
+        });
+        await Pair.RunSeconds(1);
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(SEntMan.EntityExists(witness), Is.False, "The same native blast must destroy an ordinary unprotected core.");
+            Assert.That(SEntMan.EntityExists(home) && !SEntMan.IsQueuedForDeletion(home), Is.True);
+            Assert.That(Server.System<DamageableSystem>().GetTotalDamage(home), Is.EqualTo(FixedPoint2.Zero));
+            Assert.That(Server.System<FactionSpawnSystem>().TryGetRespawnBase(new FactionId(factionId), new TerritoryId(territoryId), ticker.DefaultMap,
+                out var core, out _, out _), Is.True);
+            Assert.That(core, Is.EqualTo(home));
+        });
+    }
+
+    [TestCase("FrontlineFactionOne", "frontline-one", true, true)]
+    [TestCase("FrontlineFactionTwo", "frontline-five", true, true)]
+    [TestCase("FrontlineFactionTwo", "frontline-five", false, true)]
+    [TestCase("FrontlineFactionOne", "frontline-one", false, false)]
+    [TestCase("FrontlineFactionTwo", "frontline-five", false, false)]
+    [EnsureCVar(Side.Server, typeof(CCVars), nameof(CCVars.GameMap), "")]
+    public async Task PersistedDestroyedHomeRecoversAndDeploysAcrossRestarts(string factionId, string territoryId, bool useButton, bool ruined)
+    {
+        var ticker = Server.System<GameTicker>();
+        var war = Server.System<WarStateSystem>();
+        var factions = Server.System<WarFactionSystem>();
+        var faction = new FactionId(factionId);
+        var session = ServerSession!;
+        var account = session.UserId;
+        var accountName = session.Name;
+        var network = Client.ResolveDependency<Robust.Shared.Network.IClientNetManager>();
+        var data = Server.ResolveDependency<IResourceManager>().UserData;
+        WarState before = default!;
+        WarStrategicSnapshot original = default!;
+        var retainedCounts = ruined ? new Dictionary<string, int>() : new Dictionary<string, int> { ["SoldierSupplies"] = 0, ["BasicMaterials"] = 37 };
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            war.StartNewWar();
+            ticker.SetGamePreset("PersistentWar");
+            ticker.StartRound(true);
+            factions.TrySelectFaction(session.UserId, faction);
+            before = war.State!;
+        });
+        // Let native field initialization finish before taking the legacy restart snapshot.
+        await Pair.RunTicksSync(2);
+        await Client.WaitPost(() => network.ClientDisconnect("Synthetic technical restart"));
+        await Pair.RunTicksSync(10);
+        await Server.WaitAssertion(() => Assert.That(Server.ResolveDependency<Robust.Server.Player.IPlayerManager>().Sessions, Is.Empty));
+        await Server.WaitPost(() =>
+        {
+            ticker.RestartRound();
+            using (var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath))
+                original = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+            // Old valid saves could contain destroyed homes. Preserve every other slice byte-for-byte.
+            var legacy = original with { Bases = original.Bases.Select(entry => entry.TerritoryId == territoryId
+                ? ruined
+                    ? new WarBaseSnapshot(territoryId, "ruin", "TownHallRuin", null, retainedCounts)
+                        { RuinMaterialDeposited = 3, DamageHundredths = new() { ["Blunt"] = 725 } }
+                    : new WarBaseSnapshot(territoryId, "hall", factionId == "FrontlineFactionOne" ? "TownHallCoreFactionTwo" : "TownHallCoreFactionOne",
+                        factionId == "FrontlineFactionOne" ? "FrontlineFactionTwo" : "FrontlineFactionOne", retainedCounts)
+                        { DamageHundredths = new() { ["Blunt"] = 725 } }
+                : entry).ToList() };
+            using (var stream = data.Open(WarStrategicSnapshotSystem.SavePath, FileMode.Create))
+                JsonSerializer.Serialize(stream, legacy);
+            ticker.StartRound(true);
+        });
+        await Pair.RunTicksSync(2);
+        await AssertHome();
+        for (var restart = 0; restart < 2; restart++)
+        {
+            await Server.WaitPost(() => { ticker.RestartRound(); ticker.StartRound(true); });
+            await Pair.RunTicksSync(2);
+            await AssertHome();
+        }
+        Client.SetConnectTarget(Server);
+        await Client.WaitPost(() => network.ClientConnect(null!, 0, accountName));
+        await Pair.RunTicksSync(20);
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            session = Server.ResolveDependency<Robust.Server.Player.IPlayerManager>().Sessions.Single();
+            Assert.That(session.UserId, Is.EqualTo(account));
+            Assert.That(session.AttachedEntity, Is.Null);
+        });
+        var states = Client.ResolveDependency<Robust.Client.State.IStateManager>();
+        if (useButton)
+        {
+            Button button = default!;
+            await Client.WaitAssertion(() =>
+            {
+                button = ((Content.Client.Lobby.LobbyState) states.CurrentState).Lobby!.ReadyButton;
+                Assert.That(button.Disabled, Is.False);
+            });
+            var screen = new ScreenCoordinates(button.GlobalPixelPosition + button.PixelSize / 2, button.Window?.Id ?? default);
+            foreach (var state in new[] { BoundKeyState.Down, BoundKeyState.Up })
+            {
+                await Client.DoGuiEvent(button, new GUIBoundKeyEventArgs(EngineKeyFunctions.UIClick, state, screen,
+                    default, screen.Position / button.UIScale - button.GlobalPosition, screen.Position - button.GlobalPixelPosition));
+                await Pair.RunTicksSync(1);
+            }
+        }
+        else
+            await Client.WaitPost(() => Client.ResolveDependency<Robust.Client.Console.IClientConsoleHost>().ExecuteCommand("deploy"));
+        await Pair.RunUntilSynced();
+        await Server.WaitAssertion(() =>
+        {
+            Assert.That(session.AttachedEntity, Is.Not.Null);
+            var body = session.AttachedEntity!.Value;
+            Assert.That(SComp<MobStateComponent>(body).CurrentState, Is.EqualTo(MobState.Alive));
+            Assert.That(SComp<ActorComponent>(body).PlayerSession, Is.SameAs(session));
+            Assert.That(Server.System<TerritorySystem>().Contains(new TerritoryId(territoryId), SComp<TransformComponent>(body).Coordinates), Is.True);
+            Assert.That(Server.System<MindSystem>().TryGetMind(session.UserId, out _, out var mind), Is.True);
+            Assert.That(mind!.OwnedEntity, Is.EqualTo(body));
+        });
+        await AssertHome();
+        await Client.WaitAssertion(() => Assert.That(states.CurrentState, Is.TypeOf<Content.Client.Gameplay.GameplayState>()));
+
+        string OtherState(WarStrategicSnapshot state) => JsonSerializer.Serialize(state with
+        {
+            Bases = state.Bases.Where(entry => entry.TerritoryId != territoryId).OrderBy(entry => entry.TerritoryId).ToList(),
+            Resources = state.Resources.OrderBy(field => field.FieldId).Select(field => field with
+                { Nodes = field.Nodes.OrderBy(node => node.SlotId).ToList() }).ToList(),
+            Refineries = state.Refineries.OrderBy(machine => machine.RefineryId).ToList(),
+            Factories = state.Factories.OrderBy(machine => machine.FactoryId).ToList(),
+            Vehicles = state.Vehicles.OrderBy(vehicle => vehicle.VehicleId).ToList(),
+        });
+
+        async Task AssertHome() => await Server.WaitAssertion(() =>
+        {
+            Assert.That(war.State, Is.EqualTo(before));
+            Assert.That(factions.TryGetFaction(session.UserId, out var selected) && selected == faction, Is.True);
+            var home = FindMapEntity<TownHallComponent>(ticker.DefaultMap, hall => hall.TerritoryId == territoryId);
+            Assert.That(SComp<TownHallComponent>(home).FactionId, Is.EqualTo(factionId));
+            Assert.That(Server.System<DamageableSystem>().GetTotalDamage(home), Is.EqualTo(FixedPoint2.Zero));
+            Assert.That(Server.System<FrontlineStockpileSystem>().ReadCounts(home), Is.EquivalentTo(retainedCounts),
+                "Recovery and repeated restart must preserve the ledger without starter supplies or material refunds.");
+            Assert.That(Server.System<FactionSpawnSystem>().TryGetRespawnBase(faction, new TerritoryId(territoryId), ticker.DefaultMap,
+                out var core, out _, out _), Is.True);
+            Assert.That(core, Is.EqualTo(home));
+            using var stream = data.OpenRead(WarStrategicSnapshotSystem.SavePath);
+            var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
+            Assert.That(OtherState(saved), Is.EqualTo(OtherState(original)));
+        });
+    }
+
     public enum InvalidMapCase
     {
         UnassignedTerritory,
@@ -2410,10 +2750,12 @@ public sealed class PersistentWarRuleTest : GameTest
                 selected = factions.TrySelectFaction(session.UserId, faction);
                 ticker.MakeJoinGame(session, EntityUid.Invalid, silent: true);
                 oldMap = maps.GetMapOrInvalid(ticker.DefaultMap);
+                Server.System<TownHallSystem>().ForceCapture(new TerritoryId("frontline-two"), faction, ticker.DefaultMap);
+                Server.System<TownHallSystem>().ForceCapture(new TerritoryId("frontline-four"), new FactionId("FrontlineFactionTwo"), ticker.DefaultMap);
                 liveHall = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
-                    hall => hall.TerritoryId == "frontline-one");
+                    hall => hall.TerritoryId == "frontline-two");
                 destroyedHall = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
-                    hall => hall.TerritoryId == "frontline-five");
+                    hall => hall.TerritoryId == "frontline-four");
                 // Below the native 50 breakage / 100 destruction thresholds; retain both exact types.
                 damaged = damage.TryChangeDamage(liveHall, new DamageSpecifier
                 {
@@ -2432,13 +2774,13 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(SEntMan.EntityExists(liveHall), Is.True);
                 Assert.That(SEntMan.EntityExists(destroyedHall), Is.False,
                     "Native damage/destruction must remove the hall before testing persistence.");
-                Assert.That(territories.GetState(new TerritoryId("frontline-five"), ticker.DefaultMap),
+                Assert.That(territories.GetState(new TerritoryId("frontline-four"), ticker.DefaultMap),
                     Is.EqualTo(TerritoryState.Neutral));
             });
             await Server.WaitPost(() =>
             {
                 ruin = FindMapEntity<TownHallRuinComponent>(ticker.DefaultMap,
-                    objective => objective.TerritoryId == "frontline-five");
+                    objective => objective.TerritoryId == "frontline-four");
                 var body = session.AttachedEntity!.Value;
                 var coordinates = SComp<TransformComponent>(ruin).Coordinates;
                 Server.System<SharedTransformSystem>().SetCoordinates(body, coordinates);
@@ -2456,7 +2798,7 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(SComp<TownHallRuinComponent>(ruin).RequiredBasicMaterials, Is.GreaterThan(1));
                 Assert.That(SComp<StackComponent>(materials).Count, Is.EqualTo(1),
                     "Partial progress must come from consuming a real held BasicMaterials stack.");
-                Assert.That(territories.CountOwned(faction, ticker.DefaultMap), Is.EqualTo(1));
+                Assert.That(territories.CountOwned(faction, ticker.DefaultMap), Is.EqualTo(2));
                 Assert.That(war.State!.Status, Is.EqualTo(WarStatus.Active), "Setup must remain below victory.");
             });
             await Server.WaitPost(() =>
@@ -2477,8 +2819,8 @@ public sealed class PersistentWarRuleTest : GameTest
                 var saved = JsonSerializer.Deserialize<WarStrategicSnapshot>(stream)!;
                 Assert.That(saved.SnapshotVersion, Is.EqualTo(WarStrategicSnapshotSystem.SnapshotVersion));
                 Assert.That(saved.WarId, Is.EqualTo(beforeRestart.WarId));
-                var savedHall = saved.Bases.Single(entry => entry.TerritoryId == "frontline-one");
-                var savedRuin = saved.Bases.Single(entry => entry.TerritoryId == "frontline-five");
+                var savedHall = saved.Bases.Single(entry => entry.TerritoryId == "frontline-two");
+                var savedRuin = saved.Bases.Single(entry => entry.TerritoryId == "frontline-four");
                 Assert.That(savedHall.ObjectiveKind, Is.EqualTo("hall"));
                 Assert.That(savedHall.DamageHundredths, Is.EquivalentTo(damageBefore.DamageDict
                     .ToDictionary(pair => pair.Key.Id, pair => pair.Value.Value)),
@@ -2493,13 +2835,13 @@ public sealed class PersistentWarRuleTest : GameTest
                 Assert.That(SEntMan.EntityExists(liveHall), Is.False);
                 Assert.That(SEntMan.EntityExists(ruin), Is.False);
                 var restoredRuin = FindMapEntity<TownHallRuinComponent>(ticker.DefaultMap,
-                    objective => objective.TerritoryId == "frontline-five");
+                    objective => objective.TerritoryId == "frontline-four");
                 Assert.That(SEntMan.HasComponent<TownHallComponent>(restoredRuin), Is.False,
                     "A destroyed hall must remain a ruin after normal preset reload.");
                 Assert.That(SComp<TownHallRuinComponent>(restoredRuin).DepositedBasicMaterials,
                     Is.EqualTo(progressBefore), "Technical restart must not erase paid ruin repair progress.");
                 var restoredHall = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
-                    hall => hall.TerritoryId == "frontline-one");
+                    hall => hall.TerritoryId == "frontline-two");
                 Assert.That(damage.GetAllDamage(restoredHall).DamageDict, Is.EquivalentTo(damageBefore.DamageDict),
                     "Technical restart must retain exact per-type objective damage, not heal the hall.");
             }));
@@ -3582,11 +3924,13 @@ public sealed class PersistentWarRuleTest : GameTest
 
         await Server.WaitPost(() =>
         {
+            Assert.That(Server.System<TownHallSystem>().ForceCapture(new TerritoryId("frontline-two"), faction, ticker.DefaultMap), Is.True);
+            home = FindMapEntity<TownHallComponent>(ticker.DefaultMap, hall => hall.TerritoryId == "frontline-two");
             var coordinates = SComp<TransformComponent>(home).Coordinates;
             SEntMan.System<SharedTransformSystem>().SetCoordinates(body, coordinates);
             SEntMan.DeleteEntity(home);
             ruin = FindMapEntity<TownHallRuinComponent>(ticker.DefaultMap,
-                objective => objective.TerritoryId == "frontline-one");
+                objective => objective.TerritoryId == "frontline-two");
             SComp<TownHallRuinComponent>(ruin).RequiredBasicMaterials = 1;
             var materials = stacks.SpawnAtPosition(1, "BasicMaterials", coordinates);
             Assert.That(hands.TryPickupAnyHand(body, materials), Is.True);
@@ -3598,10 +3942,10 @@ public sealed class PersistentWarRuleTest : GameTest
             Assert.That(SEntMan.EntityExists(home), Is.False);
             Assert.That(SEntMan.EntityExists(ruin), Is.False);
             var replacement = FindMapEntity<TownHallComponent>(ticker.DefaultMap,
-                hall => hall.TerritoryId == "frontline-one" && hall.FactionId == faction.Id);
+                hall => hall.TerritoryId == "frontline-two" && hall.FactionId == faction.Id);
             Assert.That(replacement, Is.Not.EqualTo(home));
             Assert.That(SComp<FrontlineStockpileComponent>(replacement).Counts.GetValueOrDefault("SoldierSupplies"),
-                Is.Zero, "Repairing a destroyed home must not mint another starting reserve.");
+                Is.Zero, "Repairing an ordinary captured base must not mint another starting reserve.");
             Assert.That(SComp<FrontlineStockpileComponent>(enemy).Counts.GetValueOrDefault("SoldierSupplies"), Is.EqualTo(7));
             Assert.That(war.State!.WarId, Is.EqualTo(warId));
         }));
@@ -4426,13 +4770,13 @@ public sealed class PersistentWarRuleTest : GameTest
             var slots = Server.System<Content.Shared.Storage.EntitySystems.SharedStorageSystem>();
             Assert.That(slots.Insert(oldTruck, oldCrate, out _, stackAutomatically: false), Is.True);
             Assert.That(slots.Insert(oldTruck, oldMaterials, out _, stackAutomatically: false), Is.True);
-            var captured = 0;
             foreach (var territory in territories.GetTerritories(ticker.DefaultMap))
             {
-                if (captured++ == 4)
-                    break;
+                if (territories.TryGetHomeFaction(territory, ticker.DefaultMap, out _))
+                    continue;
                 Assert.That(halls.ForceCapture(territory, factionOne, ticker.DefaultMap), Is.True);
             }
+            Assert.That(territories.CountOwned(factionOne, ticker.DefaultMap), Is.EqualTo(4));
 
             var cores = SEntMan.EntityQueryEnumerator<TownHallComponent, TransformComponent>();
             while (cores.MoveNext(out var core, out _, out var xform))

@@ -26,8 +26,32 @@ public sealed partial class TownHallSystem : EntitySystem
     public override void Initialize()
     {
         SubscribeLocalEvent<TownHallComponent, EntityTerminatingEvent>(OnTownHallTerminating);
+        SubscribeLocalEvent<TownHallComponent, BeforeDamageChangedEvent>(OnBeforeDamageChanged);
+        SubscribeLocalEvent<TownHallComponent, Content.Shared.Destructible.DestructionAttemptEvent>(OnDestructionAttempt);
+        SubscribeLocalEvent<TownHallComponent, Content.Shared.Construction.Components.UnanchorAttemptEvent>(OnUnanchorAttempt);
         SubscribeLocalEvent<TownHallRuinComponent, AfterInteractUsingEvent>(OnRuinInteract);
         SubscribeLocalEvent<TownHallRuinComponent, TownHallRepairDoAfterEvent>(OnRepairComplete);
+    }
+
+    private bool IsHome(Entity<TownHallComponent> hall) =>
+        _territories.TryGetHomeFaction(new TerritoryId(hall.Comp.TerritoryId), Transform(hall).MapID, out _);
+
+    private void OnBeforeDamageChanged(Entity<TownHallComponent> hall, ref BeforeDamageChangedEvent args)
+    {
+        if (IsHome(hall))
+            args.Cancelled = true;
+    }
+
+    private void OnDestructionAttempt(Entity<TownHallComponent> hall, ref Content.Shared.Destructible.DestructionAttemptEvent args)
+    {
+        if (IsHome(hall))
+            args.Cancel();
+    }
+
+    private void OnUnanchorAttempt(Entity<TownHallComponent> hall, ref Content.Shared.Construction.Components.UnanchorAttemptEvent args)
+    {
+        if (IsHome(hall))
+            args.Cancel();
     }
 
     private void OnTownHallTerminating(Entity<TownHallComponent> hall, ref EntityTerminatingEvent args)
@@ -45,7 +69,8 @@ public sealed partial class TownHallSystem : EntitySystem
 
     public bool ForceCapture(TerritoryId territory, FactionId faction, MapId mapId)
     {
-        if (!_prototypes.TryIndex<FrontlineFactionPrototype>(faction.Id, out var factionPrototype))
+        if (_territories.TryGetHomeFaction(territory, mapId, out _) ||
+            !_prototypes.TryIndex<FrontlineFactionPrototype>(faction.Id, out var factionPrototype))
             return false;
 
         var objectives = new List<EntityUid>();
@@ -140,6 +165,7 @@ public sealed partial class TownHallSystem : EntitySystem
         if (args.Handled || !args.CanReach ||
             !TryComp<ActorComponent>(args.User, out var actor) ||
             !_factions.TryGetFaction(actor.PlayerSession.UserId, out var faction) ||
+            _territories.TryGetHomeFaction(new TerritoryId(ruin.Comp.TerritoryId), Transform(ruin).MapID, out _) ||
             _territories.GetState(new TerritoryId(ruin.Comp.TerritoryId), Transform(ruin).MapID) != TerritoryState.Neutral ||
             !TryComp<StackComponent>(args.Used, out var stack) || stack.StackTypeId != "BasicMaterials")
             return;
@@ -155,6 +181,7 @@ public sealed partial class TownHallSystem : EntitySystem
             !TryComp<ActorComponent>(args.User, out var actor) ||
             !_factions.TryGetFaction(actor.PlayerSession.UserId, out var faction) || faction.Id != args.FactionId ||
             !_prototypes.TryIndex<FrontlineFactionPrototype>(faction.Id, out var factionPrototype) ||
+            _territories.TryGetHomeFaction(territory, Transform(ruin).MapID, out _) ||
             _territories.GetState(territory, Transform(ruin).MapID) != TerritoryState.Neutral ||
             !TryComp<StackComponent>(used, out var stack) || stack.StackTypeId != "BasicMaterials" ||
             !_stack.TryUse((used, stack), 1))
