@@ -309,6 +309,29 @@ public sealed partial class PersistentWarMapValidatorSystem : EntitySystem
         }
 
         if (count != 1)
+        {
             errors.Add($"PersistentWar map must include exactly one starting town hall for {faction} (found {count}).");
+            return;
+        }
+
+        // Revalidation must never promote the last captured hall to a new home.
+        var pinned = AllEntityQuery<TerritoryComponent, TransformComponent>();
+        while (pinned.MoveNext(out _, out var marker, out var xform))
+        {
+            if (xform.MapID == halls[0].Comp2.MapID && marker.HomeFaction == faction)
+                return;
+        }
+
+        foreach (var hall in halls)
+        {
+            if (hall.Comp1.FactionId != faction)
+                continue;
+            var markers = AllEntityQuery<TerritoryComponent, TransformComponent>();
+            while (markers.MoveNext(out _, out var marker, out var xform))
+            {
+                if (xform.MapID == hall.Comp2.MapID && marker.TerritoryId == hall.Comp1.TerritoryId)
+                    marker.HomeFaction = faction;
+            }
+        }
     }
 }

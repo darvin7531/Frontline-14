@@ -55,6 +55,7 @@ frontline-territory-status = Территории: {$owned} / {$total}
 frontline-victory-status = Для победы нужно {$required} очков
 frontline-deploy-button = ВЫСАДИТЬСЯ
 frontline-deploy-unavailable = Высадка недоступна, пока не выбрана фракция
+frontline-deploy-no-spawns = Высадка недоступна: у вашей фракции нет принадлежащей ей точки высадки на этой карте.
 frontline-victory-title = ВОЙНА #{$warId} ЗАВЕРШЕНА
 frontline-victory-faction = Победа фракции {$faction}
 frontline-victory-territories = Удержано территорий: {$owned} / {$total}

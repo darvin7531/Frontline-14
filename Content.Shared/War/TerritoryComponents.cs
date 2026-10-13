@@ -41,6 +41,10 @@ public sealed partial class TerritoryComponent : Component
     [DataField(required: true)]
     public Vector2 BoundsMax;
 
+    // Pinned from the validated map's unique starting hall, never from captured objectives.
+    [DataField]
+    public string? HomeFaction;
+
     public void Configure(TerritoryId territory, Vector2 boundsMin, Vector2 boundsMax)
     {
         TerritoryId = territory.Id;

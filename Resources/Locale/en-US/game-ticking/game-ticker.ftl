@@ -55,6 +55,7 @@ frontline-territory-status = Territories: {$owned} / {$total}
 frontline-victory-status = Victory: {$required} points required
 frontline-deploy-button = DEPLOY
 frontline-deploy-unavailable = Deploy unavailable until faction is selected
+frontline-deploy-no-spawns = Deployment unavailable: your faction has no owned spawn point on this map.
 frontline-victory-title = WAR #{$warId} ENDED
 frontline-victory-faction = {$faction} Victory
 frontline-victory-territories = Territories held: {$owned} / {$total}

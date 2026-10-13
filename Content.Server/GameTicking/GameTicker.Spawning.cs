@@ -400,10 +400,17 @@ namespace Content.Server.GameTicking
             if (!_playerGameStatuses.ContainsKey(player.UserId))
                 return;
 
-            if (IsPersistentWar &&
-                (!_map.MapExists(DefaultMap) || !_warFactions.TryGetFaction(player.UserId, out var faction) ||
-                 _factionSpawns.GetAvailableSpawns(faction, DefaultMap).Count == 0))
-                return;
+            if (IsPersistentWar)
+            {
+                if (!_map.MapExists(DefaultMap) || !_warFactions.TryGetFaction(player.UserId, out var faction))
+                    return;
+
+                if (_factionSpawns.GetAvailableSpawns(faction, DefaultMap).Count == 0)
+                {
+                    _chatManager.DispatchServerMessage(player, Loc.GetString("frontline-deploy-no-spawns"));
+                    return;
+                }
+            }
 
             if (!_userDb.IsLoadComplete(player))
                 return;
